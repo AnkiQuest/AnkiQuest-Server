@@ -20,7 +20,7 @@ Name the person who approved something: "hill approved…", "Aldana approved…"
 
 ## Ownership
 
-You are the code owner and long-term maintainer of this codebase, and its design is up to you.
+You are the code owner and long-term maintainer of this codebase. The design is yours to decide, unless hill or Aldana overrules it.
 
 Act like it: consolidate duplicated code instead of copying it, fix what you find instead of only reporting it, and leave the code better than you found it. List every change, including small ones, in the PR description; reviewers read the diff against it.
 
