@@ -2,8 +2,12 @@ name: Label Sync
 
 # Keeps this repository's labels equal to .github/labels.json, the label set
 # shared by AnkiQuest-Server, AnkiQuest-Desktop and AnkiQuest-Android.
-# AnkiQuest-Server holds the source; the other repositories keep a byte-equal
-# copy, checked by the `copy` job.
+#
+# The labelling workflows are shared too: SHARED_FILES lists every file the
+# three repositories keep byte-equal. AnkiQuest-Server holds the source; the
+# `copy` job fails in the other repositories when one of their copies
+# differs from AnkiQuest-Server master. Area paths differ per repository and
+# live in .github/labeler.yml, which is not shared.
 #
 # `sync` creates or updates every label in the file: colour, description and
 # the exact spelling of the name. A label still under an old name listed in
@@ -11,16 +15,24 @@ name: Label Sync
 # never deleted.
 
 on:
+  # Default branches: main in AnkiQuest-Android, master elsewhere.
   push:
     branches:
+      - main
       - master
     paths:
       - .github/labels.json
-      - .github/workflows/label-sync.yml
+      - .github/workflows/ankiquest_conflicts.yml
+      - .github/workflows/ankiquest_issue_labels.yml
+      - .github/workflows/ankiquest_labels.yml
+      - .github/workflows/ankiquest_pr_labels.yml
   pull_request:
     paths:
       - .github/labels.json
-      - .github/workflows/label-sync.yml
+      - .github/workflows/ankiquest_conflicts.yml
+      - .github/workflows/ankiquest_issue_labels.yml
+      - .github/workflows/ankiquest_labels.yml
+      - .github/workflows/ankiquest_pr_labels.yml
   schedule:
     - cron: "41 5 * * 1"
   workflow_dispatch:
@@ -29,7 +41,13 @@ permissions:
   contents: read
 
 env:
-  SOURCE_URL: https://raw.githubusercontent.com/AnkiQuest/AnkiQuest-Server/master/.github/labels.json
+  SOURCE_URL: https://raw.githubusercontent.com/AnkiQuest/AnkiQuest-Server/master
+  SHARED_FILES: >-
+    .github/labels.json
+    .github/workflows/ankiquest_conflicts.yml
+    .github/workflows/ankiquest_issue_labels.yml
+    .github/workflows/ankiquest_labels.yml
+    .github/workflows/ankiquest_pr_labels.yml
 
 jobs:
   copy:
@@ -40,17 +58,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-          sparse-checkout: .github/labels.json
-          sparse-checkout-cone-mode: false
+          sparse-checkout: .github
 
-      - name: Compare with AnkiQuest-Server's labels.json
+      - name: Compare with AnkiQuest-Server's copies
+        shell: bash
         run: |
-          curl -fsSL --retry 3 "$SOURCE_URL" -o source-labels.json
-          if ! cmp -s source-labels.json .github/labels.json; then
-            echo "::error file=.github/labels.json::Differs from AnkiQuest-Server master; copy it from there."
-            diff -u source-labels.json .github/labels.json || true
-            exit 1
-          fi
+          status=0
+          for file in $SHARED_FILES; do
+            if ! curl -fsSL --retry 3 "$SOURCE_URL/$file" -o source; then
+              echo "::error file=$file::Missing from AnkiQuest-Server master."
+              status=1
+              continue
+            fi
+
+            if ! cmp -s source "$file"; then
+              echo "::error file=$file::Differs from AnkiQuest-Server master; copy it from there."
+              diff -u source "$file" || true
+              status=1
+            fi
+          done
+          exit "$status"
 
   sync:
     needs: copy
