@@ -51,6 +51,8 @@ pub(crate) struct App {
     pub(crate) standings: StandingCache,
     pub(crate) heartbeat: worker::Heartbeat,
     pub(crate) rank_weeks: crate::boards::RankWeeks,
+    /// Crash reports each client address sent in the last hour.
+    pub(crate) crash_reports: crate::crash_reports::Limiter,
 }
 
 impl App {

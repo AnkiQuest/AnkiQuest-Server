@@ -25,6 +25,7 @@ async function visit(browser: Browser, dev: boolean, width = 390) {
     if (pathname === '/api/dev/hill/stats') return route.fulfill({json: stats});
     if (pathname === '/api/dev/hill/groups') return route.fulfill({json: [{id: 1, name: 'Book club', members: 4}, {id: 2, name: 'Night owls', members: 2}]});
     if (pathname === '/api/dev/hill/errors') return route.fulfill({json: [{at: TODAY * DAY, user: null, message: 'tick failed: disk full'}]});
+    if (pathname === '/api/dev/hill/crash-reports') return route.fulfill({json: [{id: 7, received_at: TODAY * DAY, app_version_code: 22100300, app_version_name: '2.21.0-quest', android_version: '14', exception: 'java.lang.IllegalStateException: <boom>'}]});
     if (pathname === '/api/dev/hill/announcements' && request.method() === 'POST') {
       const body = request.postDataJSON();
       posted.push({csrf: request.headers()['x-ankiquest-csrf'] ?? null, body});
@@ -44,6 +45,7 @@ async function visit(browser: Browser, dev: boolean, width = 390) {
     link: await page.locator('.site-dev').isVisible(),
     text: (await page.locator('main').innerText()).replace(/\s+/g, ' '),
     rows: await page.locator('#dev-days tbody tr').count(),
+    crash: dev ? await page.locator('#dev-crashes a').getAttribute('href') : null,
     posted,
     status: '',
     listed: '',
@@ -71,7 +73,8 @@ test('devs see totals and send announcements to chosen groups; others are told n
     const dev = await visit(browser, true);
     assert.equal(dev.link, true);
     assert.equal(dev.rows, 30);
-    for (const text of ['12', '3 configured · 8 accounts · 1 sync only', '50%', 'largest 4 · median 3', 'tick failed: disk full', 'None yet.']) assert.ok(dev.text.includes(text), text);
+    assert.equal(dev.crash, '/api/dev/hill/crash-reports/7');
+    for (const text of ['12', '3 configured · 8 accounts · 1 sync only', '50%', 'largest 4 · median 3', 'tick failed: disk full', 'None yet.', 'java.lang.IllegalStateException: <boom>', '2.21.0-quest · Android 14']) assert.ok(dev.text.includes(text), text);
     assert.deepEqual(dev.posted, [{csrf: '1', body: {title: 'Update', body: 'New quests this week', groups: [1]}}]);
     assert.equal(dev.status, 'Sent to 4 players.');
     assert.ok(dev.listed.includes('Update New quests this week'), dev.listed);

@@ -284,4 +284,17 @@ the app's native community calendar, reminder settings and conquered-card screen
 
 `GET /api/conquests/{user}/{at}` answers a conquered card the viewer may see: `user`, `display`, `conquest` (`at`, the answer that conquered it, and `since`, its first answer, both ms; `lapses`, `answers` and `leech`) and `label` when its owner said what the card was. The owner also gets `told` (whether friends have been told), `friends` (how many there are), `undo_until` (ms) while telling friends can still be taken back, and `win`: the id of the conquest's win, to share its card through `POST /api/share/{user}` with `{ "win", "to": "link" }`. A conquest announced before the server kept wins gets its win when its owner opens it, kept quietly with no stats and never sent to friends by an automatic sharing policy; only a conquest the worker has not announced yet has no `win`, so ask again shortly. `POST /api/conquests/{user}/{at}/tell` tells the owner's friends once and answers `{ "told" }`, the friends it reached; `DELETE` on the same path takes it back for a day after telling, unless a friend cheered or answered it since: friends who have not read it lose the row and can be told again, those who read it keep it, and a push already delivered stays on their phone. It answers `{ "retracted" }`, the rows taken back (`0` when friends were not told, so asking twice is harmless), or `409` once it is too late; `POST /api/conquests/{user}/{at}/label` with `{ "label" }` and `DELETE` on the same path set and remove the label and answer `204`. A card that cannot be found or seen is `404`. examples: `conquest.json`, `conquest_tell.json` and `conquest_untell.json`.
 
+## crash reports
+
+`POST /api/crash-reports` takes a crash report as the app's ACRA (5.13) `HttpSender` sends it with `HttpSender.Method.POST` and `StringFormat.JSON`: the report's JSON object as the body, `Content-Type: application/json`. It needs no credential, also on a private site. Answers:
+
+| status | when |
+|---|---|
+| `204` | stored |
+| `400` | the body is not a JSON object |
+| `413` | the body is over 256 KiB (262,144 bytes) |
+| `429` | this client address (an IPv6 /64) sent 10 reports in the last hour |
+
+Before storing, the server removes `USER_EMAIL`, `DEVICE_ID`, `INSTALLATION_ID`, `android_id`, `ankiquestToken`, `ankiquestUser` and `ankiquestUrl` wherever they appear; in `SHARED_PREFERENCES`, every key starting with `ankiquest` (any case) and AnkiDroid's `username`, `hkey`, `currentSyncUri` and `browser_search_history`; and replaces anything that looks like a token in any string (a run of letters, digits, `-` and `_` at least 32 long with both letters and digits, or the word after `Bearer`) with `[removed]`. `REPORT_ID` is kept as sent. Reports are deleted after 30 days. Devs read them in the dev console (see [server.md](server.md#dev-console)). examples: `crash_report.json` (as sent) and `crash_report_stored.json` (what is kept).
+
 the privacy notice (`/privacy`) is an HTML page filled in with the operator's own details; there is no JSON for it, and apps open it in the browser.

@@ -23,6 +23,7 @@ mod companions;
 mod competition;
 mod config;
 mod conquests;
+mod crash_reports;
 #[cfg(test)]
 mod day_verdicts;
 mod deck_copies;
@@ -216,6 +217,7 @@ async fn main() -> Result<(), Error> {
         standings: Default::default(),
         heartbeat: Default::default(),
         rank_weeks: Default::default(),
+        crash_reports: Default::default(),
         store: Mutex::new(store),
     });
 
@@ -266,6 +268,7 @@ fn router(app: Arc<App>) -> Router {
         .merge(cards::routes())
         .merge(capabilities::routes())
         .merge(synced_settings::routes())
+        .merge(crash_reports::routes())
         .route("/api/health", get(worker::health))
         .route("/", get(index))
         .route("/records", get(index))

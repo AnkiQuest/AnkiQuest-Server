@@ -1,0 +1,50 @@
+{
+  "ANDROID_VERSION": "14",
+  "APP_VERSION_CODE": 22100300,
+  "APP_VERSION_NAME": "2.21.0-quest",
+  "AVAILABLE_MEM_SIZE": 81623904256,
+  "BRAND": "google",
+  "BUILD": {
+    "BRAND": "google",
+    "MODEL": "Pixel 8",
+    "VERSION": {
+      "RELEASE": "14",
+      "SDK_INT": 34
+    }
+  },
+  "BUILD_CONFIG": {
+    "BUILD_TYPE": "release",
+    "FLAVOR": "quest",
+    "VERSION_CODE": 22100300
+  },
+  "CRASH_CONFIGURATION": {
+    "locale": "en_US",
+    "orientation": "ORIENTATION_PORTRAIT"
+  },
+  "CUSTOM_DATA": {
+    "WEBVIEW_VER_CODE": "677813533",
+    "WEBVIEW_VER_NAME": "131.0.6778.135"
+  },
+  "ENVIRONMENT": {
+    "getDataDirectory": "/data"
+  },
+  "FILE_PATH": "/data/user/0/com.ichi2.anki.quest/files",
+  "LOGCAT": "10-28 10:29:57.901 I/AnkiQuest: upload 12 reviews\n10-28 10:29:57.950 D/AnkiQuest: Authorization: Bearer [removed]\n",
+  "PACKAGE_NAME": "com.ichi2.anki.quest",
+  "PHONE_MODEL": "Pixel 8",
+  "PRODUCT": "shiba",
+  "REPORT_ID": "5c1d4b1e-8a5f-4b8e-9b0e-2f8b5d0a6c11",
+  "SHARED_PREFERENCES": {
+    "default": {
+      "dayTheme": "1",
+      "reviewer_zoom": 100
+    }
+  },
+  "STACK_TRACE": "java.lang.IllegalStateException: Deck list not loaded\n\tat com.ichi2.anki.DeckPicker.onResume(DeckPicker.kt:812)\n\tat android.app.Activity.performResume(Activity.java:8936)\n",
+  "STACK_TRACE_HASH": "5f1e6a2b",
+  "THREAD_DETAILS": "id=2\nname=main\npriority=5\n",
+  "TOTAL_MEM_SIZE": 117934768128,
+  "USER_APP_START_DATE": "2026-10-28T10:12:03.511+00:00",
+  "USER_COMMENT": "",
+  "USER_CRASH_DATE": "2026-10-28T10:29:58.024+00:00"
+}

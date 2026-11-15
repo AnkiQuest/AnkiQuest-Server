@@ -1,0 +1,42 @@
+{
+  "REPORT_ID": "5c1d4b1e-8a5f-4b8e-9b0e-2f8b5d0a6c11",
+  "APP_VERSION_CODE": 22100300,
+  "APP_VERSION_NAME": "2.21.0-quest",
+  "PACKAGE_NAME": "com.ichi2.anki.quest",
+  "FILE_PATH": "/data/user/0/com.ichi2.anki.quest/files",
+  "PHONE_MODEL": "Pixel 8",
+  "ANDROID_VERSION": "14",
+  "BUILD": {
+    "BRAND": "google",
+    "MODEL": "Pixel 8",
+    "VERSION": {"SDK_INT": 34, "RELEASE": "14"}
+  },
+  "BRAND": "google",
+  "PRODUCT": "shiba",
+  "TOTAL_MEM_SIZE": 117934768128,
+  "AVAILABLE_MEM_SIZE": 81623904256,
+  "BUILD_CONFIG": {"BUILD_TYPE": "release", "FLAVOR": "quest", "VERSION_CODE": 22100300},
+  "CUSTOM_DATA": {"WEBVIEW_VER_NAME": "131.0.6778.135", "WEBVIEW_VER_CODE": "677813533"},
+  "STACK_TRACE": "java.lang.IllegalStateException: Deck list not loaded\n\tat com.ichi2.anki.DeckPicker.onResume(DeckPicker.kt:812)\n\tat android.app.Activity.performResume(Activity.java:8936)\n",
+  "STACK_TRACE_HASH": "5f1e6a2b",
+  "CRASH_CONFIGURATION": {"orientation": "ORIENTATION_PORTRAIT", "locale": "en_US"},
+  "USER_COMMENT": "",
+  "USER_APP_START_DATE": "2026-10-28T10:12:03.511+00:00",
+  "USER_CRASH_DATE": "2026-10-28T10:29:58.024+00:00",
+  "LOGCAT": "10-28 10:29:57.901 I/AnkiQuest: upload 12 reviews\n10-28 10:29:57.950 D/AnkiQuest: Authorization: Bearer 0f3c9a7b1e2d4c6f8a0b2c4d6e8f0a1b3c5d7e9f1a2b3c4d5e6f7a8b9c0d1e2f\n",
+  "INSTALLATION_ID": "a2b4c6d8-0000-4000-8000-123456789abc",
+  "USER_EMAIL": "N/A",
+  "ENVIRONMENT": {"getDataDirectory": "/data"},
+  "SHARED_PREFERENCES": {
+    "default": {
+      "ankiquestToken": "0f3c9a7b1e2d4c6f8a0b2c4d6e8f0a1b3c5d7e9f1a2b3c4d5e6f7a8b9c0d1e2f",
+      "ankiquestUser": "ana",
+      "ankiquestUrl": "https://anki.example.test",
+      "username": "ana@example.test",
+      "hkey": "example-hkey",
+      "dayTheme": "1",
+      "reviewer_zoom": 100
+    }
+  },
+  "THREAD_DETAILS": "id=2\nname=main\npriority=5\n"
+}
