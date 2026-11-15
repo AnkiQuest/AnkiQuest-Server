@@ -220,7 +220,7 @@ pub fn run(args: &[String]) -> ExitCode {
     }
 }
 
-/// Runs the add-on pose exporter: `[--check | --replace]`.
+/// Runs the add-on pose exporter: `[--check | --replace] <desktop-checkout>`.
 pub fn addon(args: &[String]) -> ExitCode {
     addon::run(args)
 }
