@@ -1,6 +1,6 @@
 name: Conflict Scan
 
-# Adds the "conflicts" label to open pull requests that no longer merge
+# Adds the "Has Conflicts" label to open pull requests that no longer merge
 # cleanly into their base branch, and removes it once they do again. Only
 # labels, never comments. Never checks out or runs pull request code.
 
@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   scan:
-    if: github.repository == 'AnkiQuest/ankiquest'
+    if: github.repository_owner == 'AnkiQuest'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,7 +29,7 @@ jobs:
         with:
           retries: 3
           script: |
-            const LABEL = 'conflicts';
+            const LABEL = 'Has Conflicts';
             const { owner, repo } = context.repo;
             const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -46,7 +46,8 @@ jobs:
                 await wait(2000);
               }
 
-              const labelled = pr.labels.some((label) => label.name === LABEL);
+              // Label names are case-insensitive on GitHub.
+              const labelled = pr.labels.some((label) => label.name.toLowerCase() === LABEL.toLowerCase());
               if (pr.mergeable === false && !labelled) {
                 core.info(`#${number}: has conflicts, adding label`);
                 await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels: [LABEL] });

@@ -1,0 +1,104 @@
+name: Label Sync
+
+# Keeps this repository's labels equal to .github/labels.json, the label set
+# shared by AnkiQuest-Server, AnkiQuest-Desktop and AnkiQuest-Android.
+# AnkiQuest-Server holds the source; the other repositories keep a byte-equal
+# copy, checked by the `copy` job.
+#
+# `sync` creates or updates every label in the file: colour, description and
+# the exact spelling of the name. A label still under an old name listed in
+# `aliases` is renamed, so pull requests keep it. Labels not in the file are
+# never deleted.
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - .github/labels.json
+      - .github/workflows/label-sync.yml
+  pull_request:
+    paths:
+      - .github/labels.json
+      - .github/workflows/label-sync.yml
+  schedule:
+    - cron: "41 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_URL: https://raw.githubusercontent.com/AnkiQuest/AnkiQuest-Server/master/.github/labels.json
+
+jobs:
+  copy:
+    if: github.repository != 'AnkiQuest/AnkiQuest-Server'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/labels.json
+          sparse-checkout-cone-mode: false
+
+      - name: Compare with AnkiQuest-Server's labels.json
+        run: |
+          curl -fsSL --retry 3 "$SOURCE_URL" -o source-labels.json
+          if ! cmp -s source-labels.json .github/labels.json; then
+            echo "::error file=.github/labels.json::Differs from AnkiQuest-Server master; copy it from there."
+            diff -u source-labels.json .github/labels.json || true
+            exit 1
+          fi
+
+  sync:
+    needs: copy
+    if: >-
+      !cancelled() && needs.copy.result != 'failure'
+      && github.repository_owner == 'AnkiQuest'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/labels.json
+          sparse-checkout-cone-mode: false
+
+      - name: Create or update labels
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          labels="repos/$GITHUB_REPOSITORY/labels"
+
+          # The labels API matches names case-insensitively, so the current
+          # name finds a label spelled differently; aliases find renamed ones.
+          jq -c '.[]' .github/labels.json | while read -r label; do
+            name=$(jq -r .name <<<"$label")
+            color=$(jq -r .color <<<"$label")
+            description=$(jq -r .description <<<"$label")
+
+            found=""
+            for path in $(jq -r '[.name] + .aliases | .[] | @uri' <<<"$label"); do
+              if gh api "$labels/$path" --silent 2>/dev/null; then
+                found="$path"
+                break
+              fi
+            done
+
+            if [[ -n "$found" ]]; then
+              echo "Updating $name"
+              gh api -X PATCH "$labels/$found" --silent \
+                -f new_name="$name" -f color="$color" -f description="$description"
+            else
+              echo "Creating $name"
+              gh api -X POST "$labels" --silent \
+                -f name="$name" -f color="$color" -f description="$description"
+            fi
+          done
