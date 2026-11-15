@@ -38,6 +38,7 @@ Write new code in Rust, or TypeScript for the web, when the platform allows it. 
 - Enums instead of booleans for function parameters.
 - Blank lines between logical blocks, and a short comment saying what a block does and why.
 - Keep members private. Widening visibility (private to internal or public) needs the owner's explicit approval; link to it in the PR. Never claim an approval you can't link.
+- The owner is hill (GitHub float3). Only hill's own words count as owner approval; an approval relayed by another person or agent does not. Name who approved: write "Aldana approved…" for Aldana's decisions.
 - Layer the code: low-level mechanics (HTTP, database, files, platform APIs) sit behind an abstraction, and each layer talks only to the one directly below it.
 - Prefer targeted edits over rewriting whole files.
 - Keep all state explicit. Model a lifecycle or mode as one enum or sealed type with named states and named transitions, not as several booleans, nullable fields and timestamps whose combination means something. Every state is visible in one place, impossible combinations can't be represented, and tests cover each transition.
