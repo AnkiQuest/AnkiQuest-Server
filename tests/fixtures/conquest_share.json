@@ -20,7 +20,7 @@
       "found": {"conquest": {"at": 86400000, "since": 86400000, "lapses": 2, "answers": 4}, "label": null, "suggestion": "private draft", "fields": {"Front": "private"}},
       "deck": "",
       "caption": "I finally learned a card I had forgotten 2 times.",
-      "picture": "I finally learned a card I had forgotten 2 times.\n4 answers\n0 days to learn"
+      "picture": "I finally learned a card I had forgotten 2 times.\n4 answers\n1 day to learn"
     },
     {
       "name": "Unicode label and chosen name stay intact",
@@ -29,5 +29,14 @@
       "caption": "I finally learned “日本語”, a card I had forgotten 3 times.\nFrom my deck “Español”.",
       "picture": "I finally learned “日本語”, a card I had forgotten 3 times.\nFrom my deck “Español”.\n6 answers\n2 days to learn"
     }
+  ],
+  "days": [
+    {"elapsed_ms": 0, "expected": 1},
+    {"elapsed_ms": -86400000, "expected": 1},
+    {"elapsed_ms": 43200000, "expected": 1},
+    {"elapsed_ms": 129599999, "expected": 1},
+    {"elapsed_ms": 129600000, "expected": 2},
+    {"elapsed_ms": 215999999, "expected": 2},
+    {"elapsed_ms": 216000000, "expected": 3}
   ]
 }
