@@ -55,7 +55,8 @@ Write new code in Rust, or TypeScript for the web, when the platform allows it. 
 ## Git and pull requests
 
 - Start each session with `git fetch` and work from the latest default branch.
-- Never push to the default branch; open a pull request and merge only when every check is green on its final commit.
+- Never push to the default branch; open a pull request.
+- Pull requests by hill or Claude need an approving review from Aldana or Astra (the AldanaBRZ account). Pull requests by Aldana or Astra need an approving review from hill or Claude (the float3 account). One approval from the other side is enough; merge only once it is given and every check is green on the final commit.
 - Commit messages: subject in the imperative, capitalised, at most 50 characters (72 hard limit), no full stop; a blank line; a body wrapped at 72 characters that explains what and why, not how.
 - Disclose AI help with an `Assisted-by: <tool and version>` trailer.
 - Never link to an agent session (such as `claude.ai/code/session_…`) in commits, pull requests, issues or comments.
