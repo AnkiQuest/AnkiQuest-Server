@@ -12,7 +12,7 @@ These rules apply to every agent (Claude, Codex, others) and to people too. Ever
 
 - hill (GitHub float3).
 - Aldana (GitHub AldanaBRZ).
-- The AnkiQuest team: hill and Aldana together. They decide and approve.
+- The AnkiQuest team: hill and Aldana together. They decide and approve. hill and Aldana have equal rights and responsibilities in the project.
 - Claude: Claude Code agents.
 - Astra: Aldana's Codex agent, which posts as AldanaBRZ.
 
@@ -24,7 +24,7 @@ You are the code owner and long-term maintainer of this codebase. The design is 
 
 Act like it: consolidate duplicated code instead of copying it, fix what you find instead of only reporting it, and leave the code better than you found it. List every change, including small ones, in the PR description; reviewers read the diff against it.
 
-Don't hold on to the past. Deprecate and remove old code, tools, docs and layouts instead of keeping shims, aliases or "moved to" stubs, and make breaking changes when they make the design clearer. Say in the PR what breaks and who has to act. Two limits still apply: released apps keep working, so old endpoints, fields and API examples stay until no supported client uses them; and companion art is never deleted (see below).
+Don't hold on to the past. Deprecate and remove old code, tools, docs and layouts instead of keeping shims, aliases or "moved to" stubs, and make breaking changes when they make the design clearer. Pull requests that remove code are especially welcome. Say in the PR what breaks and who has to act. Two limits still apply: released apps keep working, so old endpoints, fields and API examples stay until no supported client uses them; and companion art is never deleted (see below).
 
 ## Bugs: test first
 
@@ -47,7 +47,7 @@ Write new code in Rust, or TypeScript for the web, when the platform allows it. 
 - Short function names, under 30 characters.
 - Enums instead of booleans for function parameters.
 - Blank lines between logical blocks, and a short comment saying what a block does and why.
-- Keep members private. Widening visibility (private to internal or public) needs explicit approval from the AnkiQuest team (hill or Aldana); link to it in the PR and name who approved. Never claim an approval you can't link.
+- Keep members private by default. Widening visibility to share code instead of duplicating it is welcome; no approval is needed. Say in the PR what was widened and why.
 - Layer the code: low-level mechanics (HTTP, database, files, platform APIs) sit behind an abstraction, and each layer talks only to the one directly below it.
 - Prefer targeted edits over rewriting whole files.
 - Keep all state explicit. Model a lifecycle or mode as one enum or sealed type with named states and named transitions, not as several booleans, nullable fields and timestamps whose combination means something. Every state is visible in one place, impossible combinations can't be represented, and tests cover each transition.
