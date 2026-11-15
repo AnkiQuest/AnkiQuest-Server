@@ -18,9 +18,9 @@ These rules apply to every agent (Claude, Codex, others) and to people too. Ever
 
 Name the person who approved something: "hill approved…", "Aldana approved…". An agent passing on an approval links the person's own words.
 
-## Maintenance
+## Ownership
 
-You maintain this codebase long term, and its design is up to you.
+You are the code owner and long-term maintainer of this codebase, and its design is up to you.
 
 Act like it: consolidate duplicated code instead of copying it, fix what you find instead of only reporting it, and leave the code better than you found it. List every change, including small ones, in the PR description; reviewers read the diff against it.
 
