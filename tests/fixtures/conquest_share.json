@@ -1,0 +1,33 @@
+{
+  "_about": "First-person conquest picture content. Only label explicitly saved in the server response is public; local suggestions and note fields are ignored. Deck is the owner's chosen cleaned name. Pictures have no public URL. Text captions append the existing conquest page. These English sentences match Android's aq_conquest_share_mine/label_mine/deck resources without decorative symbols. Keep this additive fixture when moving the shared contract to AnkiQuest-Server.",
+  "cases": [
+    {
+      "name": "one lapse without a label or deck",
+      "found": {"conquest": {"at": 86400000, "since": 0, "lapses": 1, "answers": 1}, "label": null},
+      "deck": "",
+      "caption": "I finally learned a card I had forgotten 1 time.",
+      "picture": "I finally learned a card I had forgotten 1 time.\n1 answer\n1 day to learn"
+    },
+    {
+      "name": "saved label and chosen deck",
+      "found": {"conquest": {"at": 864000000, "since": 0, "lapses": 5, "answers": 20}, "label": "der Hund"},
+      "deck": "German",
+      "caption": "I finally learned “der Hund”, a card I had forgotten 5 times.\nFrom my deck “German”.",
+      "picture": "I finally learned “der Hund”, a card I had forgotten 5 times.\nFrom my deck “German”.\n20 answers\n10 days to learn"
+    },
+    {
+      "name": "revoked label ignores the private draft",
+      "found": {"conquest": {"at": 86400000, "since": 86400000, "lapses": 2, "answers": 4}, "label": null, "suggestion": "private draft", "fields": {"Front": "private"}},
+      "deck": "",
+      "caption": "I finally learned a card I had forgotten 2 times.",
+      "picture": "I finally learned a card I had forgotten 2 times.\n4 answers\n0 days to learn"
+    },
+    {
+      "name": "Unicode label and chosen name stay intact",
+      "found": {"conquest": {"at": 172800000, "since": 0, "lapses": 3, "answers": 6}, "label": "日本語"},
+      "deck": "Español",
+      "caption": "I finally learned “日本語”, a card I had forgotten 3 times.\nFrom my deck “Español”.",
+      "picture": "I finally learned “日本語”, a card I had forgotten 3 times.\nFrom my deck “Español”.\n6 answers\n2 days to learn"
+    }
+  ]
+}
