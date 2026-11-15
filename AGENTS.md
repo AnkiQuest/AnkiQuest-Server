@@ -1,6 +1,12 @@
 # Agent instructions
 
-AnkiQuest-Server is the AnkiQuest server (Rust), its web pages (TypeScript), the shared fixtures and the companion art masters. The clients live in [AnkiQuest/AnkiQuest-Android](https://github.com/AnkiQuest/AnkiQuest-Android) and [AnkiQuest/AnkiQuest-Desktop](https://github.com/AnkiQuest/AnkiQuest-Desktop) (the Anki desktop add-on). These rules apply to every agent (Claude, Codex, others) and to people too.
+AnkiQuest adds XP, streaks, friends, leaderboards and moments to Anki. It has three repositories:
+
+- [AnkiQuest/AnkiQuest-Server](https://github.com/AnkiQuest/AnkiQuest-Server): the server (Rust), its web pages (TypeScript), the API examples, the shared fixtures and the companion art masters.
+- [AnkiQuest/AnkiQuest-Desktop](https://github.com/AnkiQuest/AnkiQuest-Desktop): the Anki desktop add-on (Python).
+- [AnkiQuest/AnkiQuest-Android](https://github.com/AnkiQuest/AnkiQuest-Android): the Android app (Kotlin), a fork of AnkiDroid.
+
+These rules apply to every agent (Claude, Codex, others) and to people too. Everything above "This repository" is the same in all three repositories: change it in AnkiQuest-Server first, then copy it to the other two. CI fails while a copy differs.
 
 ## Ownership
 
@@ -8,7 +14,7 @@ You are the owner and long-term maintainer of this codebase, and its design is u
 
 Act like it: consolidate duplicated code instead of copying it, fix what you find instead of only reporting it, and leave the code better than you found it. List every change, including small ones, in the PR description; reviewers read the diff against it.
 
-- Don't hold on to the past. Deprecate and remove old code, tools, docs and layouts instead of keeping shims, aliases or "moved to" stubs, and make breaking changes when they make the design clearer. Say in the PR what breaks and who has to act. The rules on released apps and companion art below still apply.
+Don't hold on to the past. Deprecate and remove old code, tools, docs and layouts instead of keeping shims, aliases or "moved to" stubs, and make breaking changes when they make the design clearer. Say in the PR what breaks and who has to act. Two limits still apply: released apps keep working, so old endpoints, fields and API examples stay until no supported client uses them; and companion art is never deleted (see below).
 
 ## Bugs: test first
 
@@ -51,7 +57,7 @@ Write new code in Rust, or TypeScript for the web, when the platform allows it. 
 AnkiQuest has two clients: the Android app ([AnkiQuest/AnkiQuest-Android](https://github.com/AnkiQuest/AnkiQuest-Android)) and the Anki desktop add-on (`addon/` in [AnkiQuest/AnkiQuest-Desktop](https://github.com/AnkiQuest/AnkiQuest-Desktop)). A player should get the same AnkiQuest on both.
 
 - A user-facing feature or behaviour change lands on both clients, unless the platform can't do it (home-screen widgets, for example). Do both in one go when you can. Otherwise open an issue in the other repository, labelled `parity`, and link it from the PR.
-- Rules both clients compute (streak verdicts, heatmap, card labels, deck names) are defined once, as cases in `tests/fixtures/*.json` in AnkiQuest/AnkiQuest-Server. Both clients test against the same cases. Change the fixture first, then both implementations.
+- Rules both clients compute (streak verdicts, heatmap, card labels, deck names) are defined once, as cases in `tests/fixtures/*.json` in [AnkiQuest/AnkiQuest-Server](https://github.com/AnkiQuest/AnkiQuest-Server/tree/master/tests/fixtures). Both clients test against the same cases. Change the fixture first, then both implementations.
 - Use the same names, wording and order for the same thing on both clients.
 - When you find a gap between the clients, open a `parity` issue for it.
 
@@ -62,7 +68,7 @@ Companion art means every picture of a character: poses, moment and card picture
 - Never delete companion art, even when nothing uses it any more. Remove the references, keep the files, so they can be reused or merged later.
 - Each character needs a core set of poses before it goes live in the apps: face, asleep, happy, streak (on fire), sad, hopeful, frozen and neglected. A character without the full core set stays hidden.
 - Every other pose is an extension: streak tiers, milestones, frozen days 2 and 3, hurt, dead, welcome, a defeated leech, and poses for other rare moments. Extensions are optional. A missing extension falls back to its core pose (a streak tier to streak, frozen 3 to frozen, a defeated leech to happy).
-- The core set, the extensions and their fallbacks are defined once, in `tests/fixtures/companion_poses.json`; both clients use that list.
+- The core set, the extensions and their fallbacks are defined once, in [`tests/fixtures/companion_poses.json`](https://github.com/AnkiQuest/AnkiQuest-Server/blob/master/tests/fixtures/companion_poses.json) in AnkiQuest-Server; both clients use that list.
 
 ## Writing
 
@@ -72,7 +78,10 @@ Mannered prose substitutes metaphor and flourish for direct statement. Instead o
 
 ## This repository
 
-- **Layout.** `src/` and `crates/`: the Rust server. `web/`: TypeScript for the pages in `static/`. `static/`: also the companion art masters. `tests/`: web tests (TypeScript) and the shared fixtures in `tests/fixtures/`. `crates/xtask` holds the repository tools (`cargo run -p ankiquest-xtask -- <command>`), including the art exporters for an Android or Desktop checkout. This repository has no Python; the add-on and its tests are in AnkiQuest/AnkiQuest-Desktop.
+AnkiQuest-Server holds the server, the website and everything both clients share.
+
+- **Layout.** `src/` and `crates/`: the Rust server. `web/`: TypeScript for the pages in `static/`. `static/`: also the companion art masters. `tests/`: web tests (TypeScript), the shared fixtures in `tests/fixtures/` and repository tools in `tests/tools/`. `crates/xtask` holds the Rust repository tools (`cargo run -p ankiquest-xtask -- <command>`), including the art exporters for an Android or Desktop checkout and the README banner. This repository has no Python; the add-on and its tests are in AnkiQuest-Desktop.
+- **Shared instructions.** Everything above "This repository" in this file is the source AnkiQuest-Desktop and AnkiQuest-Android copy; their CI compares their copy with this file on `master`. After changing it here, update both copies.
 - **API examples are a contract.** `docs/api/examples/*.json` and `tests/fixtures/*.json` are copied into the Android app at a pinned commit (AnkiQuest/AnkiQuest-Android#203); AnkiQuest-Desktop is to pin it the same way. Adding an example is fine: clients pick it up through their bump PRs. Never remove or reshape an example released apps read (#230); retire it only after Android stops reading it. Document API changes in `docs/mobile-api.md`.
 - **Released apps talk to the deployed server.** Keep old endpoints and fields working until no supported client uses them.
 - **Deployment** is the NixOS module in `flake.nix`, used from a separate NixOS configuration. Secrets are files on the hosts (passed with systemd `LoadCredential`), never values in this repository.
