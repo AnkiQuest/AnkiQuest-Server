@@ -1,6 +1,6 @@
 # Core pose additions
 
-Part of [#88](https://github.com/AnkiQuest/ankiquest/issues/88). This batch adds
+Part of [#88](https://github.com/AnkiQuest/AnkiQuest-Desktop/issues/88). This batch adds
 Aki's sad, hopeful, frozen and neglected poses, plus Anki-tan's full and chibi frozen poses. Pose selection belongs
 to the companion implementation; this change only supplies art and exports.
 
@@ -13,7 +13,7 @@ are Aki sad B, hopeful B, frozen A and neglected B, plus Anki-tan full C and chi
 include all 18 candidates. [Reusable prompts](prompts.md) split style from pose.
 
 The references are the existing Aki masters and Shigeyuki's Anki-tan asset pack
-from [#274](https://github.com/AnkiQuest/ankiquest/pull/274), commit
+from [#274](https://github.com/AnkiQuest/AnkiQuest-Desktop/pull/274), commit
 `cd46210748d5dd7daaaf0823804e3019c1df4425`. The full pose keeps her hand-drawn
 linework; the chibi keeps the emoji pack's stepped outlines and flat colours.
 Both show three headband stars. Aki keeps the orange/cream palette and indigo

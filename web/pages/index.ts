@@ -205,7 +205,7 @@ document.addEventListener("change", event => {
   render();
 });
 
-const ADDON_RELEASES = "https://github.com/AnkiQuest/ankiquest/releases/latest";
+const ADDON_RELEASES = "https://github.com/AnkiQuest/AnkiQuest-Desktop/releases/latest";
 const ANDROID_RELEASES = "https://github.com/AnkiQuest/AnkiQuest-Android/releases/latest";
 
 /** What AnkiQuest is and how to start, for visitors without an account on a server that takes sign-ups. */
