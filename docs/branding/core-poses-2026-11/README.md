@@ -1,16 +1,20 @@
 # Core pose additions
 
 Part of [#88](https://github.com/AnkiQuest/AnkiQuest-Desktop/issues/88). This batch adds
-Aki's sad, hopeful, frozen and neglected poses, plus Anki-tan's full and chibi frozen poses. Pose selection belongs
-to the companion implementation; this change only supplies art and exports.
+Aki's sad, hopeful, frozen and neglected poses, Ankilope's sad, hopeful,
+frozen, asleep and neglected poses, plus Anki-tan's full and chibi frozen
+poses. Pose selection belongs to the companion implementation; these
+batches supply art and exports.
 
 ![Existing references and new poses, on white and dark backgrounds](review.png)
 
 The images were generated with OpenAI's built-in image generation tool
 (`image_gen`). The tool did not expose its model identifier; no model name is
 asserted. Three candidates were generated for each pose. The selected candidates
-are Aki sad B, hopeful B, frozen A and neglected B, plus Anki-tan full C and chibi C. [Exact prompts](generation.json)
-include all 18 candidates. [Reusable prompts](prompts.md) split style from pose.
+are Aki sad B, hopeful B, frozen A and neglected B, plus Anki-tan full C and
+chibi C. Ankilope selections are sad A, hopeful B, frozen C, asleep A and
+neglected C. [Exact prompts](generation.json) include all 33 candidates.
+[Reusable prompts](prompts.md) split style from pose.
 
 The references are the existing Aki masters and Shigeyuki's Anki-tan asset pack
 from [#274](https://github.com/AnkiQuest/AnkiQuest-Desktop/pull/274), commit
@@ -33,7 +37,7 @@ large size and 32 px.
 
 Exports use the existing Rust tools: 1024 px WebP for Android and 256 px indexed
 PNG for desktop. Export Android art into an empty staging directory, then copy
-only the six new files; export desktop without `--replace`. Existing art stays
+only the eleven new files; export desktop without `--replace`. Existing art stays
 untouched. Android parity is supplied in a linked companion-art PR.
 
 [Desktop and Android export comparison](exports-review.png) checks the generated
@@ -44,6 +48,20 @@ PNG/WebP at the same visible size on white and dark backgrounds. Android parity:
 show both light and dark backgrounds. [Their desktop and Android exports](aki-core-exports.png)
 were also compared at the same visible size.
 
-This PR depends on the reference pack in #274. The icon exports in #277 are
-compatible and keep their own source names. The add-on settings credit from
-#287 is included with this first shipment of Anki-tan art, as the owner requested.
+The first batch shipped in #288 after the reference pack in #274 and icon
+exports in #277. It includes the add-on settings credit from #287, as the
+owner requested.
+
+[Ankilope’s five new core poses beside the existing references](ankilope-core-review.png)
+show white and dark backgrounds, with 64 px and 32 px copies. The frozen
+master uses `frozen`, distinct from a used-freeze picture. The asleep master
+uses the established `sleeping` export name.
+[Desktop and Android exports](ankilope-core-exports.png) are compared at
+matching sizes. Linux re-export at `0f12507` verified all five Android
+files byte for byte. Four desktop files also match; the hopeful PNG uses
+the canonical Linux export from `1fd6068` (SHA-256
+`8bc4f948b6ab82d32e47ffbf5100f25fb73fd95e03e498bd2223f39836d04585`).
+The preview sheet predates that palette-only change, whose alpha is
+unchanged. Existing art is preserved. Verification:
+[desktop #310](https://github.com/AnkiQuest/AnkiQuest-Desktop/pull/310#issuecomment-6894935747),
+[Android #323](https://github.com/AnkiQuest/AnkiQuest-Android/pull/323#issuecomment-6894937822).

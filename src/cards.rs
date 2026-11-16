@@ -56,57 +56,115 @@ pub(crate) struct Card {
     pub(crate) display: String,
     pub(crate) date: String,
     pub(crate) host: String,
-    /// The name of the embedded companion art, if the player has a companion.
-    pub(crate) art: Option<&'static str>,
+    /// The companion art, if the player has a companion with art.
+    pub(crate) art: Option<Art>,
     /// The player's avatar as PNG.
     pub(crate) avatar: Option<Vec<u8>>,
     pub(crate) seed: u64,
 }
 
-/// The cow's card art, made by [`cow_art`].
-const COW_ART: &str = "cow-celebrate";
+include!(concat!(env!("OUT_DIR"), "/art/cards.rs"));
 
-/// How far [`cow_art`] turns Ankilope's hues, in degrees, as CSS `hue-rotate` does on the web.
+/// The pose a card shows when its own and every fallback are missing.
+const HAPPY: &str = "happy";
+
+/// How far [`turn_purple`] turns Ankilope's hues, in degrees, as CSS `hue-rotate` does on the web.
 const COW_HUE_DEGREES: f32 = 250.0;
 
-/// The embedded art for `pose` of `companion`; Ankilope, the cow and unknown poses celebrate.
-pub(crate) fn art(companion: &str, pose: &str) -> Option<&'static str> {
-    match (companion, pose) {
-        ("none", _) | (_, "none") => None,
-        (crate::companions::COW, _) => Some(COW_ART),
-        ("ankilope", _) => Some("ankilope-celebrate"),
-        (_, "streak") => Some("aki-streak"),
-        (_, "winner") => Some("aki-winner"),
-        (_, "freeze") => Some("aki-freeze"),
-        _ => Some("aki-celebrate"),
+/// A share card's companion picture: one of [`CARD_ART`], shown one way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Art {
+    file: usize,
+    look: Look,
+}
+
+/// How a card shows its art file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Look {
+    /// As the master is drawn.
+    Master,
+    /// Turned purple: the cow borrows Ankilope's art until it has its own (#88).
+    Cow,
+}
+
+impl Look {
+    const COUNT: usize = 2;
+
+    fn index(self) -> usize {
+        match self {
+            Look::Master => 0,
+            Look::Cow => 1,
+        }
     }
 }
 
-/// The decoded art called `name`, decoded once.
-fn art_pixmap(name: &str) -> Option<&'static tiny_skia::Pixmap> {
-    const NAMES: [&str; 6] = [
-        "aki-celebrate",
-        "aki-streak",
-        "aki-winner",
-        "aki-freeze",
-        "ankilope-celebrate",
-        COW_ART,
-    ];
-    static DECODED: [OnceLock<Option<tiny_skia::Pixmap>>; 6] = [const { OnceLock::new() }; 6];
-    let index = NAMES.iter().position(|known| *known == name)?;
-    DECODED[index]
+impl Art {
+    /// What tells this art apart in the render cache.
+    fn key(self) -> String {
+        let (owner, stem, _) = CARD_ART[self.file];
+        format!("{owner}/{stem}/{:?}", self.look)
+    }
+}
+
+/// The pose list both clients use, read once.
+fn poses() -> &'static ankiquest_art::Poses {
+    static PARSED: OnceLock<ankiquest_art::Poses> = OnceLock::new();
+    PARSED.get_or_init(|| {
+        ankiquest_art::Poses::parse(include_str!("../tests/fixtures/companion_poses.json"))
+            .expect("the pose fixture parses")
+    })
+}
+
+/// The art for `pose` of `companion`. `pose` is a master's file name, as wins store it
+/// (`celebrate`), or a pose from the fixture (`happy`). A companion without that pose shows
+/// its fallback from the fixture, else its happy pose; one without art shows none.
+pub(crate) fn art(companion: &str, pose: &str) -> Option<Art> {
+    if pose == "none" {
+        return None;
+    }
+    let owner = crate::companions::art_owner(companion);
+    let file = |pose: &str| {
+        let stem = ankiquest_art::stem(pose);
+        CARD_ART
+            .iter()
+            .position(|(who, known, _)| *who == owner && *known == stem)
+    };
+
+    // Walk the fixture's fallbacks to a pose this companion has.
+    let pose = ankiquest_art::pose_of(pose);
+    let found = poses()
+        .resolve(pose, |pose| file(pose).is_some())
+        .unwrap_or(HAPPY);
+    let look = if companion == crate::companions::COW {
+        Look::Cow
+    } else {
+        Look::Master
+    };
+    Some(Art {
+        file: file(found)?,
+        look,
+    })
+}
+
+/// The decoded art, decoded once.
+fn art_pixmap(art: Art) -> Option<&'static tiny_skia::Pixmap> {
+    type Decoded = OnceLock<Option<tiny_skia::Pixmap>>;
+    static DECODED: [[Decoded; Look::COUNT]; CARD_ART.len()] =
+        [const { [const { OnceLock::new() }; Look::COUNT] }; CARD_ART.len()];
+    let (_, _, png) = CARD_ART.get(art.file)?;
+    DECODED[art.file][art.look.index()]
         .get_or_init(|| {
-            if name == COW_ART {
-                return cow_art();
+            let mut pixmap = tiny_skia::Pixmap::decode_png(png).ok()?;
+            if art.look == Look::Cow {
+                turn_purple(&mut pixmap);
             }
-            tiny_skia::Pixmap::decode_png(art_png(name)?).ok()
+            Some(pixmap)
         })
         .as_ref()
 }
 
-/// The cow's interim art: Ankilope's, turned purple, until the cow has its own (#88).
-fn cow_art() -> Option<tiny_skia::Pixmap> {
-    let mut pixmap = tiny_skia::Pixmap::decode_png(art_png("ankilope-celebrate")?).ok()?;
+/// Turns `pixmap` purple, as the cow's interim art: Ankilope's, until the cow has its own (#88).
+fn turn_purple(pixmap: &mut tiny_skia::Pixmap) {
     let matrix = hue_rotation(COW_HUE_DEGREES);
 
     // The matrix is linear, so it applies to premultiplied channels as is; each stays at or
@@ -119,7 +177,6 @@ fn cow_art() -> Option<tiny_skia::Pixmap> {
             *channel = value.round().clamp(0.0, alpha) as u8;
         }
     }
-    Some(pixmap)
 }
 
 /// The colour matrix of CSS `hue-rotate(degrees)` (Filter Effects Module, `feColorMatrix`).
@@ -142,17 +199,6 @@ fn hue_rotation(degrees: f32) -> [[f32; 3]; 3] {
             0.072 + cos * 0.928 + sin * 0.072,
         ],
     ]
-}
-
-fn art_png(name: &str) -> Option<&'static [u8]> {
-    Some(match name {
-        "aki-celebrate" => include_bytes!("../assets/cards/aki-celebrate.png"),
-        "aki-streak" => include_bytes!("../assets/cards/aki-streak.png"),
-        "aki-winner" => include_bytes!("../assets/cards/aki-winner.png"),
-        "aki-freeze" => include_bytes!("../assets/cards/aki-freeze.png"),
-        "ankilope-celebrate" => include_bytes!("../assets/cards/ankilope-celebrate.png"),
-        _ => return None,
-    })
 }
 
 struct Palette {
@@ -981,7 +1027,7 @@ fn cache_key(card: &Card, shape: Shape) -> [u8; 32] {
     field(card.display.as_bytes());
     field(card.date.as_bytes());
     field(card.host.as_bytes());
-    field(card.art.unwrap_or_default().as_bytes());
+    field(card.art.map(Art::key).unwrap_or_default().as_bytes());
     field(card.avatar.as_deref().unwrap_or_default());
     field(&card.seed.to_le_bytes());
     hash.finalize().into()
@@ -1336,7 +1382,7 @@ mod tests {
 
     use tower::ServiceExt;
 
-    fn sample(art: Option<&'static str>, avatar: Option<Vec<u8>>, kind: &str) -> Card {
+    fn sample(art: Option<Art>, avatar: Option<Vec<u8>>, kind: &str) -> Card {
         Card {
             kind: kind.into(),
             title: "Daily goal reached!".into(),
@@ -1458,20 +1504,74 @@ mod tests {
 
     #[test]
     fn art_follows_the_companion_and_falls_back_to_celebrate() {
-        assert_eq!(art("aki", "streak"), Some("aki-streak"));
-        assert_eq!(art("aki", "missing"), Some("aki-celebrate"));
-        assert_eq!(art("ankilope", "winner"), Some("ankilope-celebrate"));
-        assert_eq!(art("cow", "streak"), Some(COW_ART));
+        let file = |art: Option<Art>| art.map(|art| CARD_ART[art.file].0);
+        let stem = |art: Option<Art>| art.map(|art| CARD_ART[art.file].1);
+        assert_eq!(stem(art("aki", "streak")), Some("streak"));
+        assert_eq!(stem(art("aki", "missing")), Some("celebrate"));
+        assert_eq!(stem(art("ankilope", "winner")), Some("celebrate"));
+        assert_eq!(file(art("ankilope", "winner")), Some("ankilope"));
+        assert_eq!(stem(art("cow", "streak")), Some("celebrate"));
+        assert_eq!(art("cow", "streak").unwrap().look, Look::Cow);
         assert_eq!(art("none", "celebrate"), None);
-        for name in [
-            "aki-celebrate",
-            "aki-streak",
-            "aki-winner",
-            "aki-freeze",
-            "ankilope-celebrate",
-        ] {
-            assert!(art_png(name).is_some());
+        assert_eq!(art("aki", "none"), None);
+    }
+
+    #[test]
+    fn every_companion_with_masters_has_card_art() {
+        // build.rs exports every card pose each companion folder in static/ has.
+        let mut exported: Vec<_> = CARD_ART
+            .iter()
+            .map(|(who, stem, _)| format!("{who}/{stem}"))
+            .collect();
+        exported.sort();
+        assert_eq!(
+            exported,
+            [
+                "aki/celebrate",
+                "aki/freeze",
+                "aki/frozen",
+                "aki/streak",
+                "aki/winner",
+                "ankilope/celebrate",
+                "ankilope/frozen"
+            ]
+        );
+        for (_, _, png) in CARD_ART {
+            let pixmap = tiny_skia::Pixmap::decode_png(png).unwrap();
+            assert_eq!((pixmap.width(), pixmap.height()), (512, 512));
         }
+    }
+
+    #[test]
+    fn a_companion_without_art_shows_no_one_elses() {
+        // Anki-tan has no masters in static/ yet: her card must not show Aki.
+        for pose in ["celebrate", "streak", "winner", "freeze"] {
+            assert_eq!(art("anki_tan", pose), None, "{pose}");
+        }
+    }
+
+    #[test]
+    fn fixture_pose_names_pick_their_masters() {
+        // companion_poses.json names the happy pose; its master is celebrate.png. Frozen has
+        // its own master, apart from freeze.png (a used streak freeze).
+        let stem = |art: Option<Art>| art.map(|art| CARD_ART[art.file].1);
+        assert_eq!(art("aki", "happy"), art("aki", "celebrate"));
+        assert_eq!(stem(art("aki", "frozen")), Some("frozen"));
+        assert_eq!(stem(art("aki", "freeze")), Some("freeze"));
+        assert_eq!(stem(art("ankilope", "frozen")), Some("frozen"));
+        assert_eq!(stem(art("ankilope", "freeze")), Some("celebrate"));
+    }
+
+    #[test]
+    fn a_cow_card_shows_the_cow() {
+        let card = |companion| {
+            let mut card = sample(art(companion, "winner"), None, "place");
+            card.seed = 1;
+            render(&card, Shape::Square).unwrap()
+        };
+        let cow = card("cow");
+        assert_ne!(cow, card("aki"));
+        assert_ne!(cow, card("ankilope"));
     }
 
     #[test]
@@ -1503,8 +1603,8 @@ mod tests {
 
     #[test]
     fn the_cow_is_ankilope_turned_purple() {
-        let ankilope = art_pixmap("ankilope-celebrate").unwrap();
-        let cow = art_pixmap(COW_ART).unwrap();
+        let ankilope = art_pixmap(art("ankilope", "celebrate").unwrap()).unwrap();
+        let cow = art_pixmap(art("cow", "celebrate").unwrap()).unwrap();
         assert_eq!(cow.width(), ankilope.width());
         assert_eq!(cow.height(), ankilope.height());
 

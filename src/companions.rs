@@ -103,7 +103,7 @@ fn needed(companion: &str) -> Option<Unlock> {
 }
 
 /// Whose art draws `companion`. The cow has no art yet (#88), so it borrows Ankilope's, which
-/// `cards::cow_art` tints purple.
+/// `cards::turn_purple` tints.
 pub(crate) fn art_owner(companion: &str) -> &str {
     if companion == COW {
         "ankilope"

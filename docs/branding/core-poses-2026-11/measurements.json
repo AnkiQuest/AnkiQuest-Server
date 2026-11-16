@@ -112,5 +112,100 @@
       1023,
       1156
     ]
+  },
+  {
+    "candidate": "ankilope-sad-a",
+    "master": "static/ankilope/sad.png",
+    "source_sha256": "88b6b749035d461e07c346477c839463ca0177e2beab5aad7fa8b251c7666afb",
+    "output_sha256": "60f07754440d9e2b3c8cbceec5ee3bc4a367fe79876ecf0506ca21d2deb9aed1",
+    "size": [
+      1254,
+      1254
+    ],
+    "alpha_1_to_4_removed": 11581,
+    "isolated_alpha_5_to_16_removed": 233,
+    "isolated_max_alpha": 8,
+    "bounds": [
+      172,
+      26,
+      1060,
+      1237
+    ]
+  },
+  {
+    "candidate": "ankilope-hopeful-b",
+    "master": "static/ankilope/hopeful.png",
+    "source_sha256": "b907227fbb60fed3b1be2935f16cb58e00ebc16e862348b7163af90a0a30a2e0",
+    "output_sha256": "8c8732b343455c407299d23d9f60636d8ba197fcfd9e4c64bd52f6e20a24d0bc",
+    "size": [
+      1254,
+      1254
+    ],
+    "alpha_1_to_4_removed": 18323,
+    "isolated_alpha_5_to_16_removed": 211,
+    "isolated_max_alpha": 8,
+    "bounds": [
+      248,
+      14,
+      1101,
+      1237
+    ]
+  },
+  {
+    "candidate": "ankilope-frozen-c",
+    "master": "static/ankilope/frozen.png",
+    "source_sha256": "f4bddcf42d16427076d0e7fceab1b955519ec14e27fb368f32827c867eef6738",
+    "output_sha256": "3532dbcc133ace7a523fc940fa36dca988fc63b707ee71128054e678049fc5fc",
+    "size": [
+      1254,
+      1254
+    ],
+    "alpha_1_to_4_removed": 18945,
+    "isolated_alpha_5_to_16_removed": 238,
+    "isolated_max_alpha": 8,
+    "bounds": [
+      148,
+      34,
+      1165,
+      1233
+    ]
+  },
+  {
+    "candidate": "ankilope-asleep-a",
+    "master": "static/ankilope/sleeping.png",
+    "source_sha256": "d24a1de0ccbb55c5ccb894c967ce87da9da162cf805b7fc541cf53443787f76c",
+    "output_sha256": "242059c9cffb2597c28e5178a2d282cad14902c9fa680474d3f0e8e96a1aae44",
+    "size": [
+      1254,
+      1254
+    ],
+    "alpha_1_to_4_removed": 19669,
+    "isolated_alpha_5_to_16_removed": 337,
+    "isolated_max_alpha": 7,
+    "bounds": [
+      43,
+      195,
+      1177,
+      1028
+    ]
+  },
+  {
+    "candidate": "ankilope-neglected-c",
+    "master": "static/ankilope/neglected.png",
+    "source_sha256": "baee27ddce82eec81488d55947297cb0f293b79f8f560f7d70ceaef1f63b91ad",
+    "output_sha256": "18c159572fb34acfd4a495cafe89580a6df5565d618fda59d03d8b86a3fadc15",
+    "size": [
+      1254,
+      1254
+    ],
+    "alpha_1_to_4_removed": 16423,
+    "isolated_alpha_5_to_16_removed": 184,
+    "isolated_max_alpha": 9,
+    "bounds": [
+      154,
+      27,
+      1097,
+      1235
+    ]
   }
 ]
