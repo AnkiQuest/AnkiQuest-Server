@@ -374,7 +374,7 @@ pub(crate) fn by_token(conn: &Connection, token: &str) -> Option<(String, Win)> 
     .map(|win| (win.user.clone(), win))
 }
 
-/// The link token of `user`'s win `id`, made once; `None` when the win is not theirs.
+/// The link token of `user`'s win `id`, made once; `None` for decks or another player's win.
 pub(crate) fn ensure_link(
     conn: &Connection,
     user: &str,
@@ -383,6 +383,10 @@ pub(crate) fn ensure_link(
     let Some(win) = find(conn, user, id)? else {
         return Ok(None);
     };
+    // A deck's chosen name belongs only to its player and chosen recipients.
+    if win.kind == "deck" {
+        return Ok(None);
+    }
     if let Some(token) = win.link_token {
         return Ok(Some(token));
     }
@@ -686,7 +690,10 @@ async fn get_wins(
             Ok(Listed {
                 share_title: share(&share_title),
                 share_body: share(&share_body),
-                policy: policies.get(&win.kind).cloned().unwrap_or_default(),
+                policy: policies
+                    .get(&win.kind)
+                    .cloned()
+                    .unwrap_or_else(|| "private".into()),
                 link: win.link_token.as_deref().map(|token| link(&base, token)),
                 id: win.id,
                 created_at: win.created_at / 1000,

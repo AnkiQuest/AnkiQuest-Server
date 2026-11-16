@@ -225,11 +225,18 @@ response shape; existing legacy deliveries still prevent duplicates. Example: `s
 With `share_notification`, `moment: { "notification": id }` also saves older owned celebration,
 challenge-completion and weekly-recap rows that have no win. Their original date, day, topic and
 words are retained. Other people's rows, messages and push-only rows remain `404`.
+Its saved win has kind `moment` and policy `private`. The legacy `{ "notification": id }`
+request still shares a private quote without creating a public link; the explicit picker keeps
+the normal non-deck win link behavior.
 
 With `share_deck_moment`, `moment: { "deck": { "id": "7", "name": "My Japanese" } }` saves an
 explicit completion once per deck and Anki day with the chosen name. It changes no automatic
-deck setting. Both references support chosen friends/groups, private notes, pictures and per-send
+deck setting. Its win has kind `deck`, policy `private` and `link: null`; deck names never get a
+public card page. Direct `to: "link"` requests for deck wins return `404`. Both references support chosen friends/groups, private notes, authenticated owner pictures and per-send
 Undo, and recognize legacy deliveries to prevent duplicates. Deck-alert opt-outs still apply.
+Both manual kinds stay out of `/api/sharing` and cannot be set to automatic sharing. The legacy
+deck endpoint keeps its response and notification kind, but now reuses the first chosen name
+for that Anki day and respects sender mutes, as well as deck-alert opt-outs.
 Examples: `share_notification.json` and `share_deck_moment.json`.
 
 friends receive a `share` row from the player, with the title and body quoted in the player's own words ("I reached level 4 with 900 XP." rather than "You reached…") and the same `topic` (`place:N` for a place), so it shows the same art and can be replied to.

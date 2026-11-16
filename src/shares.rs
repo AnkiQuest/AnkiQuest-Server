@@ -91,6 +91,7 @@ enum Found {
     Win(i64),
     /// Nothing of the player's.
     Missing,
+    /// A malformed reference, such as a blank deck name.
     Invalid,
     /// Something not ready to share: an unannounced conquest, or a place the
     /// player no longer holds.
@@ -102,7 +103,8 @@ enum Found {
 struct MomentShared {
     /// Recipients who got it now; those who already had it or muted the player are left out.
     recipients: usize,
-    link: wins::Link,
+    /// Deck names stay private; only other kinds have public card links.
+    link: Option<wins::Link>,
     /// The win that was sent, to take it back with `DELETE /api/share/{user}/{win}`.
     win: i64,
     /// Until when (ms) it can be taken back, when it reached anyone; as `until`, it names this
@@ -244,7 +246,6 @@ fn send(
     let id = win
         .keep(&store.conn, sender)?
         .ok_or(rusqlite::Error::QueryReturnedNoRows)?;
-    wins::ensure_link(&store.conn, sender, id)?;
     let win = wins::win(&store.conn, sender, id).ok_or(rusqlite::Error::QueryReturnedNoRows)?;
     send_wins(
         store,
@@ -532,28 +533,29 @@ fn share_win(
         return Err(StatusCode::BAD_REQUEST);
     }
     let store = app.store.lock().unwrap();
+    if to == "friends" {
+        let friends = friends(app, &store.conn, user).map_err(store_error)?;
+        drop(store);
+        let (recipients, link) = deliver(app, user, id, &friends, None, headers, now_ms())?;
+        return Ok(json!({ "recipients": recipients, "link": link }));
+    }
+
     let token = wins::ensure_link(&store.conn, user, id)
         .map_err(store_error)?
         .ok_or(StatusCode::NOT_FOUND)?;
     let win = wins::win(&store.conn, user, id).ok_or(StatusCode::NOT_FOUND)?;
     let link = wins::link(&base_url(app, headers), &token);
-    if to == "link" {
-        let language = crate::i18n::owned(headers, &store, user).map_err(store_error)?;
-        let text = invitation(&store.conn, &win, &link.url, &language).map_err(store_error)?;
-        return Ok(json!(Linked {
-            url: link.url,
-            image: link.image,
-            text,
-        }));
-    }
-    let friends = friends(app, &store.conn, user).map_err(store_error)?;
-    drop(store);
-    let (recipients, link) = deliver(app, user, id, &friends, None, headers, now_ms())?;
-    Ok(json!({ "recipients": recipients, "link": link }))
+    let language = crate::i18n::owned(headers, &store, user).map_err(store_error)?;
+    let text = invitation(&store.conn, &win, &link.url, &language).map_err(store_error)?;
+    Ok(json!(Linked {
+        url: link.url,
+        image: link.image,
+        text,
+    }))
 }
 
 /// Sends `user`'s win `id` by hand to `friends`, with `note`. Answers how many got it now, and
-/// its link, which friends see the card through.
+/// its link, which friends see the card through. Deck names never get a public link.
 fn deliver(
     app: &App,
     user: &str,
@@ -562,13 +564,11 @@ fn deliver(
     note: Option<&str>,
     headers: &HeaderMap,
     now: i64,
-) -> Result<(usize, wins::Link), StatusCode> {
+) -> Result<(usize, Option<wins::Link>), StatusCode> {
     let mut store = app.store.lock().unwrap();
-    let token = wins::ensure_link(&store.conn, user, id)
-        .map_err(store_error)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let token = wins::ensure_link(&store.conn, user, id).map_err(store_error)?;
     let win = wins::win(&store.conn, user, id).ok_or(StatusCode::NOT_FOUND)?;
-    let link = wins::link(&base_url(app, headers), &token);
+    let link = token.map(|token| wins::link(&base_url(app, headers), &token));
     let display = app.display(user);
     let sent = send_wins(
         &mut store,
@@ -584,7 +584,7 @@ fn deliver(
 }
 
 /// The win `moment` names among `user`'s own.
-fn resolve(app: &App, user: &str, moment: &MomentRef) -> Result<Found, Error> {
+fn resolve(app: &App, user: &str, moment: &MomentRef, now: i64) -> Result<Found, Error> {
     let found = |id: Option<i64>| id.map_or(Found::Missing, Found::Win);
     let store = app.store.lock().unwrap();
     Ok(match moment {
@@ -606,10 +606,10 @@ fn resolve(app: &App, user: &str, moment: &MomentRef) -> Result<Found, Error> {
         }
         MomentRef::Place(place) => {
             drop(store);
-            place_win(app, user, *place, now_ms())?.map_or(Found::Unkept, Found::Win)
+            place_win(app, user, *place, now)?.map_or(Found::Unkept, Found::Win)
         }
         MomentRef::Deck(deck) => deck
-            .keep(&store, user, now_ms())?
+            .keep(&store, user, now)?
             .map_or(Found::Invalid, Found::Win),
     })
 }
@@ -706,14 +706,15 @@ fn share_moment(
     let recipients = recipients(app, &app.store.lock().unwrap().conn, user, to)
         .map_err(store_error)?
         .ok_or(StatusCode::BAD_REQUEST)?;
-    let win = match resolve(app, user, moment).map_err(store_error)? {
+    // Use one instant for the saved Anki day, delivery and its Undo deadline.
+    let now = now_ms();
+    let win = match resolve(app, user, moment, now).map_err(store_error)? {
         Found::Win(id) => id,
         Found::Missing => return Err(StatusCode::NOT_FOUND),
         Found::Invalid => return Err(StatusCode::BAD_REQUEST),
         Found::Unkept => return Err(StatusCode::CONFLICT),
     };
 
-    let now = now_ms();
     let (sent, link) = deliver(app, user, win, &recipients, note.as_deref(), headers, now)?;
     Ok(json!(MomentShared {
         recipients: sent,

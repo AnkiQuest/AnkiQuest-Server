@@ -1097,28 +1097,36 @@ async fn examples_match_the_handlers() {
     std::fs::remove_dir_all(&place.path).unwrap();
 
     // Each new reference starts at win 1; no existing example changes its saved ids.
-    for name in ["share_notification", "share_deck_moment"] {
+    enum ExampleMoment {
+        Notification,
+        Deck,
+    }
+    for kind in [ExampleMoment::Notification, ExampleMoment::Deck] {
         let mut extra = Fixture::new();
-        let moment = if name == "share_notification" {
-            let store = extra.app.store.lock().unwrap();
-            let at = NOW_MS - 10 * crate::game::DAY_MS;
-            let id = crate::notifications::insert_notification(
-                &store.conn,
-                &crate::notifications::Outgoing {
-                    to: "hill",
-                    from: "",
-                    title: "Your weekly study recap",
-                    body: "You have studied 30 days in a row.",
-                    kind: "reminder_weekly_recap",
-                },
-                store.clock("hill").unwrap().day(at),
-                at,
-                false,
-            )
-            .unwrap();
-            json!({"notification": id})
-        } else {
-            json!({"deck": {"id": "7", "name": "My Japanese"}})
+        let (name, moment) = match kind {
+            ExampleMoment::Notification => {
+                let store = extra.app.store.lock().unwrap();
+                let at = NOW_MS - 10 * crate::game::DAY_MS;
+                let id = crate::notifications::insert_notification(
+                    &store.conn,
+                    &crate::notifications::Outgoing {
+                        to: "hill",
+                        from: "",
+                        title: "Your weekly study recap",
+                        body: "You have studied 30 days in a row.",
+                        kind: "reminder_weekly_recap",
+                    },
+                    store.clock("hill").unwrap().day(at),
+                    at,
+                    false,
+                )
+                .unwrap();
+                ("share_notification", json!({"notification": id}))
+            }
+            ExampleMoment::Deck => (
+                "share_deck_moment",
+                json!({"deck": {"id": "7", "name": "My Japanese"}}),
+            ),
         };
         let shared = extra
             .call(
