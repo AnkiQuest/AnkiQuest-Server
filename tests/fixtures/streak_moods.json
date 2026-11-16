@@ -585,6 +585,83 @@
       "expected": 0
     }
   ],
+  "picture_style": {
+    "ink": "#FFFFFF",
+    "number": "#FFD54F",
+    "hero": 400
+  },
+  "pictures": [
+    {
+      "streak": 1,
+      "top": "#B45309",
+      "bottom": "#92400E",
+      "pose": "aki_streak",
+      "next": 7
+    },
+    {
+      "streak": 6,
+      "top": "#B45309",
+      "bottom": "#92400E",
+      "pose": "aki_streak",
+      "next": 7
+    },
+    {
+      "streak": 7,
+      "top": "#C2410C",
+      "bottom": "#B91C1C",
+      "pose": "aki_streak_hot",
+      "next": 30
+    },
+    {
+      "streak": 29,
+      "top": "#C2410C",
+      "bottom": "#B91C1C",
+      "pose": "aki_streak_hot",
+      "next": 30
+    },
+    {
+      "streak": 30,
+      "top": "#DC2626",
+      "bottom": "#7F1D1D",
+      "pose": "aki_streak_blazing",
+      "next": 100
+    },
+    {
+      "streak": 99,
+      "top": "#DC2626",
+      "bottom": "#7F1D1D",
+      "pose": "aki_streak_blazing",
+      "next": 100
+    },
+    {
+      "streak": 100,
+      "top": "#B91C1C",
+      "bottom": "#581C87",
+      "pose": "aki_streak_legend",
+      "next": 365
+    },
+    {
+      "streak": 364,
+      "top": "#B91C1C",
+      "bottom": "#581C87",
+      "pose": "aki_streak_legend",
+      "next": 365
+    },
+    {
+      "streak": 365,
+      "top": "#B91C1C",
+      "bottom": "#581C87",
+      "pose": "aki_streak_legend",
+      "next": null
+    },
+    {
+      "streak": 10000,
+      "top": "#B91C1C",
+      "bottom": "#581C87",
+      "pose": "aki_streak_legend",
+      "next": null
+    }
+  ],
   "flames": [
     {
       "mood": "unknown",

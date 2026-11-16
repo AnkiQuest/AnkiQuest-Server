@@ -1,5 +1,7 @@
 //! Composes the README banner and the social preview from the committed
-//! desktop screenshots and the duo art.
+//! website screenshots and the duo art. `npm run screenshots:web` renders the
+//! screenshots into `docs/screenshots/web/` from the pages in `static/` and
+//! the API examples in `docs/api/examples/`.
 //!
 //! Both follow the Android README banner (`tools/ankiquest-banner` in
 //! AnkiQuest-Android): its blue gradient, the warm glow, Roboto title and
@@ -74,17 +76,25 @@ const SHADOW_OPACITY: f32 = 0.43;
 const SHADOW_BLUR: f32 = 16.0;
 const SHADOW_DROP: f32 = 6.0;
 
-/// Window chrome: title bar height, corner radius, title size.
+/// Browser chrome: title bar height, corner radius, address text size.
 const BAR: u32 = 28;
 const RADIUS: f32 = 9.0;
-const BAR_TEXT: f32 = 13.0;
+const BAR_TEXT: f32 = 12.0;
+
+/// The address field: left edge after the buttons, right margin, height.
+const ADDRESS_LEFT: f32 = 66.0;
+const ADDRESS_MARGIN: f32 = 12.0;
+const ADDRESS_HEIGHT: f32 = 18.0;
+
+/// The host shown in each address field.
+const HOST: &str = "ankiquest.example";
 
 /// Title bar buttons, left to right: close, minimise, zoom.
 const BUTTONS: [&str; 3] = ["#ff5f57", "#febc2e", "#28c840"];
 
 /// Inputs, relative to the repository root.
 const DUO: &str = "static/duo/friends.png";
-const SHOTS: &str = "docs/screenshots";
+const SHOTS: &str = "docs/screenshots/web";
 const BOLD: &str = "assets/fonts/Roboto-Bold.ttf";
 const REGULAR: &str = "assets/fonts/Roboto-Regular.ttf";
 const FAMILY: &str = "Roboto";
@@ -114,51 +124,51 @@ impl Kind {
     }
 }
 
-/// One desktop window: screenshot, title, top-left corner, width and the
-/// largest screenshot height shown, in banner pixels.
+/// One browser window: screenshot, page path, top-left corner, width and
+/// the largest screenshot height shown, in banner pixels.
 struct Window {
     shot: &'static str,
-    title: &'static str,
+    page: &'static str,
     x: i32,
     y: i32,
     width: u32,
     max_height: u32,
 }
 
-/// Back to front, so nearer windows cover the ones behind them: Progress
-/// and Today high at the sides, Friends and Inbox lower in the middle, and
-/// Today, the add-on's main window, in front.
+/// Back to front, so nearer windows cover the ones behind them: Today and
+/// Community high at the sides, Friends lower in the middle, and the
+/// leaderboard, the site's front page, in front.
 const WINDOWS: &[Window] = &[
     Window {
-        shot: "desktop-progress.png",
-        title: "Progress",
+        shot: "today.png",
+        page: "/today",
         x: 24,
         y: 178,
         width: 440,
         max_height: 600,
     },
     Window {
-        shot: "desktop-friends.png",
-        title: "Friends",
+        shot: "friends.png",
+        page: "/friends",
         x: 168,
         y: 318,
         width: 440,
         max_height: 600,
     },
     Window {
-        shot: "desktop-inbox.png",
-        title: "Inbox",
+        shot: "community.png",
+        page: "/community",
         x: 620,
         y: 318,
         width: 440,
         max_height: 600,
     },
     Window {
-        shot: "desktop-today-light.png",
-        title: "Today",
-        x: 870,
+        shot: "leaderboard.png",
+        page: "/",
+        x: 830,
         y: 150,
-        width: 386,
+        width: 426,
         max_height: 600,
     },
 ];
@@ -212,7 +222,7 @@ fn render(kind: Kind) -> Result<RgbImage, String> {
     Ok(rgb(&canvas))
 }
 
-/// The README banner: duo beside title and tagline, desktop windows below.
+/// The README banner: duo beside title and tagline, browser windows below.
 fn readme(canvas: &mut tiny_skia::Pixmap, fonts: &Fonts, duo: RgbaImage) -> Result<(), String> {
     background(canvas, fonts, &WARM)?;
     for window in WINDOWS {
@@ -288,7 +298,7 @@ fn background(canvas: &mut tiny_skia::Pixmap, fonts: &Fonts, glow: &Glow) -> Res
     )
 }
 
-/// One window: shadow, chrome with title, and the screenshot inside.
+/// One window: shadow, chrome with the page address, and the screenshot inside.
 fn frame(canvas: &mut tiny_skia::Pixmap, fonts: &Fonts, window: &Window) -> Result<(), String> {
     let shot = load(&root().join(SHOTS).join(window.shot))?;
     let scaled = to_width(shot, window.width);
@@ -306,13 +316,22 @@ fn frame(canvas: &mut tiny_skia::Pixmap, fonts: &Fonts, window: &Window) -> Resu
             format!(r#"<circle cx="{cx}" cy="{cy}" r="5.5" fill="{colour}"/>"#)
         })
         .collect();
-    let title = svg_text(
-        window.title,
+
+    // The address field right of the buttons, with the page's address centred.
+    let field_x = x as f32 + ADDRESS_LEFT;
+    let field_w = w as f32 - ADDRESS_LEFT - ADDRESS_MARGIN;
+    let field_y = y as f32 + (BAR as f32 - ADDRESS_HEIGHT) / 2.0;
+    let address = svg_text(
+        &format!("{HOST}{}", window.page),
         BAR_TEXT,
         "normal",
         "#3c4043",
-        x as f32 + w as f32 / 2.0,
-        y as f32 + BAR as f32 / 2.0 + 4.5,
+        field_x + field_w / 2.0,
+        y as f32 + BAR as f32 / 2.0 + 4.0,
+    );
+    let title = format!(
+        r##"<rect x="{field_x}" y="{field_y}" width="{field_w}" height="{ADDRESS_HEIGHT}" rx="{}" fill="#ffffff"/>{address}"##,
+        ADDRESS_HEIGHT / 2.0
     );
     let drop = y as f32 + SHADOW_DROP;
     overlay(
