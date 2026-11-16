@@ -125,7 +125,7 @@ pub(crate) fn stats(profile: &Profile) -> Value {
 
 /// Stored texts that speak to the player, and how each reads when the player shares it.
 /// The first pattern that matches wins, so more specific ones come first.
-const OWN_WORDS: [(&str, &str); 13] = [
+const OWN_WORDS: [(&str, &str); 16] = [
     (
         "You reached level {0} with {1} XP.",
         phrase("I reached level {0} with {1} XP."),
@@ -137,6 +137,12 @@ const OWN_WORDS: [(&str, &str); 13] = [
         "You have studied for {0} hours in total.",
         phrase("I have studied for {0} hours in total."),
     ),
+    (
+        "You kept a {0}-day streak.",
+        phrase("I kept a {0}-day streak."),
+    ),
+    ("You found {0}.", phrase("I found {0}.")),
+    ("You tamed {0} leeches.", phrase("I tamed {0} leeches.")),
     // Records: the span is one of `Records::SPANS`, each its own catalog entry.
     (
         "{0} XP in {1}, beating your old best of {2} XP.",

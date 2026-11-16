@@ -21,16 +21,20 @@ pub const DEFAULT: &str = "aki";
 /// The cow, shown as Bluma.
 pub(crate) const COW: &str = "cow";
 
-/// Every stored companion. Keep [`TABLE`]'s check in step; changing it needs a migration step.
-const COMPANIONS: [&str; 4] = ["aki", "ankilope", COW, "none"];
+/// The companions every player has. The others are unlocks, choosable once live and unlocked.
+const FREE: [&str; 2] = ["aki", "none"];
 
+/// Every companion the table stores, planned ones included, so that making one live needs no
+/// migration. Changing it needs a migration step.
 pub(crate) const TABLE: &str = "create table if not exists companion_preferences (
     user text primary key,
-    companion text not null check (companion in ('aki', 'ankilope', 'cow', 'none'))
+    companion text not null check (companion in
+        ('aki', 'ankilope', 'cow', 'none', 'anki_tan', 'anki_tan_chibi', 'leech_tan'))
 ) without rowid;";
 
+/// Whether a player may save `value`: a free companion or a live unlock.
 pub fn valid(value: &str) -> bool {
-    COMPANIONS.contains(&value)
+    FREE.contains(&value) || Unlock::parse(value).is_some_and(Unlock::live)
 }
 
 /// Something a player unlocks once and keeps. Unlocks are not settings: settings sync does not
@@ -41,6 +45,12 @@ pub(crate) enum Unlock {
     Ankilope,
     /// The cow, shown as Bluma, earned by hours of study.
     Cow,
+    /// Anki-tan, earned by a streak.
+    AnkiTan,
+    /// Anki-tan's chibi version, found by tapping Anki-tan.
+    AnkiTanChibi,
+    /// Leech-tan, earned by taming leeches.
+    LeechTan,
 }
 
 /// Whether the clients released before milestones offered a companion to everyone.
@@ -53,12 +63,22 @@ enum Released {
 }
 
 impl Unlock {
-    const ALL: [Unlock; 2] = [Unlock::Ankilope, Unlock::Cow];
+    /// In the fixture's order.
+    const ALL: [Unlock; 5] = [
+        Unlock::Ankilope,
+        Unlock::Cow,
+        Unlock::AnkiTan,
+        Unlock::AnkiTanChibi,
+        Unlock::LeechTan,
+    ];
 
     pub(crate) fn id(self) -> &'static str {
         match self {
             Unlock::Ankilope => "ankilope",
             Unlock::Cow => COW,
+            Unlock::AnkiTan => "anki_tan",
+            Unlock::AnkiTanChibi => "anki_tan_chibi",
+            Unlock::LeechTan => "leech_tan",
         }
     }
 
@@ -67,13 +87,18 @@ impl Unlock {
         match self {
             Unlock::Ankilope => "Ankilope",
             Unlock::Cow => "Bluma",
+            Unlock::AnkiTan => "Anki-tan",
+            Unlock::AnkiTanChibi => "Chibi Anki-tan",
+            Unlock::LeechTan => "Leech-tan",
         }
     }
 
     fn released(self) -> Released {
         match self {
             Unlock::Ankilope => Released::Offered,
-            Unlock::Cow => Released::Hidden,
+            Unlock::Cow | Unlock::AnkiTan | Unlock::AnkiTanChibi | Unlock::LeechTan => {
+                Released::Hidden
+            }
         }
     }
 
@@ -81,13 +106,23 @@ impl Unlock {
         Self::ALL.into_iter().find(|unlock| unlock.id() == id)
     }
 
+    /// Whether players can earn it: planned ones have no art yet and are ignored.
+    fn live(self) -> bool {
+        milestone(self).status == Status::Live
+    }
+
     /// The moment a player gets when this unlock is granted.
     fn event(self) -> Event {
         let milestone = milestone(self);
         let goal = milestone.goal.to_string();
-        let body = match milestone.kind {
-            Kind::Level => english("You reached level {0}.", &[&goal]),
-            Kind::StudyHours => english("You have studied for {0} hours in total.", &[&goal]),
+        let body = match milestone.counts {
+            Counts::Measured(Measure::Level) => english("You reached level {0}.", &[&goal]),
+            Counts::Measured(Measure::StudyHours) => {
+                english("You have studied for {0} hours in total.", &[&goal])
+            }
+            Counts::Measured(Measure::Streak) => english("You kept a {0}-day streak.", &[&goal]),
+            Counts::Measured(Measure::LeechesTamed) => english("You tamed {0} leeches.", &[&goal]),
+            Counts::Taps { .. } => english("You found {0}.", &[self.name()]),
         };
         Event {
             key: format!("{MOMENT_PREFIX}{}", self.id()),
@@ -130,13 +165,29 @@ const MILESTONES: &str = "milestones";
 /// The conditions both clients show, defined once with the cases they test against.
 const RULES: &str = include_str!("../tests/fixtures/companion_unlock.json");
 
-/// What a milestone counts.
+/// What the server measures toward a milestone, as the fixture's `kind` names it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum Kind {
+enum Measure {
     Level,
     StudyHours,
+    /// Days in a row, as the player's streak stands now.
+    Streak,
+    LeechesTamed,
 }
+
+/// What counts toward a milestone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Counts {
+    /// A value the server derives from the player's reviews.
+    Measured(Measure),
+    /// A chibi: the client counts taps on its base `on` by the fixture's tap rule and asks for
+    /// the chibi on the last one. The server only checks that `on` is unlocked.
+    Taps { on: Unlock },
+}
+
+/// The fixture's `kind` for [`Counts::Taps`].
+const TAPS_KIND: &str = "taps";
 
 /// Whether a companion shows before it is earned.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -154,12 +205,13 @@ enum Status {
     Planned,
 }
 
-/// A fixture entry as written. Planned entries may count kinds this server does not measure.
+/// A fixture entry as written.
 #[derive(Deserialize)]
 struct Rule {
     companion: String,
     kind: String,
     goal: u64,
+    requires: Option<String>,
     secret: bool,
     status: Status,
 }
@@ -173,35 +225,54 @@ struct Rules {
 #[derive(Clone, Copy, Debug)]
 struct Milestone {
     unlock: Unlock,
-    kind: Kind,
+    counts: Counts,
     goal: u64,
     visibility: Visibility,
+    status: Status,
 }
 
-/// The live milestones of a fixture, in its order.
-fn parse(source: &str) -> Vec<Milestone> {
-    let rules: Rules = serde_json::from_str(source).expect("the unlock fixture parses");
-    rules
-        .companions
-        .into_iter()
-        .filter(|rule| rule.status == Status::Live)
-        .map(|rule| Milestone {
-            unlock: Unlock::parse(&rule.companion).expect("a live companion is an unlock"),
-            kind: serde_json::from_value(serde_json::Value::String(rule.kind))
-                .expect("a live companion counts a known kind"),
-            goal: rule.goal,
-            visibility: if rule.secret {
-                Visibility::Secret
-            } else {
-                Visibility::Shown
-            },
-        })
-        .collect()
+/// Every milestone of a fixture, planned ones included, in its order; an error names what the
+/// fixture gets wrong.
+fn parse(source: &str) -> Result<Vec<Milestone>, String> {
+    let rules: Rules = serde_json::from_str(source).map_err(|error| error.to_string())?;
+    rules.companions.into_iter().map(read).collect()
+}
+
+/// One fixture entry as a milestone.
+fn read(rule: Rule) -> Result<Milestone, String> {
+    let unlock = Unlock::parse(&rule.companion)
+        .ok_or_else(|| format!("{} is not an unlock", rule.companion))?;
+
+    // A chibi names its base, another unlock; every other kind is measured.
+    let counts = if rule.kind == TAPS_KIND {
+        let on = rule
+            .requires
+            .as_deref()
+            .and_then(Unlock::parse)
+            .filter(|on| *on != unlock)
+            .ok_or_else(|| format!("{} needs its base in `requires`", rule.companion))?;
+        Counts::Taps { on }
+    } else {
+        let kind = serde_json::Value::String(rule.kind);
+        Counts::Measured(serde_json::from_value(kind).map_err(|error| error.to_string())?)
+    };
+    let visibility = if rule.secret {
+        Visibility::Secret
+    } else {
+        Visibility::Shown
+    };
+    Ok(Milestone {
+        unlock,
+        counts,
+        goal: rule.goal,
+        visibility,
+        status: rule.status,
+    })
 }
 
 fn milestones() -> &'static [Milestone] {
     static PARSED: OnceLock<Vec<Milestone>> = OnceLock::new();
-    PARSED.get_or_init(|| parse(RULES))
+    PARSED.get_or_init(|| parse(RULES).expect("the unlock fixture is valid"))
 }
 
 fn milestone(unlock: Unlock) -> Milestone {
@@ -211,11 +282,13 @@ fn milestone(unlock: Unlock) -> Milestone {
         .expect("every unlock has a milestone")
 }
 
-/// What milestones count for one player, derived from their reviews and never stored.
+/// What milestones measure for one player, derived from their reviews and never stored.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Measures {
     level: u64,
     study_hours: u64,
+    streak: u64,
+    leeches_tamed: u64,
 }
 
 impl Measures {
@@ -225,30 +298,74 @@ impl Measures {
             Some(profile) => Measures {
                 level: profile.level,
                 study_hours: profile.lifetime.hours,
+                streak: profile.streak,
+                leeches_tamed: profile.lifetime.leeches_tamed,
             },
             None => Measures {
                 level: crate::game::level_for(0).0,
                 study_hours: 0,
+                streak: 0,
+                leeches_tamed: 0,
             },
         }
     }
 
-    fn value(self, kind: Kind) -> u64 {
-        match kind {
-            Kind::Level => self.level,
-            Kind::StudyHours => self.study_hours,
+    fn value(self, measure: Measure) -> u64 {
+        match measure {
+            Measure::Level => self.level,
+            Measure::StudyHours => self.study_hours,
+            Measure::Streak => self.streak,
+            Measure::LeechesTamed => self.leeches_tamed,
         }
     }
 
+    /// Whether these reach `milestone`. A chibi is found by the client, never measured.
     fn reached(self, milestone: &Milestone) -> bool {
-        self.value(milestone.kind) >= milestone.goal
+        match milestone.counts {
+            Counts::Measured(measure) => self.value(measure) >= milestone.goal,
+            Counts::Taps { .. } => false,
+        }
+    }
+}
+
+/// What a client asking for an unlock comes to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Verdict {
+    /// Already unlocked: answer the list.
+    Kept,
+    /// A chibi whose base is unlocked: grant it now.
+    Grant,
+    /// Not earned: `409`.
+    Locked,
+}
+
+impl Verdict {
+    /// The answer's status.
+    fn status(self) -> StatusCode {
+        match self {
+            Verdict::Kept | Verdict::Grant => StatusCode::OK,
+            Verdict::Locked => StatusCode::CONFLICT,
+        }
+    }
+}
+
+/// Judges a request for `milestone` from a player who has `unlocked`. The server grants
+/// measured unlocks itself, so a client only asks after them; a chibi is granted once its base
+/// is unlocked.
+fn judge(milestone: &Milestone, unlocked: &[Unlock]) -> Verdict {
+    if unlocked.contains(&milestone.unlock) {
+        return Verdict::Kept;
+    }
+    match milestone.counts {
+        Counts::Taps { on } if unlocked.contains(&on) => Verdict::Grant,
+        Counts::Taps { .. } | Counts::Measured(_) => Verdict::Locked,
     }
 }
 
 /// How far a player is toward a locked companion.
 #[derive(Debug, PartialEq, Eq, Serialize)]
 pub struct Progress {
-    kind: Kind,
+    kind: Measure,
     value: u64,
     goal: u64,
 }
@@ -313,14 +430,32 @@ impl Store {
         Ok(added > 0)
     }
 
-    /// Grants every milestone `measures` reach and answers what `user` has unlocked.
-    fn grant(&self, user: &str, measures: Measures, at_ms: i64) -> Result<Vec<Unlock>, Error> {
-        for milestone in milestones() {
+    /// Grants each of `milestones` that `measures` reach and answers what `user` has unlocked.
+    fn earn(
+        &self,
+        user: &str,
+        milestones: &[Milestone],
+        measures: Measures,
+        at_ms: i64,
+    ) -> Result<Vec<Unlock>, Error> {
+        for milestone in milestones {
             if measures.reached(milestone) {
                 self.add_unlock(user, milestone.unlock, at_ms)?;
             }
         }
         self.unlocks(user)
+    }
+
+    /// Grants every live milestone `measures` reach and answers what `user` has unlocked that
+    /// is live. Planned companions are ignored.
+    fn grant(&self, user: &str, measures: Measures, at_ms: i64) -> Result<Vec<Unlock>, Error> {
+        let live: Vec<Milestone> = milestones()
+            .iter()
+            .copied()
+            .filter(|milestone| milestone.status == Status::Live)
+            .collect();
+        let unlocks = self.earn(user, &live, measures, at_ms)?;
+        Ok(unlocks.into_iter().filter(|unlock| unlock.live()).collect())
     }
 }
 
@@ -419,21 +554,30 @@ pub struct Unlocks {
 #[serde(deny_unknown_fields)]
 pub struct UnlockRequest {
     unlock: String,
+    /// The tap run apps released before the chibi became an Easter egg send with her. The
+    /// server no longer checks it, but still accepts it so those apps keep working.
+    #[serde(default, rename = "taps")]
+    _taps: Option<serde::de::IgnoredAny>,
 }
 
-/// `unlocks` with the progress toward every other companion that shows while locked.
-fn listed(unlocks: Vec<Unlock>, measures: Measures) -> Unlocks {
-    let progress = milestones()
+/// `unlocks` with the progress toward every other live, measured companion of `milestones`
+/// that shows while locked.
+fn listed(milestones: &[Milestone], unlocks: Vec<Unlock>, measures: Measures) -> Unlocks {
+    let progress = milestones
         .iter()
+        .filter(|milestone| milestone.status == Status::Live)
         .filter(|milestone| milestone.visibility == Visibility::Shown)
         .filter(|milestone| !unlocks.contains(&milestone.unlock))
-        .map(|milestone| {
+        .filter_map(|milestone| {
+            let Counts::Measured(measure) = milestone.counts else {
+                return None;
+            };
             let progress = Progress {
-                kind: milestone.kind,
-                value: measures.value(milestone.kind),
+                kind: measure,
+                value: measures.value(measure),
                 goal: milestone.goal,
             };
-            (milestone.unlock.id(), progress)
+            Some((milestone.unlock.id(), progress))
         })
         .collect();
     Unlocks {
@@ -452,7 +596,7 @@ fn current(app: &App, user: &str) -> Result<Unlocks, StatusCode> {
         .unwrap()
         .grant(user, measures, crate::app::now_ms())
         .map_err(crate::store_error)?;
-    Ok(listed(unlocks, measures))
+    Ok(listed(milestones(), unlocks, measures))
 }
 
 pub async fn get_unlocks(
@@ -464,9 +608,10 @@ pub async fn get_unlocks(
     current(&app, &user).map(Json)
 }
 
-/// Every unlock is a milestone the server grants, so a client cannot add one: asking for one
-/// already granted answers the list, as it did when clients reported the cow; any other is
-/// `409`. Unknown ids, and companions the fixture lists as planned, are `400`.
+/// The server grants measured unlocks itself, so asking for one already granted answers the
+/// list, as it did when clients reported the cow, and any other is `409`. A chibi, found by
+/// tapping its base in the client, is granted once its base is unlocked, and is `409` before.
+/// Unknown ids, and companions the fixture lists as planned, are `400`.
 pub async fn add_unlock(
     State(app): State<Arc<App>>,
     Path(user): Path<String>,
@@ -474,12 +619,28 @@ pub async fn add_unlock(
     Json(request): Json<UnlockRequest>,
 ) -> Result<Json<Unlocks>, StatusCode> {
     require_owner(&app, &user, &headers)?;
-    let unlock = Unlock::parse(&request.unlock).ok_or(StatusCode::BAD_REQUEST)?;
+    let unlock = Unlock::parse(&request.unlock)
+        .filter(|unlock| unlock.live())
+        .ok_or(StatusCode::BAD_REQUEST)?;
     let answer = current(&app, &user)?;
-    if !answer.unlocks.contains(&unlock.id()) {
-        return Err(StatusCode::CONFLICT);
+    let unlocked: Vec<Unlock> = answer
+        .unlocks
+        .iter()
+        .filter_map(|id| Unlock::parse(id))
+        .collect();
+    match judge(&milestone(unlock), &unlocked) {
+        Verdict::Kept => Ok(Json(answer)),
+        verdict @ Verdict::Locked => Err(verdict.status()),
+        Verdict::Grant => {
+            // The worker announces it with its moment, as it does every unlock.
+            app.store
+                .lock()
+                .unwrap()
+                .add_unlock(&user, unlock, crate::app::now_ms())
+                .map_err(crate::store_error)?;
+            current(&app, &user).map(Json)
+        }
     }
-    Ok(Json(answer))
 }
 
 #[cfg(test)]
@@ -491,7 +652,33 @@ mod tests {
     const HOUR_MS: i64 = 3_600_000;
 
     fn measures(level: u64, study_hours: u64) -> Measures {
-        Measures { level, study_hours }
+        Measures {
+            level,
+            study_hours,
+            streak: 0,
+            leeches_tamed: 0,
+        }
+    }
+
+    /// A player at the first level whose `measure` is `value`, everything else at nothing.
+    fn only(measure: Measure, value: u64) -> Measures {
+        let mut measured = measures(1, 0);
+        match measure {
+            Measure::Level => measured.level = value,
+            Measure::StudyHours => measured.study_hours = value,
+            Measure::Streak => measured.streak = value,
+            Measure::LeechesTamed => measured.leeches_tamed = value,
+        }
+        measured
+    }
+
+    /// The fixture with every planned companion live, as it will be once their art ships.
+    fn all_live() -> Vec<Milestone> {
+        parse(&RULES.replace("\"status\": \"planned\"", "\"status\": \"live\"")).unwrap()
+    }
+
+    fn find(milestones: &[Milestone], unlock: Unlock) -> Milestone {
+        *milestones.iter().find(|m| m.unlock == unlock).unwrap()
     }
 
     #[test]
@@ -527,7 +714,7 @@ mod tests {
     }
 
     #[test]
-    fn every_live_companion_in_the_fixture_is_an_unlock_with_one_milestone() {
+    fn every_companion_in_the_fixture_is_an_unlock_with_one_milestone() {
         let rules: Value = serde_json::from_str(RULES).unwrap();
         for unlock in Unlock::ALL {
             let found = milestones().iter().filter(|m| m.unlock == unlock).count();
@@ -537,12 +724,13 @@ mod tests {
         }
         assert_eq!(milestones().len(), Unlock::ALL.len());
 
-        // Planned companions have no art yet, so this server knows nothing of them.
+        // Planned companions have no art yet: nobody may choose them.
         for rule in rules["companions"].as_array().unwrap() {
-            let planned = rule["status"] == "planned";
+            let live = rule["status"] == "live";
             let id = rule["companion"].as_str().unwrap();
-            assert_eq!(Unlock::parse(id).is_none(), planned, "{id}");
-            assert_eq!(valid(id), !planned, "{id}");
+            let unlock = Unlock::parse(id).unwrap();
+            assert_eq!(milestone(unlock).status == Status::Live, live, "{id}");
+            assert_eq!(valid(id), live, "{id}");
         }
         assert_eq!(needed("aki"), None);
         assert_eq!(needed("none"), None);
@@ -558,17 +746,162 @@ mod tests {
             let unlock = Unlock::parse(check["companion"].as_str().unwrap()).unwrap();
             let value = check["value"].as_u64().unwrap();
             let milestone = milestone(unlock);
-            let measured = match milestone.kind {
-                Kind::Level => measures(value, 0),
-                Kind::StudyHours => measures(1, value),
+            let Counts::Measured(measure) = milestone.counts else {
+                panic!("{} checks a measured kind", check["name"]);
             };
             assert_eq!(
-                measured.reached(&milestone),
+                only(measure, value).reached(&milestone),
                 check["unlocks"].as_bool().unwrap(),
                 "{}",
                 check["name"]
             );
         }
+    }
+
+    #[test]
+    fn every_chibi_names_its_unlocked_base() {
+        let rules: Value = serde_json::from_str(RULES).unwrap();
+        let chibi = milestone(Unlock::AnkiTanChibi);
+        assert_eq!(
+            chibi.counts,
+            Counts::Taps {
+                on: Unlock::AnkiTan
+            }
+        );
+        assert_eq!(chibi.goal, rules["taps"].as_u64().unwrap());
+        assert_eq!(chibi.visibility, Visibility::Secret);
+    }
+
+    #[test]
+    fn a_chibi_without_its_base_fails_the_fixture() {
+        let base = "\"requires\": \"anki_tan\", ";
+        assert!(RULES.contains(base));
+        assert!(parse(&RULES.replace(base, "")).is_err());
+
+        // A chibi of itself or of an unknown companion has no base either.
+        let own = RULES.replace(base, "\"requires\": \"anki_tan_chibi\", ");
+        assert!(parse(&own).is_err());
+        let unknown = RULES.replace(base, "\"requires\": \"horse\", ");
+        assert!(parse(&unknown).is_err());
+    }
+
+    #[test]
+    fn the_fixture_requests_decide_each_chibi_unlock() {
+        let live = all_live();
+        let rules: Value = serde_json::from_str(RULES).unwrap();
+        let requests = rules["requests"].as_array().unwrap();
+        assert!(!requests.is_empty());
+        for request in requests {
+            let unlock = Unlock::parse(request["unlock"].as_str().unwrap()).unwrap();
+            let unlocked: Vec<Unlock> = request["unlocked"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|id| Unlock::parse(id.as_str().unwrap()).unwrap())
+                .collect();
+            let status = judge(&find(&live, unlock), &unlocked).status();
+            assert_eq!(
+                u64::from(status.as_u16()),
+                request["status"].as_u64().unwrap(),
+                "{}",
+                request["name"]
+            );
+        }
+    }
+
+    #[test]
+    fn planned_companions_are_never_granted_or_listed() {
+        let (store, path) = crate::test_support::temporary_store();
+        let everything = Measures {
+            level: 99,
+            study_hours: 99,
+            streak: 999,
+            leeches_tamed: 99,
+        };
+        assert_eq!(
+            store.grant("hill", everything, 1).unwrap(),
+            [Unlock::Ankilope, Unlock::Cow]
+        );
+        let shown = serde_json::to_value(listed(milestones(), vec![], everything)).unwrap();
+        assert_eq!(
+            shown["progress"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .collect::<Vec<_>>(),
+            ["ankilope", "cow"]
+        );
+
+        // A planned unlock stored anyway stays out of the answer and the moments.
+        store.add_unlock("hill", Unlock::LeechTan, 2).unwrap();
+        assert_eq!(
+            store.grant("hill", everything, 3).unwrap(),
+            [Unlock::Ankilope, Unlock::Cow]
+        );
+        cleanup(store, path);
+    }
+
+    #[test]
+    fn once_live_streaks_and_tamed_leeches_are_granted() {
+        let (store, path) = crate::test_support::temporary_store();
+        let live = all_live();
+        let earn = |measured, at| store.earn("hill", &live, measured, at).unwrap();
+        assert!(earn(only(Measure::Streak, 65), 1).is_empty());
+        assert_eq!(earn(only(Measure::Streak, 66), 2), [Unlock::AnkiTan]);
+        assert_eq!(earn(only(Measure::LeechesTamed, 2), 3), [Unlock::AnkiTan]);
+        assert_eq!(
+            earn(only(Measure::LeechesTamed, 3), 4),
+            [Unlock::AnkiTan, Unlock::LeechTan]
+        );
+
+        // A lost streak takes nothing back, and no measure brings the chibi: she is tapped.
+        let everything = Measures {
+            level: 99,
+            study_hours: 99,
+            streak: 0,
+            leeches_tamed: 99,
+        };
+        assert!(!earn(everything, 5).contains(&Unlock::AnkiTanChibi));
+        assert!(earn(everything, 5).contains(&Unlock::AnkiTan));
+        cleanup(store, path);
+    }
+
+    #[test]
+    fn once_live_only_anki_tan_shows_progress() {
+        let live = all_live();
+        let measured = Measures {
+            level: 3,
+            study_hours: 6,
+            streak: 12,
+            leeches_tamed: 2,
+        };
+        let shown = serde_json::to_value(listed(&live, vec![], measured)).unwrap();
+        assert_eq!(
+            shown["progress"],
+            json!({
+                "ankilope": {"kind": "level", "value": 3, "goal": 30},
+                "cow": {"kind": "study_hours", "value": 6, "goal": 10},
+                "anki_tan": {"kind": "streak", "value": 12, "goal": 66}
+            })
+        );
+    }
+
+    #[test]
+    fn the_chibi_joins_only_after_her_base() {
+        let live = all_live();
+        let chibi = find(&live, Unlock::AnkiTanChibi);
+
+        // Her base first; then asking brings her, and asking again answers the list.
+        assert_eq!(judge(&chibi, &[]), Verdict::Locked);
+        assert_eq!(judge(&chibi, &[Unlock::Cow]), Verdict::Locked);
+        assert_eq!(judge(&chibi, &[Unlock::AnkiTan]), Verdict::Grant);
+        let both = [Unlock::AnkiTan, Unlock::AnkiTanChibi];
+        assert_eq!(judge(&chibi, &both), Verdict::Kept);
+
+        // Measured unlocks are granted by the server; asking only answers.
+        let cow = find(&live, Unlock::Cow);
+        assert_eq!(judge(&cow, &[Unlock::Cow]), Verdict::Kept);
+        assert_eq!(judge(&cow, &[]), Verdict::Locked);
     }
 
     #[test]
@@ -587,7 +920,7 @@ mod tests {
         );
         assert_eq!(
             store.grant("hill", measures(1, 10), 4).unwrap(),
-            Unlock::ALL
+            [Unlock::Ankilope, Unlock::Cow]
         );
         cleanup(store, path);
     }
@@ -595,7 +928,7 @@ mod tests {
     #[test]
     fn progress_lists_only_locked_companions_that_show() {
         let listed = |unlocks: Vec<Unlock>, measured| {
-            serde_json::to_value(super::listed(unlocks, measured)).unwrap()
+            serde_json::to_value(super::listed(milestones(), unlocks, measured)).unwrap()
         };
         assert_eq!(
             listed(vec![], measures(3, 6)),
@@ -611,7 +944,7 @@ mod tests {
             }})
         );
         assert_eq!(
-            listed(Unlock::ALL.to_vec(), measures(40, 12)),
+            listed(vec![Unlock::Ankilope, Unlock::Cow], measures(40, 12)),
             json!({"unlocks": ["ankilope", "cow"], "progress": {}})
         );
         assert_eq!(Measures::of(None), measures(1, 0));
@@ -643,6 +976,35 @@ mod tests {
         );
         assert_eq!(art_owner(COW), "ankilope");
         assert_eq!(art_owner("aki"), "aki");
+
+        // The planned companions, ready for when they go live.
+        let expected = [
+            (
+                Unlock::AnkiTan,
+                "Anki-tan joined you!",
+                "You kept a 66-day streak.",
+                "I kept a 66-day streak.",
+            ),
+            (
+                Unlock::AnkiTanChibi,
+                "Chibi Anki-tan joined you!",
+                "You found Chibi Anki-tan.",
+                "I found Chibi Anki-tan.",
+            ),
+            (
+                Unlock::LeechTan,
+                "Leech-tan joined you!",
+                "You tamed 3 leeches.",
+                "I tamed 3 leeches.",
+            ),
+        ];
+        for (unlock, title, body, own) in expected {
+            let event = unlock.event();
+            assert_eq!(event.key, format!("companion:{}", unlock.id()));
+            assert_eq!((event.title.as_str(), event.body.as_str()), (title, body));
+            assert_eq!(crate::wins::own_words(&event.title, &event.body).1, own);
+            assert_eq!(of_moment(&event.key), Some(unlock.id()));
+        }
     }
 
     /// An upload of one review that took `time_ms`, answered at `at`.
@@ -774,10 +1136,30 @@ mod tests {
         assert_eq!(granted.1["unlocks"], json!(["ankilope"]));
         let cow = call(&app, "POST", unlocks, "hill-secret", ask("cow")).await;
         assert_eq!(cow.0, StatusCode::CONFLICT);
-        for unknown in ["horse", "anki_tan", "leech_tan"] {
+        for unknown in ["horse", "anki_tan", "leech_tan", "anki_tan_chibi"] {
             let bad = call(&app, "POST", unlocks, "hill-secret", ask(unknown)).await;
             assert_eq!(bad.0, StatusCode::BAD_REQUEST, "{unknown}");
         }
+
+        // Released apps may still send a tap run: it is ignored, whatever the unlock.
+        let run: Vec<Value> = (0..9).map(|i| json!(["anki_tan", i * 100])).collect();
+        let tapped = json!({"unlock": "anki_tan_chibi", "taps": run});
+        let bad = call(&app, "POST", unlocks, "hill-secret", tapped).await;
+        assert_eq!(bad.0, StatusCode::BAD_REQUEST, "she is planned");
+        let tapped = json!({"unlock": "ankilope", "taps": run});
+        let kept = call(&app, "POST", unlocks, "hill-secret", tapped).await;
+        assert_eq!(kept.0, StatusCode::OK);
+        assert_eq!(kept.1["unlocks"], json!(["ankilope"]));
+        let tapped = json!({"unlock": "cow", "taps": "anything"});
+        let locked = call(&app, "POST", unlocks, "hill-secret", tapped).await;
+        assert_eq!(locked.0, StatusCode::CONFLICT);
+        let odd = json!({"unlock": "cow", "proof": true});
+        let bad = call(&app, "POST", unlocks, "hill-secret", odd).await;
+        assert_eq!(
+            bad.0,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "other fields are still refused"
+        );
 
         // Only the player's own token reads or asks.
         let other = call(&app, "GET", unlocks, "cerro-secret", Value::Null).await;
