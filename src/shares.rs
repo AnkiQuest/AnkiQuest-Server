@@ -1837,32 +1837,33 @@ mod tests {
             let (status, sent) = share_as_hill(&app, body.clone()).await;
             assert_eq!(status, StatusCode::OK, "{kind}: {sent}");
             let id = sent["win"].as_i64().unwrap();
-            let store = app.store.lock().unwrap();
-            let win = wins::win(&store.conn, "hill", id).unwrap();
-            let (at, day): (i64, i64) = store
-                .conn
-                .query_row(
-                    "select created_at, day from notifications where id = ?1",
-                    [row],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
-                )
-                .unwrap();
-            assert_eq!((win.created_at, win.day), (at, day));
-            assert_eq!(
-                wins::shared_words(&store.conn, &win).unwrap(),
-                (
-                    "My weekly study recap".into(),
-                    "I have studied 30 days in a row.".into()
-                )
-            );
-            assert_eq!(win.topic(), "streak");
-            assert!(!win.stats.to_string().contains("Still proud"));
-            assert!(
-                wins::take_automatic(&store.conn, "hill")
-                    .unwrap()
-                    .is_empty()
-            );
-            drop(store);
+            {
+                let store = app.store.lock().unwrap();
+                let win = wins::win(&store.conn, "hill", id).unwrap();
+                let (at, day): (i64, i64) = store
+                    .conn
+                    .query_row(
+                        "select created_at, day from notifications where id = ?1",
+                        [row],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .unwrap();
+                assert_eq!((win.created_at, win.day), (at, day));
+                assert_eq!(
+                    wins::shared_words(&store.conn, &win).unwrap(),
+                    (
+                        "My weekly study recap".into(),
+                        "I have studied 30 days in a row.".into()
+                    )
+                );
+                assert_eq!(win.topic(), "streak");
+                assert!(!win.stats.to_string().contains("Still proud"));
+                assert!(
+                    wins::take_automatic(&store.conn, "hill")
+                        .unwrap()
+                        .is_empty()
+                );
+            }
             assert_eq!(share_as_hill(&app, body).await.1["recipients"], 0);
             assert!(inbox(&app, "friend").is_empty());
             assert_eq!(
@@ -2032,19 +2033,20 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "{sent}");
         assert_eq!(sent["recipients"], 1);
         let id = sent["win"].as_i64().unwrap();
-        let store = app.store.lock().unwrap();
-        let win = wins::win(&store.conn, "hill", id).unwrap();
-        assert_eq!(win.kind, "deck");
-        assert_eq!(win.stats["deck"], "My Japanese");
-        assert!(win.body.contains("My Japanese"));
-        assert!(!win.stats.to_string().contains("before lunch"));
-        assert!(store.decks("hill").unwrap().is_empty());
-        assert!(
-            wins::take_automatic(&store.conn, "hill")
-                .unwrap()
-                .is_empty()
-        );
-        drop(store);
+        {
+            let store = app.store.lock().unwrap();
+            let win = wins::win(&store.conn, "hill", id).unwrap();
+            assert_eq!(win.kind, "deck");
+            assert_eq!(win.stats["deck"], "My Japanese");
+            assert!(win.body.contains("My Japanese"));
+            assert!(!win.stats.to_string().contains("before lunch"));
+            assert!(store.decks("hill").unwrap().is_empty());
+            assert!(
+                wins::take_automatic(&store.conn, "hill")
+                    .unwrap()
+                    .is_empty()
+            );
+        }
         assert_eq!(inbox(&app, "cerro")[0].win, Some(id));
         assert_eq!(
             inbox(&app, "cerro")[0].note.as_deref(),
