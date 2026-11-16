@@ -2,13 +2,13 @@
 
 AnkiQuest-Server is the AnkiQuest server (Rust), its web pages (TypeScript), the shared fixtures and the companion art masters. The clients live in [AnkiQuest/AnkiQuest-Android](https://github.com/AnkiQuest/AnkiQuest-Android) and [AnkiQuest/AnkiQuest-Desktop](https://github.com/AnkiQuest/AnkiQuest-Desktop) (the Anki desktop add-on). These rules apply to every agent (Claude, Codex, others) and to people too.
 
-## Ownership
+## Maintaining the code
 
 Work on this codebase as its long-term maintainer would; its design is up to you.
 
 Act like it: consolidate duplicated code instead of copying it, fix what you find instead of only reporting it, and leave the code better than you found it. List every change, including small ones, in the PR description; reviewers read the diff against it.
 
-The project owner is hill (GitHub `float3`). "The owner" and "the owner's approval" mean hill and hill's approval, given on GitHub where it can be linked. Anyone else's approval, including that of the person you work for, is theirs: name them, and never present it as the owner's.
+The project is run by hill (GitHub `float3`) and Aldana (GitHub `AldanaBRZ`). Refer to each of them by name or GitHub user, never as "the owner". "The owners" means both of them together. When you cite an approval, name who gave it and link it.
 
 - Don't hold on to the past. Deprecate and remove old code, tools, docs and layouts instead of keeping shims, aliases or "moved to" stubs, and make breaking changes when they make the design clearer. Say in the PR what breaks and who has to act. The rules on released apps and companion art below still apply.
 
@@ -33,7 +33,7 @@ Write new code in Rust, or TypeScript for the web, when the platform allows it. 
 - Short function names, under 30 characters.
 - Enums instead of booleans for function parameters.
 - Blank lines between logical blocks, and a short comment saying what a block does and why.
-- Keep members private. Widening visibility (private to internal or public) needs the owner's explicit approval; link to it in the PR. Never claim an approval you can't link.
+- Keep members private. Widening visibility (private to internal or public) needs explicit approval from hill or Aldana; name who approved and link to it in the PR. Never claim an approval you can't link.
 - Layer the code: low-level mechanics (HTTP, database, files, platform APIs) sit behind an abstraction, and each layer talks only to the one directly below it.
 - Prefer targeted edits over rewriting whole files.
 - Keep all state explicit. Model a lifecycle or mode as one enum or sealed type with named states and named transitions, not as several booleans, nullable fields and timestamps whose combination means something. Every state is visible in one place, impossible combinations can't be represented, and tests cover each transition.
