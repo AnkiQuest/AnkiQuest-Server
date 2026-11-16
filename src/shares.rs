@@ -1566,11 +1566,7 @@ mod tests {
             0
         );
 
-        // Move the first send back to distinguish receipts without a timing dependency.
-        sql(
-            &app,
-            "update notifications set created_at = created_at - 1000 where recipient = 'cerro'",
-        );
+        // The actual second receipt identifies its send without rewriting timestamps.
         let undo = format!("/api/share/hill/{id}?until={}", again["undo_until"]);
         assert_eq!(
             call(&app, "DELETE", &undo, "hill-secret", Value::Null).await,
