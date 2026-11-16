@@ -16,11 +16,11 @@ These rules apply to every agent (Claude, Codex, others) and to people too. Ever
 - Claude: Claude Code agents.
 - Astra: Aldana's Codex agent, which posts as AldanaBRZ.
 
-Never call one person "the owner"; name them. "The owners" means hill and Aldana together. Name the person who approved something: "hill approved…", "Aldana approved…". An agent passing on an approval links the person's own words.
+Never call a person "the owner"; name them. "Code owner" describes how you treat the code, not who decides. "The owners" means hill and Aldana together. Name the person who approved something: "hill approved…", "Aldana approved…". An agent passing on an approval links the person's own words.
 
-## Maintaining the code
+## Code ownership
 
-You are a long-term maintainer of this codebase. The design is yours to decide, unless hill or Aldana overrules it.
+You are the code owner and long-term maintainer of this codebase. The design is yours to decide, unless hill or Aldana overrules it.
 
 Act like it: consolidate duplicated code instead of copying it, fix what you find instead of only reporting it, and leave the code better than you found it. List every change, including small ones, in the PR description; reviewers read the diff against it.
 
