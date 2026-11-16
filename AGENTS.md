@@ -12,15 +12,15 @@ These rules apply to every agent (Claude, Codex, others) and to people too. Ever
 
 - hill (GitHub float3).
 - Aldana (GitHub AldanaBRZ).
-- The AnkiQuest team: hill and Aldana together. They decide and approve. hill and Aldana have equal rights and responsibilities in the project.
+- The owners: hill and Aldana together. They decide and approve, with equal rights and responsibilities in the project.
 - Claude: Claude Code agents.
 - Astra: Aldana's Codex agent, which posts as AldanaBRZ.
 
-Name the person who approved something: "hill approved…", "Aldana approved…". An agent passing on an approval links the person's own words.
+Never call one person "the owner"; name them. "The owners" means hill and Aldana together. Name the person who approved something: "hill approved…", "Aldana approved…". An agent passing on an approval links the person's own words.
 
-## Ownership
+## Maintaining the code
 
-You are the code owner and long-term maintainer of this codebase. The design is yours to decide, unless hill or Aldana overrules it.
+You are a long-term maintainer of this codebase. The design is yours to decide, unless hill or Aldana overrules it.
 
 Act like it: consolidate duplicated code instead of copying it, fix what you find instead of only reporting it, and leave the code better than you found it. List every change, including small ones, in the PR description; reviewers read the diff against it.
 
@@ -56,9 +56,9 @@ Write new code in Rust, or TypeScript for the web, when the platform allows it. 
 
 - Start each session with `git fetch` and work from the latest default branch.
 - Never push to the default branch; open a pull request.
-- Pull requests by hill or Claude need an approving review from Aldana or Astra (the AldanaBRZ account). Pull requests by Aldana or Astra need an approving review from hill or Claude (the float3 account). One approval from the other side is enough; merge only once it is given and every check is green on the final commit.
+- Pull requests by hill or Claude need an approving review from Aldana or Astra (the AldanaBRZ account). Pull requests by Aldana or Astra need an approving review from hill or Claude (the float3 account). One approval from the other side is enough; merge only once it is given and every check is green on the final commit. hill may merge trivially correct changes (documentation, AGENTS.md, README, labels, search and replace) without that review.
 - Commit messages: subject in the imperative, capitalised, at most 50 characters (72 hard limit), no full stop; a blank line; a body wrapped at 72 characters that explains what and why, not how.
-- Disclose AI help with an `Assisted-by: <tool and version>` trailer.
+- Name the model that did the work. Every commit, pull request, issue, comment and review an agent writes ends with `Assisted-by: <tool> (<model and version>)`, such as `Assisted-by: Claude Code (Opus 5.5)` or `Assisted-by: Codex (GPT-6)`. Generated images name the model that drew them in the pull request and in their generation record. If the tool does not say which model it used, write that instead of guessing.
 - Never link to an agent session (such as `claude.ai/code/session_…`) in commits, pull requests, issues or comments.
 - No emoji in commits, pull requests, issues or comments.
 - Never commit secrets, tokens or personal data. Secrets live on the servers, outside the repositories.
@@ -76,6 +76,7 @@ AnkiQuest has two clients: the Android app ([AnkiQuest/AnkiQuest-Android](https:
 
 Companion art means every picture of a character: poses, moment and card pictures, widget and notification drawables.
 
+- Masters live only in `static/<companion>/` in AnkiQuest-Server. Every other copy (share cards, add-on, Android, docs) is generated from them by the exporters and hash-checked in CI; never commit a hand-made copy.
 - Never delete companion art, even when nothing uses it any more. Remove the references, keep the files, so they can be reused or merged later.
 - Each character needs a core set of poses before it goes live in the apps: face, asleep, happy, streak (on fire), sad, hopeful, frozen and neglected. A character without the full core set stays hidden.
 - Every other pose is an extension: streak tiers, milestones, frozen days 2 and 3, hurt, dead, welcome, a defeated leech, and poses for other rare moments. Extensions are optional. A missing extension falls back to its core pose (a streak tier to streak, frozen 3 to frozen, a defeated leech to happy).
