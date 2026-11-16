@@ -19,11 +19,6 @@ web:
           - package.json
           - package-lock.json
 
-addon:
-  - changed-files:
-      - any-glob-to-any-file:
-          - addon/**
-
 tests:
   - changed-files:
       - any-glob-to-any-file:

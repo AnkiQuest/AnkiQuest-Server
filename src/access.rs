@@ -456,6 +456,7 @@ fn public_path(path: &str) -> bool {
         )
         || path == crate::capabilities::PATH
         || path == crate::crash_reports::PATH
+        || path == crate::robots::PATH
         || path.starts_with("/api/invites/")
         || path.starts_with("/auth/oauth/")
         || shared_win(path)
@@ -468,7 +469,7 @@ fn shared_win(path: &str) -> bool {
 
 /// A response that sets its own caching instead of `no-store`.
 fn own_caching(path: &str) -> bool {
-    shared_win(path) || path == crate::capabilities::PATH
+    shared_win(path) || path == crate::capabilities::PATH || path == crate::robots::PATH
 }
 
 pub(crate) fn encoded_next(path: &str) -> String {
@@ -482,6 +483,8 @@ pub(crate) fn encoded_next(path: &str) -> String {
         })
         .collect()
 }
+
+const ROBOTS_TAG: &str = "x-robots-tag";
 
 pub(crate) async fn gate(State(app): State<Arc<App>>, request: Request, next: Next) -> Response {
     let path = request.uri().path();
@@ -540,6 +543,8 @@ pub(crate) async fn gate(State(app): State<Arc<App>>, request: Request, next: Ne
         );
     }
     headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    // Pages and answers name players and their study: keep every one out of search indexes.
+    headers.insert(ROBOTS_TAG, HeaderValue::from_static("noindex"));
     response
 }
 

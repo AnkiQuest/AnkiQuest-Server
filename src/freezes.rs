@@ -556,7 +556,7 @@ mod tests {
         let projected = preview(
             State(app.clone()),
             UrlPath("cerro".into()),
-            HeaderMap::new(),
+            headers("cerro"),
             Json(Pending {
                 reviews: reviews.clone(),
                 seen_through: None,

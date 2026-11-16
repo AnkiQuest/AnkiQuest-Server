@@ -1,5 +1,5 @@
 {
-  "_about": "Aki's streak mood for today, and its pose. `today.state` is the day verdict: studied (today counts, or will once unsent reviews arrive), protected, short (reviews short of the minimum), pending (no reviews) or unknown. `frozen_days` counts the heatmap's frozen days in a row ending yesterday (frozen_run). A counted day or a reached goal is fire, by heat: 1-6 aki_streak, 7-29 aki_streak_hot, 30-99 aki_streak_blazing, 100+ aki_streak_legend. Poses are Aki's; other companions map them to their own art. The desktop add-on (addon/moods.py, tests/test_streak_moods.py) checks it; the Android app keeps a copy for AnkiquestMood.",
+  "_about": "Aki's streak mood for today, and its pose. `today.state` is the day verdict: studied (today counts, or will once unsent reviews arrive), protected, short (reviews short of the minimum), pending (no reviews) or unknown. `frozen_days` counts the heatmap's frozen days in a row ending yesterday (frozen_run). A counted day or a reached goal is fire, by heat: 1-6 aki_streak, 7-29 aki_streak_hot, 30-99 aki_streak_blazing, 100+ aki_streak_legend. Poses are Aki's; other companions map them to their own art. The desktop add-on (addon/moods.py, tests/test_streak_moods.py) checks it; the Android app keeps a copy for AnkiquestMood. `flames` is the flame beside the streak number for each mood (AnkiquestMood.flame): lit once today counts, unlit (grey) for a streak today has not counted for yet, icy (blue) when a freeze kept the days before today, none without a streak or when nothing is known about today.",
   "moods": [
     {
       "name": "nothing is known about today",
@@ -583,6 +583,40 @@
         }
       ],
       "expected": 0
+    }
+  ],
+  "flames": [
+    {
+      "mood": "unknown",
+      "flame": "none"
+    },
+    {
+      "mood": "asleep",
+      "flame": "none"
+    },
+    {
+      "mood": "sad",
+      "flame": "unlit"
+    },
+    {
+      "mood": "hopeful",
+      "flame": "unlit"
+    },
+    {
+      "mood": "frozen_1",
+      "flame": "icy"
+    },
+    {
+      "mood": "frozen_2",
+      "flame": "icy"
+    },
+    {
+      "mood": "frozen_3",
+      "flame": "icy"
+    },
+    {
+      "mood": "fire",
+      "flame": "lit"
     }
   ]
 }

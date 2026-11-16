@@ -41,7 +41,9 @@ mod migrations;
 mod notifications;
 mod oauth;
 mod privacy;
+mod reciprocity;
 mod reminders;
+mod robots;
 mod shares;
 mod social;
 mod store;
@@ -321,6 +323,11 @@ fn router(app: Arc<App>) -> Router {
                 .layer(axum::extract::DefaultBodyLimit::max(4096)),
         )
         .route("/api/language/{user}", get(i18n::get).post(i18n::set))
+        .route(robots::PATH, get(robots::robots))
+        .layer(axum::middleware::from_fn_with_state(
+            app.clone(),
+            reciprocity::mark,
+        ))
         .layer(axum::middleware::from_fn_with_state(
             app.clone(),
             access::gate,
@@ -466,7 +473,9 @@ mod tests {
         )
         .await
         .unwrap();
-        let mut public = HeaderMap::new();
+        // Hill, who has studied, looks at Cerro's profile in English.
+        with_reviews(&app, "hill", 1);
+        let mut public = headers("hill");
         public.insert(header::ACCEPT_LANGUAGE, "en-US".parse().unwrap());
         let viewed = profile(State(app.clone()), UrlPath("cerro".into()), public)
             .await
@@ -571,6 +580,8 @@ mod tests {
     #[tokio::test]
     async fn authenticated_upload_preferences_and_inbox_end_to_end() {
         let (app, path) = fixture();
+        // Viewers of others' study have studied themselves; see crate::reciprocity.
+        with_reviews(&app, "hill", 1);
         crate::test_support::used_app(&app, &["cerro", "hill", "friend"]);
         let _ = upload(
             State(app.clone()),
@@ -674,6 +685,8 @@ mod tests {
     #[tokio::test]
     async fn only_the_owner_labels_a_conquered_card_and_friends_hear_what_it_was() {
         let (app, path) = fixture();
+        // Viewers of others' study have studied themselves; see crate::reciprocity.
+        with_reviews(&app, "cerro", 1);
         upload_as(
             &app,
             "hill",
@@ -794,6 +807,9 @@ mod tests {
     #[tokio::test]
     async fn labels_reach_strangers_only_from_profiles_chosen_public() {
         let (app, path) = fixture();
+        // Cerro stays a stranger to Ana; both viewers have studied, see crate::reciprocity.
+        with_reviews(&app, "cerro", 1);
+        with_reviews(&app, "hill", 1);
         crate::accounts::create(&app.store.lock().unwrap().conn, "ana", "Ana", "", 0).unwrap();
         app.accounts.insert("ana", "Ana");
         let token = app.issue_token("ana", "Phone").unwrap();
@@ -830,9 +846,20 @@ mod tests {
                 .label
         };
         assert_eq!(
-            label(HeaderMap::new()).await,
+            label(headers("cerro")).await,
             None,
             "the conquest is public by default, what the card was is not"
+        );
+        assert_eq!(
+            conquests::show(
+                State(app.clone()),
+                UrlPath(("ana".into(), at)),
+                HeaderMap::new()
+            )
+            .await
+            .err(),
+            Some(StatusCode::NOT_FOUND),
+            "visitors who are not signed in see no one's study"
         );
         assert_eq!(label(headers("hill")).await, None);
         assert_eq!(label(ana.clone()).await.as_deref(), Some("la ardilla"));
@@ -853,7 +880,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            label(HeaderMap::new()).await.as_deref(),
+            label(headers("cerro")).await.as_deref(),
             Some("la ardilla"),
             "a profile its player made public shares labels as before"
         );
@@ -863,6 +890,8 @@ mod tests {
     #[tokio::test]
     async fn a_conquered_card_is_announced_shared_and_told_to_friends_once() {
         let (app, path) = fixture();
+        // Viewers of others' study have studied themselves; see crate::reciprocity.
+        with_reviews(&app, "cerro", 1);
         upload_as(
             &app,
             "hill",
@@ -988,6 +1017,8 @@ mod tests {
     #[tokio::test]
     async fn an_old_conquest_gets_a_quiet_win_and_telling_friends_can_be_taken_back() {
         let (app, path) = fixture();
+        // Viewers of others' study have studied themselves; see crate::reciprocity.
+        with_reviews(&app, "cerro", 1);
         upload_as(
             &app,
             "hill",
