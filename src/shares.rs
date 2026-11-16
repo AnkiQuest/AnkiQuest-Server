@@ -1886,6 +1886,113 @@ mod tests {
         assert_eq!(store.notifications("cerro", 4_000).unwrap().len(), 1);
     }
 
+    struct FixedClock;
+
+    impl FixedClock {
+        fn at(now: i64) -> Self {
+            crate::app::fix_now_ms(Some(now));
+            Self
+        }
+    }
+
+    impl Drop for FixedClock {
+        fn drop(&mut self) {
+            crate::app::fix_now_ms(None);
+        }
+    }
+
+    async fn send_to(app: &Arc<App>, win: i64, friend: &str) -> Value {
+        let (status, sent) = share_as_hill(
+            app,
+            json!({"moment": {"win": win}, "to": {"friends": [friend]}}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(sent["recipients"], 1);
+        sent
+    }
+
+    async fn undo_send(app: &Arc<App>, receipt: &Value) -> (StatusCode, Value) {
+        let path = format!(
+            "/api/share/hill/{}?until={}",
+            receipt["win"], receipt["undo_until"]
+        );
+        call(app, "DELETE", &path, "hill-secret", Value::Null).await
+    }
+
+    #[tokio::test]
+    async fn same_tick_undo_is_one_send() {
+        let _clock = FixedClock::at(1_800_000_000_000);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        let second = send_to(&app, win, "friend").await;
+
+        let (status, undone) = undo_send(&app, &second).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(undone["retracted"], 1);
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert!(inbox(&app, "friend").is_empty());
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn old_undo_cannot_take_resend() {
+        let _clock = FixedClock::at(1_800_000_000_000);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+        let second = send_to(&app, win, "cerro").await;
+
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 0);
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert_eq!(undo_send(&app, &second).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn clock_return_keeps_old_undo() {
+        let at = 1_800_000_000_000;
+        let _clock = FixedClock::at(at);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+
+        // A clock adjustment must not make a removed receipt reusable later.
+        crate::app::fix_now_ms(Some(at - 1_000));
+        let second = send_to(&app, win, "friend").await;
+        crate::app::fix_now_ms(Some(at));
+        let third = send_to(&app, win, "cerro").await;
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 0);
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert_eq!(inbox(&app, "friend").len(), 1);
+        assert_eq!(undo_send(&app, &second).await.1["retracted"], 1);
+        assert_eq!(undo_send(&app, &third).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn backwards_clock_keeps_expiry() {
+        let at = 1_800_000_000_000;
+        let _clock = FixedClock::at(at);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        let earlier = at - 1_000;
+        crate::app::fix_now_ms(Some(earlier));
+        let second = send_to(&app, win, "friend").await;
+        assert!(second["undo_until"].as_i64().unwrap() <= earlier + UNDO_MS);
+
+        crate::app::fix_now_ms(Some(earlier + UNDO_MS));
+        assert_eq!(undo_send(&app, &second).await.0, StatusCode::CONFLICT);
+        assert_eq!(inbox(&app, "friend").len(), 1);
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
     #[tokio::test]
     async fn a_moment_is_taken_back_one_send_at_a_time() {
         let (app, path) = moments_app();
