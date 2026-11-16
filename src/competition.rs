@@ -1037,10 +1037,41 @@ async fn community_dashboard(
     let mut dashboard =
         dashboard(&store, &participants, &app.week, now, year, month).map_err(store_error)?;
     i18n::community(&mut dashboard, &language);
+    if let Some(lock) = app.lock(&crate::access::viewer(&app, &headers)) {
+        withhold_dashboard(&mut dashboard);
+        dashboard["locked"] = json!(lock);
+    }
     Ok(Json(dashboard))
 }
 
-async fn winners(State(app): State<Arc<App>>) -> Result<Json<serde_json::Value>, StatusCode> {
+/// The community dashboard with nobody in it, for a caller who may not see others' study;
+/// see [`crate::reciprocity`]. The calendar and metadata stay, so the page keeps its shape.
+fn withhold_dashboard(dashboard: &mut Value) {
+    for key in ["players", "awards", "records", "head_to_head"] {
+        dashboard[key] = json!([]);
+    }
+    for key in ["calendar", "weeks", "seasons"] {
+        for period in dashboard[key].as_array_mut().into_iter().flatten() {
+            period["standings"] = json!([]);
+            period["winners"] = json!([]);
+            period["winning_margin"] = json!(0);
+        }
+    }
+    withhold_history(&mut dashboard["winner_history"]);
+}
+
+/// A winner history with nobody in it; see [`withhold_dashboard`].
+fn withhold_history(history: &mut Value) {
+    history["lifetime"]["players"] = json!([]);
+    history["shared"]["players"] = json!([]);
+    history["shared"]["player_count"] = json!(0);
+    history["waiting_players"] = json!([]);
+}
+
+async fn winners(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, StatusCode> {
     if let Some(base) = &app.config.sync_base {
         import(&app, base).map_err(|error| {
             log_error!("winner history sync import incomplete: {error}");
@@ -1050,9 +1081,11 @@ async fn winners(State(app): State<Arc<App>>) -> Result<Json<serde_json::Value>,
     let mut store = app.store.lock().unwrap();
     let participants = app.legacy_participants();
     refresh_community(&app, &mut store, &participants, now_ms()).map_err(store_error)?;
-    winner_history(&store, &participants)
-        .map(Json)
-        .map_err(store_error)
+    let mut history = winner_history(&store, &participants).map_err(store_error)?;
+    if app.lock(&crate::access::viewer(&app, &headers)).is_some() {
+        withhold_history(&mut history);
+    }
+    Ok(Json(history))
 }
 
 pub(crate) fn routes() -> Router<Arc<App>> {
@@ -1879,15 +1912,27 @@ mod tests {
 
     #[tokio::test]
     async fn community_empty_history_has_no_invented_champions_and_rejects_bad_filters() {
-        let (app, path) = fixture();
-        let board = community_dashboard(
-            State(app.clone()),
-            Query(CommunityQuery::default()),
-            HeaderMap::new(),
-        )
-        .await
-        .unwrap()
-        .0;
+        let (app, path) = app_with(serde_json::json!({
+            "registration": true,
+            "users": {
+                "cerro": {"token": "cerro-secret"},
+                "hill": {"token": "hill-secret"},
+                "friend": {"token": "friend-secret"}
+            }
+        }));
+        // A newer account that has studied looks on; accounts are not in the community.
+        let token = sign_up(&app, "viewer").await;
+        with_reviews(&app, "viewer", 1);
+        let mut viewer = HeaderMap::new();
+        viewer.insert(
+            header::AUTHORIZATION,
+            format!("Bearer {token}").parse().unwrap(),
+        );
+        let board =
+            community_dashboard(State(app.clone()), Query(CommunityQuery::default()), viewer)
+                .await
+                .unwrap()
+                .0;
         assert!(board["calendar"].as_array().unwrap().is_empty());
         assert_eq!(board["players"].as_array().unwrap().len(), 3);
         assert_eq!(
@@ -1984,7 +2029,7 @@ mod tests {
         }
         community_collection(&base, "hill", &reviews);
 
-        let board = community_dashboard(State(app.clone()), community_query(day), HeaderMap::new())
+        let board = community_dashboard(State(app.clone()), community_query(day), headers("hill"))
             .await
             .unwrap()
             .0;
@@ -2017,7 +2062,10 @@ mod tests {
             }
         }
         community_collection(&base, "hill", &reviews);
-        let history = winners(State(app.clone())).await.unwrap().0;
+        let history = winners(State(app.clone()), headers("hill"))
+            .await
+            .unwrap()
+            .0;
         assert_eq!(history["shared"]["start_date"], day.to_string());
         assert_eq!(history["shared"]["player_count"], 2);
         assert_eq!(history["shared"]["periods"]["day"], 1);
@@ -2029,7 +2077,7 @@ mod tests {
             .unwrap();
         assert_eq!(champion["day_wins"], 1);
         assert_eq!(history["waiting_players"][0]["user"], "friend");
-        let board = community_dashboard(State(app.clone()), community_query(day), HeaderMap::new())
+        let board = community_dashboard(State(app.clone()), community_query(day), headers("hill"))
             .await
             .unwrap()
             .0;
@@ -2055,7 +2103,7 @@ mod tests {
         assert!(error.contains("friend"));
         assert_eq!(app.store.lock().unwrap().reviews("cerro").unwrap().len(), 2);
         assert_eq!(
-            community_dashboard(State(app.clone()), community_query(day), HeaderMap::new())
+            community_dashboard(State(app.clone()), community_query(day), headers("hill"))
                 .await
                 .unwrap_err(),
             StatusCode::SERVICE_UNAVAILABLE
@@ -2083,7 +2131,7 @@ mod tests {
             std::fs::remove_file(base.join(user).join("collection.anki2")).unwrap();
             community_collection(&base, user, &reviews[..count]);
         }
-        let board = community_dashboard(State(app.clone()), community_query(day), HeaderMap::new())
+        let board = community_dashboard(State(app.clone()), community_query(day), headers("hill"))
             .await
             .unwrap()
             .0;
@@ -2106,7 +2154,9 @@ mod tests {
         Arc::get_mut(&mut app).unwrap().config.sync_base = Some(base.join("missing"));
         assert!(sync_users(&base.join("missing")).is_err());
         assert_eq!(
-            winners(State(app.clone())).await.unwrap_err(),
+            winners(State(app.clone()), headers("hill"))
+                .await
+                .unwrap_err(),
             StatusCode::SERVICE_UNAVAILABLE
         );
         assert_eq!(

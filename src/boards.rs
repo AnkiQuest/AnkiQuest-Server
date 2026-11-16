@@ -158,6 +158,7 @@ fn global_users(
     } else {
         BTreeSet::new()
     };
+    app.withhold(viewer, &mut users);
     Ok((users, full))
 }
 
@@ -323,7 +324,8 @@ async fn leaderboard(
             .map(|rows| Json(Board::Global(rows)))
             .map_err(store_error);
     }
-    let users = board_users(&app, &viewer, scope)?;
+    let mut users = board_users(&app, &viewer, scope)?;
+    app.withhold(&viewer, &mut users);
     Ok(Json(Board::Standings(standings(
         &app,
         &users,
@@ -439,12 +441,14 @@ async fn rank(
     let language =
         i18n::selected(&headers, &app.store.lock().unwrap(), &user).map_err(store_error)?;
     let owner = authorized(&app, &user, &headers);
-    let users = if owner {
+    let viewer = access::viewer(&app, &headers);
+    let mut users = if owner {
         app.circle(&app.store.lock().unwrap().conn, &user)
             .map_err(store_error)?
     } else {
-        board_users(&app, &access::viewer(&app, &headers), None)?
+        board_users(&app, &viewer, None)?
     };
+    app.withhold(&viewer, &mut users);
     let week = app.week.start_of(now_ms());
     let board = standings(&app, &users, None);
     let places: Vec<feedback::Place> = board
@@ -535,6 +539,7 @@ async fn records(
     let viewer = access::viewer(&app, &headers);
     let global = scope == Some(social::Scope::Global);
     let mut users = board_users(&app, &viewer, scope)?;
+    app.withhold(&viewer, &mut users);
     if let Some(member) = viewer.member.as_deref().filter(|_| global) {
         // Records keep the public-profile rule and respect this viewer's Global exclusions.
         let store = app.store.lock().unwrap();
@@ -628,13 +633,21 @@ mod tests {
             },
         );
         let expected = app.profile("cerro").unwrap();
+        // Hill has studied, so the board shows Cerro to Hill.
+        with_reviews(&app, "hill", 1);
         let Json(board) = leaderboard(State(app), Query(BoardQuery::default()), headers("hill"))
             .await
             .unwrap();
         let value = serde_json::to_value(&board).unwrap();
-        assert_eq!(value[0]["streak_state"], "pending");
-        assert_eq!(value[0]["today_reviews"], 0);
-        assert_eq!(value[0]["day_ends_at"], expected.day_ends_at);
+        let cerro = value
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["user"] == "cerro")
+            .unwrap();
+        assert_eq!(cerro["streak_state"], "pending");
+        assert_eq!(cerro["today_reviews"], 0);
+        assert_eq!(cerro["day_ends_at"], expected.day_ends_at);
     }
 
     fn studied(user: &str, count: i64, day: i64) -> Upload {
@@ -675,7 +688,7 @@ mod tests {
         let board = records(
             State(app.clone()),
             Query(BoardQuery::default()),
-            HeaderMap::new(),
+            headers("hill"),
         )
         .await
         .unwrap()
@@ -742,7 +755,7 @@ mod tests {
         let answer = rank(
             State(app.clone()),
             UrlPath("cerro".into()),
-            HeaderMap::new(),
+            headers("hill"),
             Json(RankQuery {
                 previous: vec!["hill".into(), "cerro".into()],
                 week: Some(app.week.start_of(now_ms())),
@@ -758,7 +771,7 @@ mod tests {
         let first_look = rank(
             State(app.clone()),
             UrlPath("cerro".into()),
-            HeaderMap::new(),
+            headers("hill"),
             Json(RankQuery {
                 previous: vec![],
                 week: None,
@@ -772,6 +785,11 @@ mod tests {
         cleanup(app, path);
     }
 
+    /// A player other than `user` who has studied, so their view of `user`'s rank shows it.
+    fn someone_else(user: &str) -> HeaderMap {
+        headers(if user == "hill" { "cerro" } else { "hill" })
+    }
+
     async fn rank_of(
         app: &Arc<App>,
         user: &str,
@@ -781,7 +799,7 @@ mod tests {
         rank(
             State(app.clone()),
             UrlPath(user.into()),
-            HeaderMap::new(),
+            someone_else(user),
             Json(RankQuery {
                 previous: previous.iter().map(|user| user.to_string()).collect(),
                 week,
@@ -1216,11 +1234,10 @@ mod tests {
         let (_, board) = get(&app, "/api/leaderboard?scope=global", Some(&ana)).await;
         assert!(row(&board, "bobby")["today_reviews"].is_u64());
 
-        // Without signing in, only the listed public profiles are there.
+        // Without signing in, nobody's study is there; see crate::reciprocity.
         for route in ["/api/leaderboard?scope=global", "/api/leaderboard"] {
             let (status, board) = get(&app, route, None).await;
-            assert_eq!((status, users(&board)), (StatusCode::OK, vec!["ana"]));
-            assert_summary(row(&board, "ana"));
+            assert_eq!((status, users(&board)), (StatusCode::OK, vec![]));
         }
         let (_, records) = get(&app, "/api/records?scope=global", None).await;
         assert!(
@@ -1282,9 +1299,10 @@ mod tests {
         assert_eq!(users(&after), ["carla", "ana"]);
         assert_eq!(row(&after, "carla"), row(&before, "carla"));
         assert_eq!(row(&after, "ana"), row(&before, "ana"));
-        for token in [Some(bobby.as_str()), Some(carla.as_str()), None] {
+        for token in [Some(bobby.as_str()), Some(carla.as_str())] {
             assert_eq!(users(&get(&app, url, token).await.1), users(&before));
         }
+        assert!(users(&get(&app, url, None).await.1).is_empty());
         assert_eq!(
             get(&app, "/api/leaderboard/hidden/ana", Some(&ana)).await.1,
             hidden
@@ -1368,9 +1386,9 @@ mod tests {
             );
         }
         assert!(after.to_string().contains("ana"));
-        for token in [Some(bobby.as_str()), None] {
-            assert_eq!(get(&app, url, token).await.1, before);
-        }
+        assert_eq!(get(&app, url, Some(&bobby)).await.1, before);
+        let (_, anonymous) = get(&app, url, None).await;
+        assert!(!anonymous.to_string().contains("\"user\""), "{anonymous}");
         cleanup(app, path);
     }
 

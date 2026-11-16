@@ -270,7 +270,15 @@ impl App {
         target: &str,
         public: bool,
     ) -> rusqlite::Result<bool> {
-        if viewer.member.as_deref() == Some(target) || public {
+        if viewer.member.as_deref() == Some(target) {
+            return Ok(true);
+        }
+
+        // Others' study waits for the viewer's first review.
+        if self.lock(viewer).is_some() {
+            return Ok(false);
+        }
+        if public {
             return Ok(true);
         }
         if viewer.community && self.legacy(target) {
@@ -797,7 +805,7 @@ pub fn routes() -> Router<Arc<App>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{call, cleanup, sign_up};
+    use crate::test_support::{call, cleanup, sign_up, with_reviews};
     use std::path::PathBuf;
 
     fn fixture() -> (Arc<App>, PathBuf) {
@@ -818,6 +826,13 @@ mod tests {
     async fn configured_players_keep_their_community_and_accounts_start_alone() {
         let (app, path) = fixture();
         sign_up(&app, "ana").await;
+        // A stranger to everyone who has studied, so profiles' own visibility decides.
+        sign_up(&app, "carl").await;
+        with_reviews(&app, "carl", 1);
+        let stranger = Viewer {
+            member: Some("carl".into()),
+            community: false,
+        };
         assert_eq!(circle(&app, "alice"), ["alice", "bob"]);
         assert_eq!(circle(&app, "ana"), ["ana"]);
         let store = app.store.lock().unwrap();
@@ -839,15 +854,19 @@ mod tests {
             member: None,
             community: false,
         };
-        assert!(app.visible(conn, &anonymous, "ana").unwrap());
-        assert!(!app.visible_by_choice(conn, &anonymous, "ana").unwrap());
+        assert!(app.visible(conn, &stranger, "ana").unwrap());
+        assert!(!app.visible_by_choice(conn, &stranger, "ana").unwrap());
+        assert!(
+            !app.visible(conn, &anonymous, "ana").unwrap(),
+            "nobody's study reaches visitors who are not signed in"
+        );
         assert_eq!(
             app.board(conn, &anonymous, None)
                 .unwrap()
                 .unwrap()
                 .into_iter()
                 .collect::<Vec<_>>(),
-            ["alice", "ana", "bob"]
+            ["alice", "ana", "bob", "carl"]
         );
         conn.execute(
             "insert into visibility (user, public) values ('ana', 0)",
@@ -858,7 +877,7 @@ mod tests {
             !app.is_public(conn, "ana").unwrap(),
             "a private profile stays private"
         );
-        assert!(!app.visible(conn, &anonymous, "ana").unwrap());
+        assert!(!app.visible(conn, &stranger, "ana").unwrap());
         assert!(
             app.visible(
                 conn,
@@ -876,7 +895,7 @@ mod tests {
                 .unwrap()
                 .into_iter()
                 .collect::<Vec<_>>(),
-            ["alice", "bob"]
+            ["alice", "bob", "carl"]
         );
         conn.execute(
             "insert into player_settings (user, global_leaderboard) values ('bob', 0)",
@@ -889,10 +908,10 @@ mod tests {
                 .unwrap()
                 .into_iter()
                 .collect::<Vec<_>>(),
-            ["alice"],
+            ["alice", "carl"],
             "a public profile that left the global board is not listed there"
         );
-        assert!(app.visible(conn, &anonymous, "bob").unwrap());
+        assert!(app.visible(conn, &stranger, "bob").unwrap());
         drop(store);
         cleanup(app, path);
     }
@@ -943,6 +962,8 @@ mod tests {
             "only the owner sees the invite"
         );
         assert_eq!(circle(&app, "bobby"), ["ana", "bobby"]);
+        with_reviews(&app, "bobby", 1);
+        with_reviews(&app, "alice", 1);
         {
             let conn = &app.store.lock().unwrap().conn;
             let viewer = Viewer {
@@ -1198,13 +1219,14 @@ mod tests {
         )
         .await;
         assert_eq!(overview["public"], true);
+        with_reviews(&app, "alice", 1);
         let store = app.store.lock().unwrap();
         let conn = &store.conn;
         assert!(
             app.visible(
                 conn,
                 &Viewer {
-                    member: None,
+                    member: Some("alice".into()),
                     community: false
                 },
                 "ana"

@@ -656,7 +656,7 @@ mod tests {
         let _ = preview(
             State(app.clone()),
             UrlPath("cerro".into()),
-            HeaderMap::new(),
+            headers("cerro"),
             Json(Pending {
                 reviews: vec![],
                 seen_through: None,
@@ -743,7 +743,7 @@ mod tests {
                 preview(
                     State(app),
                     UrlPath("hill".into()),
-                    HeaderMap::new(),
+                    headers("hill"),
                     Json(Pending {
                         reviews,
                         seen_through,
