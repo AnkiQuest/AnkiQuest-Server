@@ -2,7 +2,8 @@
 
 Every celebratory moment the server notices becomes a **win**. Each kind of win has a sharing
 policy chosen by the player. A win can reach friends in AnkiQuest, or go anywhere as a card image
-and link. All clients (Android, desktop add-on, web) use this API. None of them draws its own card.
+and link. All clients (Android, desktop add-on, web) use this API. Apps can render pictures
+locally when the server picture is unavailable.
 
 ## Moments
 
@@ -177,6 +178,12 @@ Friends receive a `share` row as today. It has the same `topic` and quoted title
 `"win": 17` and `"image": "https://host/w/<token>.png"`. Mutes and unsubscriptions are respected, and
 each win reaches each friend once.
 
+For conquered cards this includes the legacy Tell friends action. Either route recognizes
+the other's existing deliveries, even when Tell ran before the worker kept a win. Each
+route's Undo removes only its own eligible rows; read, cheered or answered rows still
+prevent a repeat through the other route. The legacy `told` count keeps its existing
+meaning and does not reveal which friends muted the sender.
+
 `{ "notification": id }` for a row that has a `win` shares that win to friends, so it is not sent twice.
 
 `DELETE /api/wins/{user}/{id}/link` revokes the link (204, or 404 for someone else's win). The page and the image then answer 404.
@@ -197,6 +204,9 @@ each win reaches each friend once.
     before wins were kept has none and is `409`; share it with `{ "notification" }` alone.
   - `{ "conquest": at }`: a conquered card. Its win is kept now if the server announced it before
     wins were kept; one the worker has not announced yet is `409`, so ask again shortly.
+  - `{ "place": 1 }`: the player's current top-three place in the circle's weekly board. Requires
+    the `share_place` capability. The server checks the current rank and positive weekly XP;
+    a changed rank or no XP is `409`, and a place outside 1–3 is `400`.
 - `to` is `"circle"`, everyone in the player's circle, or `{ "friends": [...], "groups": [...] }`.
   Friends must be in the player's circle and groups ones the player is in; a group reaches its
   members other than the player. At most 100 friends and 20 groups, none twice, and not both
@@ -208,6 +218,13 @@ It answers `{ "recipients": n, "link": { "url", "image" }, "win": 17, "undo_unti
 `recipients` counts those who got it now. Each win reaches each person once, whoever sent it there
 and however it was addressed, and people who muted or unsubscribed from the player are skipped.
 `undo_until` is left out when nobody got it. A missing moment is `404`.
+
+A current place is kept on the first explicit share as `place:current:{day}:{rank}` with that
+moment's XP. Further sends that day reuse the snapshot. This is separate from the worker's
+completed-week award and never queues an automatic share. The legacy `{ "place": 1 }` request
+uses the same delivery path and retains its `{ "recipients": n }` response. Pre-upgrade
+delivery markers also prevent duplicates; Undo does not remove those earlier messages.
+Example: `share_place.json`.
 
 Recipients get the usual `share` row (see above) with `"note"` when the player wrote one. The link
 is made as for `{ "win", "to": "friends" }`, which now does the same as `"to": "circle"` and

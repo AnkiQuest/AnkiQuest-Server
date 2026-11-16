@@ -268,11 +268,27 @@ pub(crate) async fn tell(
     };
     let day = store.clock(&user).map_err(store_error)?.day(now);
     let friends = crate::social::friends(&store.conn, &user).map_err(store_error)?;
+    let win =
+        crate::wins::id_of(&store.conn, &user, &format!("conquered:{at}")).map_err(store_error)?;
     let tx = store.conn.transaction().map_err(store_error)?;
     for friend in &friends {
         if crate::social::muted(&tx, friend, &user).map_err(store_error)? {
             continue;
         }
+
+        // Share sheet -> win delivery -> Tell: a recipient keeps the first send.
+        // Do not adopt its row or marker; each route's Undo owns its own sends.
+        if tx
+            .query_row(
+                "select exists (select 1 from win_deliveries where win = ?1 and recipient = ?2)",
+                params![win, friend],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(store_error)?
+        {
+            continue;
+        }
+
         // Once per friend, as `Store::send_once`, keeping the row so it can be taken back.
         if tx
             .execute(
