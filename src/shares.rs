@@ -2025,6 +2025,98 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn legacy_quotes_stay_private() {
+        let (app, path) = moments_app();
+        for kind in SHAREABLE {
+            let row = old_notice(&app, kind);
+            let (status, sent) = share_as_hill(&app, json!({"notification": row})).await;
+            assert_eq!((status, sent), (StatusCode::OK, json!({"recipients": 2})));
+            let store = app.store.lock().unwrap();
+            let id = wins::id_of(&store.conn, "hill", &format!("notification:{row}"))
+                .unwrap()
+                .unwrap();
+            let win = wins::win(&store.conn, "hill", id).unwrap();
+            assert!(
+                win.link_token.is_none(),
+                "the released button only sends to friends"
+            );
+        }
+        assert!(inbox(&app, "cerro").iter().all(|row| row.image.is_none()));
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn deck_friends_stay_private() {
+        let (app, path) = moments_app();
+        let (status, sent) = share_as_hill(&app, deck_to(json!({"friends": ["cerro"]}))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(sent["recipients"], 1);
+        assert_eq!(sent["link"], Value::Null, "a deck name has no public page");
+        {
+            let store = app.store.lock().unwrap();
+            let win = wins::win(&store.conn, "hill", sent["win"].as_i64().unwrap()).unwrap();
+            assert!(win.link_token.is_none());
+            assert_eq!(win.stats["deck"], "My Japanese");
+        }
+        let row = inbox(&app, "cerro").remove(0);
+        assert!(row.body.contains("My Japanese"));
+        assert!(row.image.is_none());
+        assert!(inbox(&app, "friend").is_empty());
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn deck_links_are_rejected() {
+        let (app, path) = moments_app();
+        crate::test_support::used_app(&app, &["hill", "cerro", "friend"]);
+        let legacy = json!({"id": "7", "name": "Private studies", "recipients": ["cerro"]});
+        assert_eq!(
+            call(&app, "POST", "/api/decks/hill/share", "hill-secret", legacy)
+                .await
+                .0,
+            StatusCode::OK
+        );
+        let id = inbox(&app, "cerro")[0].win.unwrap();
+        assert_eq!(
+            share_as_hill(&app, json!({"win": id, "to": "link"}))
+                .await
+                .0,
+            StatusCode::NOT_FOUND,
+            "saving an explicitly shared completion does not publish its name"
+        );
+        let (status, sent) = share_as_hill(&app, json!({"win": id, "to": "friends"})).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(sent["recipients"], 1);
+        assert_eq!(sent["link"], Value::Null);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn manual_kinds_use_private_policy() {
+        let (app, path) = moments_app();
+        let row = old_notice(&app, "celebration");
+        assert_eq!(
+            share_as_hill(&app, json!({"notification": row})).await.0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            share_as_hill(&app, deck_to(json!("circle"))).await.0,
+            StatusCode::OK
+        );
+        let (status, listed) =
+            call(&app, "GET", "/api/wins/hill", "hill-secret", Value::Null).await;
+        assert_eq!(status, StatusCode::OK);
+        let rows = listed["wins"].as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+        for kind in ["moment", "deck"] {
+            let win = rows.iter().find(|win| win["kind"] == kind).unwrap();
+            assert_eq!(win["policy"], "private", "{kind} is shared only by hand");
+            assert!(win["shared_with_friends"].as_bool().unwrap());
+        }
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
     async fn deck_moment_keeps_chosen_name() {
         let (app, path) = moments_app();
         let mut body = deck_to(json!({"friends": ["cerro"]}));
