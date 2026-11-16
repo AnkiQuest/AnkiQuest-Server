@@ -83,6 +83,7 @@ enum MomentRef {
     Notification(i64),
     Conquest(i64),
     Place(usize),
+    Deck(crate::decks::Completion),
 }
 
 /// What a moment reference names.
@@ -90,7 +91,8 @@ enum Found {
     Win(i64),
     /// Nothing of the player's.
     Missing,
-    /// Something not ready to share: an older row, an unannounced conquest, or a place the
+    Invalid,
+    /// Something not ready to share: an unannounced conquest, or a place the
     /// player no longer holds.
     Unkept,
 }
@@ -138,6 +140,8 @@ pub(crate) enum Sending<'a> {
     Automatic,
     /// By hand, with the player's note when they wrote one.
     ByHand(Option<&'a str>),
+    /// A released client's explicit deck share, with its original completion wording.
+    Deck,
 }
 
 #[derive(Debug, Serialize)]
@@ -153,23 +157,41 @@ struct Linked {
     text: String,
 }
 
-struct Win {
-    what: String,
+struct OldMoment {
+    title: String,
+    body: String,
     topic: Option<String>,
     key: String,
+    day: i64,
+    created_at: i64,
+}
+
+impl OldMoment {
+    fn keep(&self, conn: &Connection, user: &str) -> rusqlite::Result<Option<i64>> {
+        wins::keep(
+            conn,
+            user,
+            &self.key,
+            self.day,
+            self.created_at,
+            &self.title,
+            &self.body,
+            &json!({"topic": self.topic}),
+        )
+    }
 }
 
 /// One of the player's shareable notifications: the win it is about, or a quote of it.
 enum Notice {
     Win(i64),
-    Quote(Win),
+    Quote(OldMoment),
 }
 
 fn notification_win(store: &Store, user: &str, id: i64) -> Result<Option<Notice>, Error> {
     Ok(store
         .conn
         .query_row(
-            "select title, body, kind, topic, win_id from notifications
+            "select title, body, kind, topic, win_id, day, created_at from notifications
              where id = ?1 and recipient = ?2 and push_only = 0",
             params![id, user],
             |r| {
@@ -179,14 +201,13 @@ fn notification_win(store: &Store, user: &str, id: i64) -> Result<Option<Notice>
                 }
                 Ok(Some(match r.get(4)? {
                     Some(win) => Notice::Win(win),
-                    None => Notice::Quote(Win {
-                        what: {
-                            let (title, body) =
-                                wins::own_words(&r.get::<_, String>(0)?, &r.get::<_, String>(1)?);
-                            format!("{title}: “{body}”")
-                        },
+                    None => Notice::Quote(OldMoment {
+                        title: r.get(0)?,
+                        body: r.get(1)?,
                         topic: r.get(3)?,
                         key: format!("notification:{id}"),
+                        day: r.get(5)?,
+                        created_at: r.get(6)?,
                     }),
                 }))
             },
@@ -217,37 +238,23 @@ fn send(
     sender: &str,
     display: &str,
     friends: &[String],
-    win: &Win,
+    win: &OldMoment,
     now: i64,
 ) -> Result<usize, Error> {
-    let day = store.clock(sender)?.day(now);
-    let title = crate::i18n::english("🎉 {0} shared a win", &[display]);
-    let mut sent = 0;
-    for friend in friends {
-        if muted(&store.conn, friend, sender)? {
-            continue;
-        }
-        let key = format!("share:{sender}:{}", win.key);
-        if store.is_seen(friend, &key)? {
-            continue;
-        }
-        store.send_once_about(
-            &Outgoing {
-                to: friend,
-                from: sender,
-                title: &title,
-                body: &win.what,
-                kind: "share",
-            },
-            win.topic.as_deref(),
-            &key,
-            day,
-            now,
-            false,
-        )?;
-        sent += 1;
-    }
-    Ok(sent)
+    let id = win
+        .keep(&store.conn, sender)?
+        .ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+    wins::ensure_link(&store.conn, sender, id)?;
+    let win = wins::win(&store.conn, sender, id).ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+    send_wins(
+        store,
+        sender,
+        display,
+        friends,
+        &[win],
+        Sending::ByHand(None),
+        now,
+    )
 }
 
 /// Sends `wins` to each friend who has not had them, as one `share` row per friend: the win
@@ -268,6 +275,7 @@ pub(crate) fn send_wins(
     let (automatic, note) = match sending {
         Sending::Automatic => (true, None),
         Sending::ByHand(note) => (false, note),
+        Sending::Deck => (false, None),
     };
     let day = store.clock(sender)?.day(now);
     let cap = wins::sharing(&store.conn, sender)?.daily_cap;
@@ -279,6 +287,19 @@ pub(crate) fn send_wins(
         }
         let mut fresh = Vec::new();
         for win in wins {
+            // Deck alerts stay optional even when the sender uses the common picker.
+            if win.kind == "deck"
+                && !tx.query_row(
+                    &format!(
+                        "select {}",
+                        crate::decks::completion_allowed_sql("?1", "?2")
+                    ),
+                    params![friend, sender],
+                    |r| r.get::<_, bool>(0),
+                )?
+            {
+                continue;
+            }
             // Legacy sends may predate the saved win. Keep their read/cheer and Undo rules.
             let told = legacy_key(sender, &win.key);
             if !tx.query_row(
@@ -305,7 +326,15 @@ pub(crate) fn send_wins(
                 continue;
             }
         }
-        let (title, body) = if let [win] = fresh.as_slice() {
+        let (title, body) = if matches!(sending, Sending::Deck) {
+            (
+                "Deck complete".into(),
+                format!(
+                    "{display} has finished their {} studies for today.",
+                    first.stats["deck"].as_str().unwrap_or_default()
+                ),
+            )
+        } else if let [win] = fresh.as_slice() {
             let (title, body) = wins::shared_words(&tx, win)?;
             (
                 crate::i18n::english("🎉 {0} shared a win", &[display]),
@@ -328,7 +357,11 @@ pub(crate) fn send_wins(
                 from: sender,
                 title: &title,
                 body: &body,
-                kind: "share",
+                kind: if matches!(sending, Sending::Deck) {
+                    "completion"
+                } else {
+                    "share"
+                },
             },
             day,
             now,
@@ -359,6 +392,13 @@ pub(crate) fn send_wins(
 fn legacy_key(sender: &str, key: &str) -> Option<String> {
     if let Some(at) = key.strip_prefix("conquered:") {
         return Some(format!("conquest:{sender}:{at}"));
+    }
+    if key.starts_with("notification:") {
+        return Some(format!("share:{sender}:{key}"));
+    }
+    if let Some(deck) = key.strip_prefix("deck:") {
+        let (day, id) = deck.split_once(':')?;
+        return Some(format!("deck-share:{sender}:{id}:{day}"));
     }
     let (day, place) = key.strip_prefix("place:current:")?.split_once(':')?;
     Some(format!("share:{sender}:place:{place}:{day}"))
@@ -552,7 +592,7 @@ fn resolve(app: &App, user: &str, moment: &MomentRef) -> Result<Found, Error> {
         MomentRef::Key(key) => found(wins::id_of(&store.conn, user, key)?),
         MomentRef::Notification(id) => match notification_win(&store, user, *id)? {
             Some(Notice::Win(win)) => Found::Win(win),
-            Some(Notice::Quote(_)) => Found::Unkept,
+            Some(Notice::Quote(win)) => found(win.keep(&store.conn, user)?),
             None => Found::Missing,
         },
         MomentRef::Conquest(at) => {
@@ -568,6 +608,9 @@ fn resolve(app: &App, user: &str, moment: &MomentRef) -> Result<Found, Error> {
             drop(store);
             place_win(app, user, *place, now_ms())?.map_or(Found::Unkept, Found::Win)
         }
+        MomentRef::Deck(deck) => deck
+            .keep(&store, user, now_ms())?
+            .map_or(Found::Invalid, Found::Win),
     })
 }
 
@@ -666,6 +709,7 @@ fn share_moment(
     let win = match resolve(app, user, moment).map_err(store_error)? {
         Found::Win(id) => id,
         Found::Missing => return Err(StatusCode::NOT_FOUND),
+        Found::Invalid => return Err(StatusCode::BAD_REQUEST),
         Found::Unkept => return Err(StatusCode::CONFLICT),
     };
 
@@ -954,7 +998,7 @@ mod tests {
         store.notifications(user, 2_000).unwrap()[0].id
     }
 
-    fn quote(store: &Store, user: &str, id: i64) -> Option<Win> {
+    fn quote(store: &Store, user: &str, id: i64) -> Option<OldMoment> {
         match notification_win(store, user, id).unwrap()? {
             Notice::Quote(win) => Some(win),
             Notice::Win(_) => None,
@@ -1603,15 +1647,22 @@ mod tests {
             let mut store = app.store.lock().unwrap();
             let now = now_ms();
             let day = store.clock("hill").unwrap().day(now);
-            let old = Win {
-                what: "#1 on this week's leaderboard".into(),
-                topic: Some("place:1".into()),
-                key: format!("place:1:{day}"),
-            };
-            assert_eq!(
-                send(&mut store, "hill", "Hill", &strings(&["cerro"]), &old, now).unwrap(),
-                1
-            );
+            store
+                .send_once_about(
+                    &Outgoing {
+                        to: "cerro",
+                        from: "hill",
+                        title: "Hill shared a win",
+                        body: "#1 on this week's leaderboard",
+                        kind: "share",
+                    },
+                    Some("place:1"),
+                    &format!("share:hill:place:1:{day}"),
+                    day,
+                    now,
+                    false,
+                )
+                .unwrap();
         }
         let (status, sent) = share_as_hill(&app, place_to(1, json!("circle"))).await;
         assert_eq!(status, StatusCode::OK);
@@ -1886,6 +1937,88 @@ mod tests {
         cleanup(app, path);
     }
 
+    #[tokio::test]
+    async fn old_markers_keep_their_rows() {
+        for kind in ["notification", "deck"] {
+            let (app, path) = moments_app();
+            let row = old_notice(&app, "celebration");
+            let day = app
+                .store
+                .lock()
+                .unwrap()
+                .clock("hill")
+                .unwrap()
+                .day(now_ms());
+            let (reference, key) = if kind == "notification" {
+                (
+                    json!({"notification": row}),
+                    format!("share:hill:notification:{row}"),
+                )
+            } else {
+                (
+                    deck_to(json!("circle"))["moment"].clone(),
+                    format!("deck-share:hill:7:{day}"),
+                )
+            };
+            // This row predates the shared delivery ledger and belongs to its old action.
+            app.store
+                .lock()
+                .unwrap()
+                .send_once(
+                    &Outgoing {
+                        to: "cerro",
+                        from: "hill",
+                        title: "An older share",
+                        body: "Keep this message",
+                        kind: "share",
+                    },
+                    &key,
+                    day,
+                    now_ms() - 1000,
+                    false,
+                )
+                .unwrap();
+            let (status, sent) =
+                share_as_hill(&app, json!({"moment": reference, "to": "circle"})).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(sent["recipients"], 1, "{kind}");
+            assert_eq!(inbox(&app, "cerro").len(), 1);
+            let undo = format!(
+                "/api/share/hill/{}?until={}",
+                sent["win"], sent["undo_until"]
+            );
+            assert_eq!(
+                call(&app, "DELETE", &undo, "hill-secret", Value::Null)
+                    .await
+                    .1["retracted"],
+                1
+            );
+            assert!(inbox(&app, "friend").is_empty());
+            assert_eq!(inbox(&app, "cerro")[0].body, "Keep this message");
+            cleanup(app, path);
+        }
+    }
+
+    #[tokio::test]
+    async fn extra_moments_have_pictures() {
+        let (app, path) = moments_app();
+        let row = old_notice(&app, "reminder_weekly_recap");
+        for reference in [
+            json!({"notification": row}),
+            deck_to(json!("circle"))["moment"].clone(),
+        ] {
+            let (_, sent) = share_as_hill(&app, json!({"moment": reference, "to": "circle"})).await;
+            let picture = format!("/api/wins/hill/{}/card.png", sent["win"]);
+            assert_eq!(
+                call(&app, "GET", &picture, "hill-secret", Value::Null)
+                    .await
+                    .0,
+                StatusCode::OK
+            );
+        }
+        cleanup(app, path);
+    }
+
     fn deck_to(to: Value) -> Value {
         json!({"moment": {"deck": {"id": "7", "name": "My Japanese"}}, "to": to})
     }
@@ -1957,6 +2090,28 @@ mod tests {
             json!({"retracted": 1})
         );
         assert_eq!(inbox(&app, "cerro").len(), 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn new_deck_share_prevents_repeat() {
+        let (app, path) = moments_app();
+        crate::test_support::used_app(&app, &["hill", "cerro", "friend"]);
+        let (_, sent) = share_as_hill(&app, deck_to(json!({"friends": ["cerro"]}))).await;
+        let legacy =
+            json!({"id": "7", "name": "A changed name", "recipients": ["cerro", "friend"]});
+        assert_eq!(
+            call(&app, "POST", "/api/decks/hill/share", "hill-secret", legacy).await,
+            (StatusCode::OK, json!({"recipients": 1})),
+        );
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        let got = inbox(&app, "friend").remove(0);
+        assert_eq!(got.win, sent["win"].as_i64());
+        assert_eq!(got.kind, "completion");
+        assert!(
+            got.body.contains("My Japanese"),
+            "the first chosen name is retained"
+        );
         cleanup(app, path);
     }
 

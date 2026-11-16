@@ -94,6 +94,8 @@ pub(crate) fn kind_of(key: &str) -> Option<&'static str> {
         "place" => "place",
         "challenge" => "challenge",
         "companion" => "companion_unlocked",
+        "notification" => "moment",
+        "deck" => "deck",
         _ => return None,
     })
 }
@@ -305,6 +307,9 @@ pub(crate) struct Win {
 impl Win {
     /// The topic a notification about this win carries, so clients show the same art.
     pub(crate) fn topic(&self) -> String {
+        if self.kind == "moment" {
+            return self.stats["topic"].as_str().unwrap_or("moment").into();
+        }
         match (self.kind.as_str(), self.stats["place"].as_u64()) {
             ("place", Some(place)) => format!("place:{place}"),
             _ => self

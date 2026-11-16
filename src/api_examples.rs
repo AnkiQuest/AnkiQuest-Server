@@ -539,10 +539,31 @@ async fn examples_match_the_handlers() {
         .await,
     ));
 
-    // After the inbox example, whose row ids would otherwise shift.
+    // Keep the historical row in this fixture; saving a new deck win would shift later ids.
+    {
+        let mut store = f.app.store.lock().unwrap();
+        let day = store.clock("hill").unwrap().day(NOW_MS);
+        store
+            .send_once(
+                &crate::notifications::Outgoing {
+                    to: "cerro",
+                    from: "hill",
+                    title: "Deck complete",
+                    body: "Hill has finished their Spanish studies for today.",
+                    kind: "completion",
+                },
+                &format!("deck-share:hill:1:{day}"),
+                day,
+                NOW_MS,
+                false,
+            )
+            .unwrap();
+    }
+    // The released endpoint still produces its original answer, in an isolated store.
+    let deck = Fixture::new();
     examples.push((
         "deck_share",
-        f.call(
+        deck.call(
             "POST",
             "/api/decks/hill/share",
             Some("hill-secret"),
@@ -550,6 +571,8 @@ async fn examples_match_the_handlers() {
         )
         .await,
     ));
+    drop(deck.app);
+    std::fs::remove_dir_all(&deck.path).unwrap();
 
     // Records and study history come last: Hill's earlier study days, uploaded here, change no
     // example above. Two and three days ago, so the history has more than today.
@@ -1072,6 +1095,44 @@ async fn examples_match_the_handlers() {
     examples.push(("share_place", place.stable(shared)));
     drop(place.app);
     std::fs::remove_dir_all(&place.path).unwrap();
+
+    // Each new reference starts at win 1; no existing example changes its saved ids.
+    for name in ["share_notification", "share_deck_moment"] {
+        let mut extra = Fixture::new();
+        let moment = if name == "share_notification" {
+            let store = extra.app.store.lock().unwrap();
+            let at = NOW_MS - 10 * crate::game::DAY_MS;
+            let id = crate::notifications::insert_notification(
+                &store.conn,
+                &crate::notifications::Outgoing {
+                    to: "hill",
+                    from: "",
+                    title: "Your weekly study recap",
+                    body: "You have studied 30 days in a row.",
+                    kind: "reminder_weekly_recap",
+                },
+                store.clock("hill").unwrap().day(at),
+                at,
+                false,
+            )
+            .unwrap();
+            json!({"notification": id})
+        } else {
+            json!({"deck": {"id": "7", "name": "My Japanese"}})
+        };
+        let shared = extra
+            .call(
+                "POST",
+                "/api/share/hill",
+                Some("hill-secret"),
+                json!({"moment": moment, "to": {"friends": ["cerro"]}, "note": "Proud of this"}),
+            )
+            .await;
+        extra.remember_links();
+        examples.push((name, extra.stable(shared)));
+        drop(extra.app);
+        std::fs::remove_dir_all(&extra.path).unwrap();
+    }
 
     let update = std::env::var_os("UPDATE_API_EXAMPLES").is_some_and(|v| v == "1");
     let dir = examples_dir();

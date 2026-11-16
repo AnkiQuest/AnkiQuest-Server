@@ -21,8 +21,9 @@ locally when the server picture is unavailable.
 | `challenge` | a challenge is completed | `challenge:{id}` | `ask` |
 | `companion_unlocked` | a companion is earned at a milestone | `companion:{companion}` | `ask` |
 
-Deck completions keep their own per-deck recipients (`/api/decks`) and are not part of this table.
-A client can also ask right after a deck is finished which friends to tell (see "Telling friends about a finished deck").
+Automatic deck completions keep their own per-deck recipients (`/api/decks`). An explicitly shared
+completion is saved as a `deck` win, keyed `deck:{day}:{id}`, without an automatic policy.
+An older shareable notification becomes a `moment` win, keyed `notification:{id}`, when shared.
 
 Policies:
 - `private`: only the player sees it.
@@ -200,13 +201,18 @@ meaning and does not reveal which friends muted the sender.
   - `{ "win": 17 }`: a win by id.
   - `{ "key": "streak:20000:30" }`: a win by its event key, the `moment` of an inbox row. Records,
     streak milestones, daily goals, levels, achievements, places and challenges are all wins.
-  - `{ "notification": 42 }`: one of the player's own shareable rows that has a `win`. A row from
-    before wins were kept has none and is `409`; share it with `{ "notification" }` alone.
+  - `{ "notification": 42 }`: one of the player's own shareable rows. With `share_notification`,
+    an older row without a win is saved on demand with its original words, topic, date and day.
+    Older servers return `409` for those rows; use their legacy `{ "notification" }` request.
   - `{ "conquest": at }`: a conquered card. Its win is kept now if the server announced it before
     wins were kept; one the worker has not announced yet is `409`, so ask again shortly.
   - `{ "place": 1 }`: the player's current top-three place in the circle's weekly board. Requires
     the `share_place` capability. The server checks the current rank and positive weekly XP;
     a changed rank or no XP is `409`, and a place outside 1–3 is `400`.
+  - `{ "deck": { "id": "7", "name": "My Japanese" } }`: an explicitly shared finished deck,
+    with the `share_deck_moment` capability. Its first share each Anki day saves the chosen name;
+    later shares reuse it. The id and name must be nonblank, without control characters, and at
+    most 128 and 512 UTF-8 bytes respectively (`400` otherwise).
 - `to` is `"circle"`, everyone in the player's circle, or `{ "friends": [...], "groups": [...] }`.
   Friends must be in the player's circle and groups ones the player is in; a group reaches its
   members other than the player. At most 100 friends and 20 groups, none twice, and not both
@@ -225,6 +231,11 @@ completed-week award and never queues an automatic share. The legacy `{ "place":
 uses the same delivery path and retains its `{ "recipients": n }` response. Pre-upgrade
 delivery markers also prevent duplicates; Undo does not remove those earlier messages.
 Example: `share_place.json`.
+
+Older notifications and finished decks use the same delivery history as their legacy requests,
+so a friend gets no duplicate when the client changes. Neither queues an automatic share. Deck
+shares also respect paused deck alerts. Notes remain on recipients' rows, outside the saved win
+and its public picture. Examples: `share_notification.json`, `share_deck_moment.json`.
 
 Recipients get the usual `share` row (see above) with `"note"` when the player wrote one. The link
 is made as for `{ "win", "to": "friends" }`, which now does the same as `"to": "circle"` and
@@ -329,7 +340,8 @@ studies for today.", and answers `{ "recipients": n }`, those who got it now. Re
 among `recipients` of `GET /api/decks/{user}` (the player's circle, without people who
 unsubscribed), at most 100 and without repeats; otherwise it is 400. Each recipient hears about a
 deck once per Anki day; recipients who paused deck alerts or unsubscribed from the player are
-skipped. The name comes from this request only and is not stored with the player's decks. The
+skipped. The name is saved with this day's explicitly shared win, without changing the player's
+deck settings. This endpoint retains its original response and `completion` notification kind. The
 server cannot check that the deck is finished, so this is the player's word, like a message.
 
 ## Privacy
