@@ -903,6 +903,105 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn answered_tell_stays_shared() {
+        let (app, path, at) = conquest_sharing_case().await;
+        tell_conquest(&app, at, "POST").await;
+        keep_conquest(&app, at);
+        {
+            let mut store = app.store.lock().unwrap();
+            let row = store
+                .notifications("cerro", now_ms())
+                .unwrap()
+                .into_iter()
+                .find(|row| row.kind == "conquest")
+                .unwrap();
+            assert_eq!(
+                store
+                    .reply("cerro", "Cerro", row.id, "Well done", now_ms())
+                    .unwrap()
+                    .as_deref(),
+                Some("hill")
+            );
+        }
+
+        // An answered Tell cannot be undone or bypassed by the share sheet.
+        let (status, _) = call(
+            &app,
+            "DELETE",
+            &format!("/api/conquests/hill/{at}/tell"),
+            "hill-secret",
+            serde_json::json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(share_conquest(&app, at, &["cerro"]).await["recipients"], 0);
+        assert_eq!(conquest_rows(&app, "cerro"), 1);
+        assert_eq!(conquest_rows(&app, "friend"), 1);
+        cleanup(app, path);
+    }
+
+    fn queue_conquest(app: &App, at: i64) {
+        crate::wins::update_sharing(
+            &app.store.lock().unwrap().conn,
+            "hill",
+            crate::wins::SharingUpdate {
+                policies: [("conquered".to_string(), "auto".to_string())].into(),
+                daily_cap: None,
+            },
+        )
+        .unwrap()
+        .expect("valid automatic policy");
+        keep_conquest(app, at);
+    }
+
+    #[tokio::test]
+    async fn tell_then_auto_is_once() {
+        let (app, path, at) = conquest_sharing_case().await;
+        assert_eq!(tell_conquest(&app, at, "POST").await["told"], 2);
+        queue_conquest(&app, at);
+        assert_eq!(
+            crate::shares::share_automatically(
+                &app,
+                &mut app.store.lock().unwrap(),
+                "hill",
+                now_ms()
+            )
+            .unwrap(),
+            0,
+            "the automatic queue must respect the earlier Tell"
+        );
+        assert_eq!(conquest_rows(&app, "cerro"), 1);
+        assert_eq!(conquest_rows(&app, "friend"), 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn auto_then_tell_is_once() {
+        let (app, path, at) = conquest_sharing_case().await;
+        queue_conquest(&app, at);
+        assert_eq!(
+            crate::shares::share_automatically(
+                &app,
+                &mut app.store.lock().unwrap(),
+                "hill",
+                now_ms()
+            )
+            .unwrap(),
+            2
+        );
+        assert_eq!(tell_conquest(&app, at, "POST").await["told"], 2);
+        assert_eq!(tell_conquest(&app, at, "DELETE").await["retracted"], 0);
+        assert_eq!(
+            share_conquest(&app, at, &["cerro", "friend"]).await["recipients"],
+            0,
+            "Tell and its Undo must leave the automatic deliveries alone"
+        );
+        assert_eq!(conquest_rows(&app, "cerro"), 1);
+        assert_eq!(conquest_rows(&app, "friend"), 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
     async fn only_the_owner_labels_a_conquered_card_and_friends_hear_what_it_was() {
         let (app, path) = fixture();
         // Viewers of others' study have studied themselves; see crate::reciprocity.

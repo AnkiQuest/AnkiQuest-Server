@@ -276,7 +276,7 @@ pub(crate) async fn tell(
             continue;
         }
 
-        // Share sheet -> win delivery -> Tell: a recipient keeps the first send.
+        // A recipient already reached by a win delivery keeps that first send.
         // Do not adopt its row or marker; each route's Undo owns its own sends.
         if tx
             .query_row(

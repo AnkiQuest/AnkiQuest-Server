@@ -301,7 +301,7 @@ pub(crate) fn send_wins(
             {
                 continue;
             }
-            // Legacy sends may predate the saved win. Keep their read/cheer and Undo rules.
+            // Legacy sends may predate the saved win. Keep their read, cheer, reply and Undo rules.
             let told = legacy_key(sender, &win.key);
             if !tx.query_row(
                 "select exists (select 1 from win_deliveries where win = ?1 and recipient = ?2)
