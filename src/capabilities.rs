@@ -29,6 +29,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "settings_sync",
     "share_cards",
     "share_moments",
+    "share_place",
     "share_undo_send",
     crate::reciprocity::FEATURE,
     "wins",
