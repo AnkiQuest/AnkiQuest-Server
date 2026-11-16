@@ -1,0 +1,37 @@
+{
+  "order": [
+    {
+      "name": "recent targets precede alphabetical friends and groups",
+      "me": "hill",
+      "recent": ["group:2", "user:zoe", "user:missing"],
+      "social": {
+        "friends": [{"user": "zoe", "display": "Zoe"}, {"user": "ana", "display": "Ana"}, {"user": "bob", "display": ""}],
+        "groups": [
+          {"id": 1, "name": "Alone", "members": [{"user": "hill"}]},
+          {"id": 2, "name": "Night owls", "members": [{"user": "hill"}, {"user": "ana"}]},
+          {"id": 3, "name": "Beginners", "members": [{"user": "zoe"}]}
+        ]
+      },
+      "keys": ["group:2", "user:zoe", "user:ana", "user:bob", "group:3"]
+    },
+    {
+      "name": "empty and own-only groups reach nobody",
+      "me": "hill",
+      "recent": [],
+      "social": {"friends": [], "groups": [{"id": 1, "name": "Empty", "members": []}, {"id": 2, "name": "Solo", "members": [{"user": "hill"}]}]},
+      "keys": []
+    }
+  ],
+  "selection": [
+    {"taps": ["circle"], "to": "circle"},
+    {"taps": ["circle", "circle"], "to": null},
+    {"taps": ["circle", "user:ana", "group:2"], "to": {"friends": ["ana"], "groups": [2]}},
+    {"taps": ["user:ana", "group:2", "circle"], "to": "circle"},
+    {"taps": ["user:ana", "user:ana"], "to": null}
+  ],
+  "notes": [
+    {"text": "  A\nsmall\twin  ", "expected": "A small win"},
+    {"text": " \n\t ", "expected": null},
+    {"unit": "\ud83c\udf31", "repeat": 141, "expected_repeat": 140}
+  ]
+}
