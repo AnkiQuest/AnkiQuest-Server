@@ -1076,6 +1076,20 @@ async fn examples_match_the_handlers() {
         .await,
     ));
 
+    // Isolate the new reference so earlier examples keep their ids and link numbering.
+    let mut place = Fixture::new();
+    crate::test_support::with_reviews(&place.app, "hill", 5);
+    let shared = place.call(
+        "POST",
+        "/api/share/hill",
+        Some("hill-secret"),
+        json!({"moment": {"place": 1}, "to": {"friends": ["cerro"]}, "note": "A good study week"}),
+    ).await;
+    place.remember_links();
+    examples.push(("share_place", place.stable(shared)));
+    drop(place.app);
+    std::fs::remove_dir_all(&place.path).unwrap();
+
     let update = std::env::var_os("UPDATE_API_EXAMPLES").is_some_and(|v| v == "1");
     let dir = examples_dir();
     let mut stale = Vec::new();
