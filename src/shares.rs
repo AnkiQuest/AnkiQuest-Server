@@ -74,7 +74,7 @@ struct Chosen {
 }
 
 /// A shareable moment: a win by id or event key, one of the player's own rows that is about a
-/// win, or a conquered card by its `at`.
+/// win, a conquered card by its `at`, or the player's current weekly place.
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum MomentRef {
@@ -82,6 +82,7 @@ enum MomentRef {
     Key(String),
     Notification(i64),
     Conquest(i64),
+    Place(usize),
 }
 
 /// What a moment reference names.
@@ -89,8 +90,8 @@ enum Found {
     Win(i64),
     /// Nothing of the player's.
     Missing,
-    /// Something real with no win to share yet: an older row, or a conquest the worker has not
-    /// announced.
+    /// Something not ready to share: an older row, an unannounced conquest, or a place the
+    /// player no longer holds.
     Unkept,
 }
 
@@ -278,12 +279,8 @@ pub(crate) fn send_wins(
         }
         let mut fresh = Vec::new();
         for win in wins {
-            // A legacy Tell marker also covers sends made before the win existed.
-            // Reading it preserves that route's read, cheer, reply and Undo rules.
-            let told = win
-                .key
-                .strip_prefix("conquered:")
-                .map(|at| format!("conquest:{sender}:{at}"));
+            // Legacy sends may predate the saved win. Keep their read, cheer, reply and Undo rules.
+            let told = legacy_key(sender, &win.key);
             if !tx.query_row(
                 "select exists (select 1 from win_deliveries where win = ?1 and recipient = ?2)
                  or exists (select 1 from seen where user = ?2 and key = ?3)",
@@ -356,6 +353,15 @@ pub(crate) fn send_wins(
     }
     tx.commit()?;
     Ok(sent)
+}
+
+/// The pre-upgrade delivery marker for a moment whose legacy route used a separate ledger.
+fn legacy_key(sender: &str, key: &str) -> Option<String> {
+    if let Some(at) = key.strip_prefix("conquered:") {
+        return Some(format!("conquest:{sender}:{at}"));
+    }
+    let (day, place) = key.strip_prefix("place:current:")?.split_once(':')?;
+    Some(format!("share:{sender}:place:{place}:{day}"))
 }
 
 /// Gives one of `user`'s own shareable rows what sharing it would tell others, in `language`:
@@ -558,7 +564,37 @@ fn resolve(app: &App, user: &str, moment: &MomentRef) -> Result<Found, Error> {
                 ConquestWin::Missing => Found::Missing,
             }
         }
+        MomentRef::Place(place) => {
+            drop(store);
+            place_win(app, user, *place, now_ms())?.map_or(Found::Unkept, Found::Win)
+        }
     })
+}
+
+/// Keep a verified current place only on an explicit share, without automatic delivery.
+fn place_win(app: &App, user: &str, place: usize, now: i64) -> Result<Option<i64>, Error> {
+    let circle = app.circle(&app.store.lock().unwrap().conn, user)?;
+    let board = standings(app, &circle, None);
+    let Some(here) = place.checked_sub(1).and_then(|index| board.get(index)) else {
+        return Ok(None);
+    };
+    if here.user != user || here.week_xp == 0 {
+        return Ok(None);
+    }
+
+    // A day's explicit snapshot is distinct from the worker's completed-week award.
+    let store = app.store.lock().unwrap();
+    let day = store.clock(user)?.day(now);
+    Ok(wins::keep(
+        &store.conn,
+        user,
+        &format!("place:current:{day}:{place}"),
+        day,
+        now,
+        &crate::i18n::english("#{0} on this week's leaderboard", &[&place.to_string()]),
+        &crate::i18n::english("I earned {0} XP this week.", &[&here.week_xp.to_string()]),
+        &json!({"place": place, "week_xp": here.week_xp}),
+    )?)
 }
 
 /// Whether a share names its people within the limits: someone, nobody twice.
@@ -619,6 +655,9 @@ fn share_moment(
         .map(|note| crate::web_util::clean_line(note, MAX_NOTE).ok_or(StatusCode::BAD_REQUEST))
         .transpose()?;
     if matches!(moment, MomentRef::Key(key) if key.len() > MAX_KEY) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    if matches!(moment, MomentRef::Place(place) if !(1..=3).contains(place)) {
         return Err(StatusCode::BAD_REQUEST);
     }
     let recipients = recipients(app, &app.store.lock().unwrap().conn, user, to)
@@ -684,29 +723,15 @@ async fn share(
             }
         }
         (None, Some(place @ 1..=3), None, None) => {
-            let circle = app
-                .circle(&app.store.lock().unwrap().conn, &user)
-                .map_err(store_error)?;
-            let board = standings(&app, &circle, None);
-            let here = board.iter().position(|s| s.user == user);
-            if here != Some(place - 1) || board[place - 1].week_xp == 0 {
-                return Err(StatusCode::CONFLICT);
-            }
-            let day = app
-                .store
-                .lock()
-                .unwrap()
-                .clock(&user)
+            // Released clients keep their request and response while sharing the same send.
+            let now = now_ms();
+            let id = place_win(&app, &user, place, now)
                 .map_err(store_error)?
-                .day(now_ms());
-            Win {
-                what: crate::i18n::english(
-                    "#{0} on this week's leaderboard",
-                    &[&place.to_string()],
-                ),
-                topic: Some(format!("place:{place}")),
-                key: format!("place:{place}:{day}"),
-            }
+                .ok_or(StatusCode::CONFLICT)?;
+            let friends =
+                friends(&app, &app.store.lock().unwrap().conn, &user).map_err(store_error)?;
+            let (recipients, _) = deliver(&app, &user, id, &friends, None, &headers, now)?;
+            return Ok(Json(json!(Shared { recipients })));
         }
         _ => return Err(StatusCode::BAD_REQUEST),
     };
@@ -1439,6 +1464,178 @@ mod tests {
             .conn
             .execute_batch(statement)
             .unwrap();
+    }
+
+    fn place_to(place: usize, to: Value) -> Value {
+        json!({"moment": {"place": place}, "to": to})
+    }
+
+    #[tokio::test]
+    async fn place_chosen_and_undo() {
+        let (app, path) = moments_app();
+        crate::test_support::with_reviews(&app, "hill", 5);
+        let mut body = place_to(1, json!({"friends": ["cerro"]}));
+        body["note"] = "A good study week".into();
+        let (status, sent) = share_as_hill(&app, body).await;
+        assert_eq!(status, StatusCode::OK, "{sent}");
+        assert_eq!(sent["recipients"], 1);
+        assert!(inbox(&app, "friend").is_empty());
+        let got = &inbox(&app, "cerro")[0];
+        assert_eq!(got.note.as_deref(), Some("A good study week"));
+        assert_eq!(got.topic.as_deref(), Some("place:1"));
+        let id = sent["win"].as_i64().unwrap();
+        assert_eq!(got.win, Some(id));
+        let win = wins::win(&app.store.lock().unwrap().conn, "hill", id).unwrap();
+        assert_eq!(win.kind, "place");
+        assert_eq!(win.stats["place"], 1);
+        assert!(win.stats["week_xp"].as_u64().unwrap() > 0);
+        assert!(!win.stats.to_string().contains("A good study week"));
+        let (_, capabilities) = call(&app, "GET", "/api/capabilities", "", Value::Null).await;
+        assert!(
+            capabilities["features"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("share_place"))
+        );
+
+        // The same moment retains its snapshot; a later send has its own receipt.
+        crate::test_support::with_reviews(&app, "hill", 20);
+        let (_, again) = share_as_hill(&app, place_to(1, json!("circle"))).await;
+        assert_eq!(again["win"], id);
+        assert_eq!(again["recipients"], 1);
+        assert_eq!(
+            wins::win(&app.store.lock().unwrap().conn, "hill", id)
+                .unwrap()
+                .stats,
+            win.stats
+        );
+        assert_eq!(
+            share_as_hill(&app, place_to(1, json!("circle"))).await.1["recipients"],
+            0
+        );
+
+        // Move the first send back to distinguish receipts without a timing dependency.
+        sql(
+            &app,
+            "update notifications set created_at = created_at - 1000 where recipient = 'cerro'",
+        );
+        let undo = format!("/api/share/hill/{id}?until={}", again["undo_until"]);
+        assert_eq!(
+            call(&app, "DELETE", &undo, "hill-secret", Value::Null).await,
+            (StatusCode::OK, json!({"retracted": 1}))
+        );
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert!(inbox(&app, "friend").is_empty());
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn place_must_match_board() {
+        let (app, path) = moments_app();
+        // An empty leaderboard cannot produce a shareable place.
+        assert_eq!(
+            share_as_hill(&app, place_to(1, json!("circle"))).await.0,
+            StatusCode::CONFLICT
+        );
+        crate::test_support::with_reviews(&app, "hill", 5);
+        for place in [2, 3] {
+            assert_eq!(
+                share_as_hill(&app, place_to(place, json!("circle")))
+                    .await
+                    .0,
+                StatusCode::CONFLICT
+            );
+        }
+        for place in [0, 4] {
+            assert_eq!(
+                share_as_hill(&app, place_to(place, json!("circle")))
+                    .await
+                    .0,
+                StatusCode::BAD_REQUEST
+            );
+        }
+        assert_eq!(
+            call(
+                &app,
+                "POST",
+                "/api/share/hill",
+                "cerro-secret",
+                place_to(1, json!("circle"))
+            )
+            .await
+            .0,
+            StatusCode::UNAUTHORIZED
+        );
+        assert!(inbox(&app, "cerro").is_empty());
+        assert!(inbox(&app, "friend").is_empty());
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn place_routes_share_delivery() {
+        for first in [
+            json!({"place": 1}),
+            place_to(1, json!({"friends": ["cerro"]})),
+        ] {
+            let (app, path) = moments_app();
+            crate::test_support::with_reviews(&app, "hill", 5);
+            assert_eq!(share_as_hill(&app, first).await.0, StatusCode::OK);
+            assert_eq!(
+                share_as_hill(&app, json!({"place": 1})).await.0,
+                StatusCode::OK
+            );
+            let (status, last) = share_as_hill(&app, place_to(1, json!("circle"))).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(last["recipients"], 0);
+            for friend in ["cerro", "friend"] {
+                assert_eq!(inbox(&app, friend).len(), 1, "{friend}");
+            }
+            cleanup(app, path);
+        }
+    }
+
+    #[tokio::test]
+    async fn place_keeps_legacy_records() {
+        let (app, path) = moments_app();
+        crate::test_support::with_reviews(&app, "hill", 5);
+        // Seed the pre-upgrade ledger, rather than using a possibly converted endpoint.
+        {
+            let mut store = app.store.lock().unwrap();
+            let now = now_ms();
+            let day = store.clock("hill").unwrap().day(now);
+            let old = Win {
+                what: "#1 on this week's leaderboard".into(),
+                topic: Some("place:1".into()),
+                key: format!("place:1:{day}"),
+            };
+            assert_eq!(
+                send(&mut store, "hill", "Hill", &strings(&["cerro"]), &old, now).unwrap(),
+                1
+            );
+        }
+        let (status, sent) = share_as_hill(&app, place_to(1, json!("circle"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            sent["recipients"], 1,
+            "only Friend has not already received it"
+        );
+        let undo = format!(
+            "/api/share/hill/{}?until={}",
+            sent["win"], sent["undo_until"]
+        );
+        assert_eq!(
+            call(&app, "DELETE", &undo, "hill-secret", Value::Null)
+                .await
+                .1["retracted"],
+            1
+        );
+        assert_eq!(
+            inbox(&app, "cerro").len(),
+            1,
+            "the old send belongs to its original action"
+        );
+        assert!(inbox(&app, "friend").is_empty());
+        cleanup(app, path);
     }
 
     #[tokio::test]
