@@ -21,8 +21,12 @@ locally when the server picture is unavailable.
 | `challenge` | a challenge is completed | `challenge:{id}` | `ask` |
 | `companion_unlocked` | a companion is earned at a milestone | `companion:{companion}` | `ask` |
 
-Deck completions keep their own per-deck recipients (`/api/decks`) and are not part of this table.
-A client can also ask right after a deck is finished which friends to tell (see "Telling friends about a finished deck").
+Automatic deck completions keep their own per-deck recipients (`/api/decks`). An explicitly shared
+completion is saved as a `deck` win, keyed `deck:{day}:{id}`, without an automatic policy.
+An older shareable notification becomes a `moment` win, keyed `notification:{id}`, when shared.
+Both manual kinds have `policy: "private"` in `GET /api/wins`; they are absent from
+`GET /api/sharing` and cannot be assigned an automatic policy. Clients treat `kind` as an open
+string and `policy` as `private`, `ask` or `auto`.
 
 Policies:
 - `private`: only the player sees it.
@@ -150,7 +154,7 @@ comes back shorter than `limit`. A row looks like this:
 
 - `created_at` is in seconds, like the inbox.
 - `art` is one of the companion poses, picked per kind (see Cards).
-- `link` is `{ "url": "...", "image": "..." }` once a link exists.
+- `link` is `{ "url": "...", "image": "..." }` once a link exists. Deck wins always have `null`.
 - `share_title` and `share_body`, when present, are the win as it leaves the player: in their own
   words ("I reached level 4 with 900 XP.", "Today counts toward my 12-day streak."), as friends,
   the card, the public page and the invitation text show it. Wins that already read the same for
@@ -173,6 +177,9 @@ carry the topics `goal` and `secured`.
   The link is created once and reused.
 
 Sending to friends also creates the link, because friends see the card through it.
+Deck wins are the exception: their names stay between the player and chosen friends, so
+`to: "friends"` returns `link: null`, and `to: "link"` answers `404`. The website offers sharing
+and an authenticated image download for these wins, without a public-link button.
 
 Friends receive a `share` row as today. It has the same `topic` and quoted title/body, plus
 `"win": 17` and `"image": "https://host/w/<token>.png"`. Mutes and unsubscriptions are respected, and
@@ -185,6 +192,9 @@ prevent a repeat through the other route. The legacy `told` count keeps its exis
 meaning and does not reveal which friends muted the sender.
 
 `{ "notification": id }` for a row that has a `win` shares that win to friends, so it is not sent twice.
+An older row without a win keeps the legacy private quote behavior. It now saves a deduplication
+record, but does not create a public link. The explicit `moment` picker may create a link for
+that non-deck win, as for the other win kinds.
 
 `DELETE /api/wins/{user}/{id}/link` revokes the link (204, or 404 for someone else's win). The page and the image then answer 404.
 
@@ -200,13 +210,18 @@ meaning and does not reveal which friends muted the sender.
   - `{ "win": 17 }`: a win by id.
   - `{ "key": "streak:20000:30" }`: a win by its event key, the `moment` of an inbox row. Records,
     streak milestones, daily goals, levels, achievements, places and challenges are all wins.
-  - `{ "notification": 42 }`: one of the player's own shareable rows that has a `win`. A row from
-    before wins were kept has none and is `409`; share it with `{ "notification" }` alone.
+  - `{ "notification": 42 }`: one of the player's own shareable rows. With `share_notification`,
+    an older row without a win is saved on demand with its original words, topic, date and day.
+    Older servers return `409` for those rows; use their legacy `{ "notification" }` request.
   - `{ "conquest": at }`: a conquered card. Its win is kept now if the server announced it before
     wins were kept; one the worker has not announced yet is `409`, so ask again shortly.
   - `{ "place": 1 }`: the player's current top-three place in the circle's weekly board. Requires
     the `share_place` capability. The server checks the current rank and positive weekly XP;
     a changed rank or no XP is `409`, and a place outside 1–3 is `400`.
+  - `{ "deck": { "id": "7", "name": "My Japanese" } }`: an explicitly shared finished deck,
+    with the `share_deck_moment` capability. Its first share each Anki day saves the chosen name;
+    later shares reuse it. The id and name must be nonblank, without control characters, and at
+    most 128 and 512 UTF-8 bytes respectively (`400` otherwise).
 - `to` is `"circle"`, everyone in the player's circle, or `{ "friends": [...], "groups": [...] }`.
   Friends must be in the player's circle and groups ones the player is in; a group reaches its
   members other than the player. At most 100 friends and 20 groups, none twice, and not both
@@ -215,6 +230,7 @@ meaning and does not reveal which friends muted the sender.
   made one space. A note with nothing printable is `400`.
 
 It answers `{ "recipients": n, "link": { "url", "image" }, "win": 17, "undo_until": ms }`.
+For a deck win, `link` is `null`; the owner's authenticated card endpoint still supplies a picture.
 `recipients` counts those who got it now. Each win reaches each person once, whoever sent it there
 and however it was addressed, and people who muted or unsubscribed from the player are skipped.
 `undo_until` is left out when nobody got it. A missing moment is `404`.
@@ -226,8 +242,13 @@ uses the same delivery path and retains its `{ "recipients": n }` response. Pre-
 delivery markers also prevent duplicates; Undo does not remove those earlier messages.
 Example: `share_place.json`.
 
-Recipients get the usual `share` row (see above) with `"note"` when the player wrote one. The link
-is made as for `{ "win", "to": "friends" }`, which now does the same as `"to": "circle"` and
+Older notifications and finished decks use the same delivery history as their legacy requests,
+so a friend gets no duplicate when the client changes. Neither queues an automatic share. Deck
+shares also respect paused deck alerts. Notes remain on recipients' rows, outside the saved win
+and its public picture. Examples: `share_notification.json`, `share_deck_moment.json`.
+
+Recipients get the usual `share` row (see above) with `"note"` when the player wrote one. For
+non-deck wins, the link is made as for `{ "win", "to": "friends" }`, which does the same as `"to": "circle"` and
 answers as before.
 
 `DELETE /api/share/{user}/{win}` takes a win sent by hand back. Rows sent within the last day that
@@ -335,8 +356,11 @@ only) sends each recipient the usual `completion` row, "{display} has finished t
 studies for today.", and answers `{ "recipients": n }`, those who got it now. Recipients must be
 among `recipients` of `GET /api/decks/{user}` (the player's circle, without people who
 unsubscribed), at most 100 and without repeats; otherwise it is 400. Each recipient hears about a
-deck once per Anki day; recipients who paused deck alerts or unsubscribed from the player are
-skipped. The name comes from this request only and is not stored with the player's decks. The
+deck once per Anki day; recipients who paused deck alerts, unsubscribed or muted the player are
+skipped. The first chosen name is saved with this day's explicitly shared win and reused by later
+sends through either endpoint, without changing the player's deck settings or creating a public
+link. This differs from older servers, which used each request's name and did not check sender
+mutes here. This endpoint retains its original response and `completion` notification kind. The
 server cannot check that the deck is finished, so this is the player's word, like a message.
 
 ## Privacy

@@ -83,6 +83,7 @@ enum MomentRef {
     Notification(i64),
     Conquest(i64),
     Place(usize),
+    Deck(crate::decks::Completion),
 }
 
 /// What a moment reference names.
@@ -90,7 +91,9 @@ enum Found {
     Win(i64),
     /// Nothing of the player's.
     Missing,
-    /// Something not ready to share: an older row, an unannounced conquest, or a place the
+    /// A malformed reference, such as a blank deck name.
+    Invalid,
+    /// Something not ready to share: an unannounced conquest, or a place the
     /// player no longer holds.
     Unkept,
 }
@@ -100,7 +103,8 @@ enum Found {
 struct MomentShared {
     /// Recipients who got it now; those who already had it or muted the player are left out.
     recipients: usize,
-    link: wins::Link,
+    /// Deck names stay private; only other kinds have public card links.
+    link: Option<wins::Link>,
     /// The win that was sent, to take it back with `DELETE /api/share/{user}/{win}`.
     win: i64,
     /// Until when (ms) it can be taken back, when it reached anyone; as `until`, it names this
@@ -138,6 +142,8 @@ pub(crate) enum Sending<'a> {
     Automatic,
     /// By hand, with the player's note when they wrote one.
     ByHand(Option<&'a str>),
+    /// A released client's explicit deck share, with its original completion wording.
+    Deck,
 }
 
 /// The committed delivery and, for one hand-sent win, its Undo receipt.
@@ -160,23 +166,41 @@ struct Linked {
     text: String,
 }
 
-struct Win {
-    what: String,
+struct OldMoment {
+    title: String,
+    body: String,
     topic: Option<String>,
     key: String,
+    day: i64,
+    created_at: i64,
+}
+
+impl OldMoment {
+    fn keep(&self, conn: &Connection, user: &str) -> rusqlite::Result<Option<i64>> {
+        wins::keep(
+            conn,
+            user,
+            &self.key,
+            self.day,
+            self.created_at,
+            &self.title,
+            &self.body,
+            &json!({"topic": self.topic}),
+        )
+    }
 }
 
 /// One of the player's shareable notifications: the win it is about, or a quote of it.
 enum Notice {
     Win(i64),
-    Quote(Win),
+    Quote(OldMoment),
 }
 
 fn notification_win(store: &Store, user: &str, id: i64) -> Result<Option<Notice>, Error> {
     Ok(store
         .conn
         .query_row(
-            "select title, body, kind, topic, win_id from notifications
+            "select title, body, kind, topic, win_id, day, created_at from notifications
              where id = ?1 and recipient = ?2 and push_only = 0",
             params![id, user],
             |r| {
@@ -186,14 +210,13 @@ fn notification_win(store: &Store, user: &str, id: i64) -> Result<Option<Notice>
                 }
                 Ok(Some(match r.get(4)? {
                     Some(win) => Notice::Win(win),
-                    None => Notice::Quote(Win {
-                        what: {
-                            let (title, body) =
-                                wins::own_words(&r.get::<_, String>(0)?, &r.get::<_, String>(1)?);
-                            format!("{title}: “{body}”")
-                        },
+                    None => Notice::Quote(OldMoment {
+                        title: r.get(0)?,
+                        body: r.get(1)?,
                         topic: r.get(3)?,
                         key: format!("notification:{id}"),
+                        day: r.get(5)?,
+                        created_at: r.get(6)?,
                     }),
                 }))
             },
@@ -224,37 +247,23 @@ fn send(
     sender: &str,
     display: &str,
     friends: &[String],
-    win: &Win,
+    win: &OldMoment,
     now: i64,
 ) -> Result<usize, Error> {
-    let day = store.clock(sender)?.day(now);
-    let title = crate::i18n::english("🎉 {0} shared a win", &[display]);
-    let mut sent = 0;
-    for friend in friends {
-        if muted(&store.conn, friend, sender)? {
-            continue;
-        }
-        let key = format!("share:{sender}:{}", win.key);
-        if store.is_seen(friend, &key)? {
-            continue;
-        }
-        store.send_once_about(
-            &Outgoing {
-                to: friend,
-                from: sender,
-                title: &title,
-                body: &win.what,
-                kind: "share",
-            },
-            win.topic.as_deref(),
-            &key,
-            day,
-            now,
-            false,
-        )?;
-        sent += 1;
-    }
-    Ok(sent)
+    let id = win
+        .keep(&store.conn, sender)?
+        .ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+    let win = wins::win(&store.conn, sender, id).ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+    send_wins(
+        store,
+        sender,
+        display,
+        friends,
+        &[win],
+        Sending::ByHand(None),
+        now,
+    )
+    .map(|delivery| delivery.recipients)
 }
 
 /// Sends `wins` to each friend who has not had them, as one `share` row per friend: the win
@@ -275,6 +284,7 @@ pub(crate) fn send_wins(
     let (automatic, note) = match sending {
         Sending::Automatic => (true, None),
         Sending::ByHand(note) => (false, note),
+        Sending::Deck => (false, None),
     };
     let day = store.clock(sender)?.day(now);
     let cap = wins::sharing(&store.conn, sender)?.daily_cap;
@@ -287,6 +297,19 @@ pub(crate) fn send_wins(
         }
         let mut fresh = Vec::new();
         for win in wins {
+            // Deck alerts stay optional even when the sender uses the common picker.
+            if win.kind == "deck"
+                && !tx.query_row(
+                    &format!(
+                        "select {}",
+                        crate::decks::completion_allowed_sql("?1", "?2")
+                    ),
+                    params![friend, sender],
+                    |r| r.get::<_, bool>(0),
+                )?
+            {
+                continue;
+            }
             // Legacy sends may predate the saved win. Keep their read, cheer, reply and Undo rules.
             let told = legacy_key(sender, &win.key);
             if !tx.query_row(
@@ -317,7 +340,15 @@ pub(crate) fn send_wins(
         if !automatic && wins.len() == 1 && undo_until.is_none() {
             undo_until = Some(receipt(&tx, first.id, now)?);
         }
-        let (title, body) = if let [win] = fresh.as_slice() {
+        let (title, body) = if matches!(sending, Sending::Deck) {
+            (
+                "Deck complete".into(),
+                format!(
+                    "{display} has finished their {} studies for today.",
+                    first.stats["deck"].as_str().unwrap_or_default()
+                ),
+            )
+        } else if let [win] = fresh.as_slice() {
             let (title, body) = wins::shared_words(&tx, win)?;
             (
                 crate::i18n::english("🎉 {0} shared a win", &[display]),
@@ -340,7 +371,11 @@ pub(crate) fn send_wins(
                 from: sender,
                 title: &title,
                 body: &body,
-                kind: "share",
+                kind: if matches!(sending, Sending::Deck) {
+                    "completion"
+                } else {
+                    "share"
+                },
             },
             day,
             now,
@@ -393,6 +428,13 @@ fn receipt(conn: &Connection, win: i64, now: i64) -> Result<i64, Error> {
 fn legacy_key(sender: &str, key: &str) -> Option<String> {
     if let Some(at) = key.strip_prefix("conquered:") {
         return Some(format!("conquest:{sender}:{at}"));
+    }
+    if key.starts_with("notification:") {
+        return Some(format!("share:{sender}:{key}"));
+    }
+    if let Some(deck) = key.strip_prefix("deck:") {
+        let (day, id) = deck.split_once(':')?;
+        return Some(format!("deck-share:{sender}:{id}:{day}"));
     }
     let (day, place) = key.strip_prefix("place:current:")?.split_once(':')?;
     Some(format!("share:{sender}:place:{place}:{day}"))
@@ -527,28 +569,29 @@ fn share_win(
         return Err(StatusCode::BAD_REQUEST);
     }
     let store = app.store.lock().unwrap();
+    if to == "friends" {
+        let friends = friends(app, &store.conn, user).map_err(store_error)?;
+        drop(store);
+        let (delivery, link) = deliver(app, user, id, &friends, None, headers, now_ms())?;
+        return Ok(json!({ "recipients": delivery.recipients, "link": link }));
+    }
+
     let token = wins::ensure_link(&store.conn, user, id)
         .map_err(store_error)?
         .ok_or(StatusCode::NOT_FOUND)?;
     let win = wins::win(&store.conn, user, id).ok_or(StatusCode::NOT_FOUND)?;
     let link = wins::link(&base_url(app, headers), &token);
-    if to == "link" {
-        let language = crate::i18n::owned(headers, &store, user).map_err(store_error)?;
-        let text = invitation(&store.conn, &win, &link.url, &language).map_err(store_error)?;
-        return Ok(json!(Linked {
-            url: link.url,
-            image: link.image,
-            text,
-        }));
-    }
-    let friends = friends(app, &store.conn, user).map_err(store_error)?;
-    drop(store);
-    let (delivery, link) = deliver(app, user, id, &friends, None, headers, now_ms())?;
-    Ok(json!({ "recipients": delivery.recipients, "link": link }))
+    let language = crate::i18n::owned(headers, &store, user).map_err(store_error)?;
+    let text = invitation(&store.conn, &win, &link.url, &language).map_err(store_error)?;
+    Ok(json!(Linked {
+        url: link.url,
+        image: link.image,
+        text,
+    }))
 }
 
 /// Sends `user`'s win `id` by hand to `friends`, with `note`. Answers how many got it now, and
-/// its link, which friends see the card through.
+/// its link, which friends see the card through. Deck names never get a public link.
 fn deliver(
     app: &App,
     user: &str,
@@ -557,13 +600,11 @@ fn deliver(
     note: Option<&str>,
     headers: &HeaderMap,
     now: i64,
-) -> Result<(Delivery, wins::Link), StatusCode> {
+) -> Result<(Delivery, Option<wins::Link>), StatusCode> {
     let mut store = app.store.lock().unwrap();
-    let token = wins::ensure_link(&store.conn, user, id)
-        .map_err(store_error)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let token = wins::ensure_link(&store.conn, user, id).map_err(store_error)?;
     let win = wins::win(&store.conn, user, id).ok_or(StatusCode::NOT_FOUND)?;
-    let link = wins::link(&base_url(app, headers), &token);
+    let link = token.map(|token| wins::link(&base_url(app, headers), &token));
     let display = app.display(user);
     let sent = send_wins(
         &mut store,
@@ -579,7 +620,7 @@ fn deliver(
 }
 
 /// The win `moment` names among `user`'s own.
-fn resolve(app: &App, user: &str, moment: &MomentRef) -> Result<Found, Error> {
+fn resolve(app: &App, user: &str, moment: &MomentRef, now: i64) -> Result<Found, Error> {
     let found = |id: Option<i64>| id.map_or(Found::Missing, Found::Win);
     let store = app.store.lock().unwrap();
     Ok(match moment {
@@ -587,7 +628,7 @@ fn resolve(app: &App, user: &str, moment: &MomentRef) -> Result<Found, Error> {
         MomentRef::Key(key) => found(wins::id_of(&store.conn, user, key)?),
         MomentRef::Notification(id) => match notification_win(&store, user, *id)? {
             Some(Notice::Win(win)) => Found::Win(win),
-            Some(Notice::Quote(_)) => Found::Unkept,
+            Some(Notice::Quote(win)) => found(win.keep(&store.conn, user)?),
             None => Found::Missing,
         },
         MomentRef::Conquest(at) => {
@@ -601,8 +642,11 @@ fn resolve(app: &App, user: &str, moment: &MomentRef) -> Result<Found, Error> {
         }
         MomentRef::Place(place) => {
             drop(store);
-            place_win(app, user, *place, now_ms())?.map_or(Found::Unkept, Found::Win)
+            place_win(app, user, *place, now)?.map_or(Found::Unkept, Found::Win)
         }
+        MomentRef::Deck(deck) => deck
+            .keep(&store, user, now)?
+            .map_or(Found::Invalid, Found::Win),
     })
 }
 
@@ -698,13 +742,15 @@ fn share_moment(
     let recipients = recipients(app, &app.store.lock().unwrap().conn, user, to)
         .map_err(store_error)?
         .ok_or(StatusCode::BAD_REQUEST)?;
-    let win = match resolve(app, user, moment).map_err(store_error)? {
+    // Use one instant for the saved Anki day, delivery and its Undo deadline.
+    let now = now_ms();
+    let win = match resolve(app, user, moment, now).map_err(store_error)? {
         Found::Win(id) => id,
         Found::Missing => return Err(StatusCode::NOT_FOUND),
+        Found::Invalid => return Err(StatusCode::BAD_REQUEST),
         Found::Unkept => return Err(StatusCode::CONFLICT),
     };
 
-    let now = now_ms();
     let (sent, link) = deliver(app, user, win, &recipients, note.as_deref(), headers, now)?;
     Ok(json!(MomentShared {
         recipients: sent.recipients,
@@ -1002,7 +1048,7 @@ mod tests {
         store.notifications(user, 2_000).unwrap()[0].id
     }
 
-    fn quote(store: &Store, user: &str, id: i64) -> Option<Win> {
+    fn quote(store: &Store, user: &str, id: i64) -> Option<OldMoment> {
         match notification_win(store, user, id).unwrap()? {
             Notice::Quote(win) => Some(win),
             Notice::Win(_) => None,
@@ -1651,15 +1697,22 @@ mod tests {
             let mut store = app.store.lock().unwrap();
             let now = now_ms();
             let day = store.clock("hill").unwrap().day(now);
-            let old = Win {
-                what: "#1 on this week's leaderboard".into(),
-                topic: Some("place:1".into()),
-                key: format!("place:1:{day}"),
-            };
-            assert_eq!(
-                send(&mut store, "hill", "Hill", &strings(&["cerro"]), &old, now).unwrap(),
-                1
-            );
+            store
+                .send_once_about(
+                    &Outgoing {
+                        to: "cerro",
+                        from: "hill",
+                        title: "Hill shared a win",
+                        body: "#1 on this week's leaderboard",
+                        kind: "share",
+                    },
+                    Some("place:1"),
+                    &format!("share:hill:place:1:{day}"),
+                    day,
+                    now,
+                    false,
+                )
+                .unwrap();
         }
         let (status, sent) = share_as_hill(&app, place_to(1, json!("circle"))).await;
         assert_eq!(status, StatusCode::OK);
@@ -1779,7 +1832,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_row_names_its_win_and_an_older_row_has_none_to_send() {
+    async fn a_row_names_its_win() {
         let (app, path) = moments_app();
         let row = win_for(&mut app.store.lock().unwrap(), "hill");
         let win = app
@@ -1794,8 +1847,455 @@ mod tests {
         let (status, sent) = share_as_hill(&app, body.clone()).await;
         assert_eq!((status, sent["win"].as_i64()), (StatusCode::OK, Some(win)));
         assert_eq!(inbox(&app, "friend")[0].win, Some(win));
-        sql(&app, "update notifications set win_id = null");
-        assert_eq!(share_as_hill(&app, body).await.0, StatusCode::CONFLICT);
+        cleanup(app, path);
+    }
+
+    fn old_notice(app: &App, kind: &str) -> i64 {
+        let store = app.store.lock().unwrap();
+        let at = now_ms() - 10 * crate::game::DAY_MS;
+        let day = store.clock("hill").unwrap().day(at);
+        let id = insert_notification(
+            &store.conn,
+            &Outgoing {
+                to: "hill",
+                from: "",
+                title: "Your weekly study recap",
+                body: "You have studied 30 days in a row.",
+                kind,
+            },
+            day,
+            at,
+            false,
+        )
+        .unwrap();
+        store
+            .conn
+            .execute(
+                "update notifications set topic = 'streak' where id = ?1",
+                [id],
+            )
+            .unwrap();
+        id
+    }
+
+    #[tokio::test]
+    async fn old_moments_keep_words_and_undo() {
+        let (app, path) = moments_app();
+        for kind in SHAREABLE {
+            let row = old_notice(&app, kind);
+            let body = json!({"moment": {"notification": row}, "to": {"friends": ["cerro"]}, "note": "Still proud of this"});
+            let (status, sent) = share_as_hill(&app, body.clone()).await;
+            assert_eq!(status, StatusCode::OK, "{kind}: {sent}");
+            let id = sent["win"].as_i64().unwrap();
+            {
+                let store = app.store.lock().unwrap();
+                let win = wins::win(&store.conn, "hill", id).unwrap();
+                let (at, day): (i64, i64) = store
+                    .conn
+                    .query_row(
+                        "select created_at, day from notifications where id = ?1",
+                        [row],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .unwrap();
+                assert_eq!((win.created_at, win.day), (at, day));
+                assert_eq!(
+                    wins::shared_words(&store.conn, &win).unwrap(),
+                    (
+                        "My weekly study recap".into(),
+                        "I have studied 30 days in a row.".into()
+                    )
+                );
+                assert_eq!(win.topic(), "streak");
+                assert!(!win.stats.to_string().contains("Still proud"));
+                assert!(
+                    wins::take_automatic(&store.conn, "hill")
+                        .unwrap()
+                        .is_empty()
+                );
+            }
+            assert_eq!(share_as_hill(&app, body).await.1["recipients"], 0);
+            assert!(inbox(&app, "friend").is_empty());
+            assert_eq!(
+                inbox(&app, "cerro")[0].note.as_deref(),
+                Some("Still proud of this")
+            );
+            let undo = format!("/api/share/hill/{id}?until={}", sent["undo_until"]);
+            assert_eq!(
+                call(&app, "DELETE", &undo, "hill-secret", Value::Null).await,
+                (StatusCode::OK, json!({"retracted": 1}))
+            );
+            assert!(inbox(&app, "cerro").is_empty());
+        }
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn old_moments_require_ownership() {
+        let (app, path) = moments_app();
+        let row = old_notice(&app, "celebration");
+        let body = json!({"moment": {"notification": row}, "to": "circle"});
+        assert_eq!(
+            call(
+                &app,
+                "POST",
+                "/api/share/cerro",
+                "cerro-secret",
+                body.clone()
+            )
+            .await
+            .0,
+            StatusCode::NOT_FOUND
+        );
+        for kind in ["message", "reply", "nudge", "share", "completion"] {
+            let row = old_notice(&app, kind);
+            assert_eq!(
+                share_as_hill(
+                    &app,
+                    json!({"moment": {"notification": row}, "to": "circle"})
+                )
+                .await
+                .0,
+                StatusCode::NOT_FOUND
+            );
+        }
+        sql(&app, "update notifications set push_only = 1");
+        assert_eq!(share_as_hill(&app, body).await.0, StatusCode::NOT_FOUND);
+        let count: i64 = app
+            .store
+            .lock()
+            .unwrap()
+            .conn
+            .query_row("select count(*) from wins", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn old_notice_routes_share_delivery() {
+        let (app, path) = moments_app();
+        let row = old_notice(&app, "reminder_weekly_recap");
+        let body = json!({"moment": {"notification": row}, "to": {"friends": ["cerro"]}});
+        assert_eq!(share_as_hill(&app, body.clone()).await.1["recipients"], 1);
+        assert_eq!(
+            share_as_hill(&app, json!({"notification": row})).await.1["recipients"],
+            1
+        );
+        assert_eq!(share_as_hill(&app, body).await.1["recipients"], 0);
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert_eq!(inbox(&app, "friend").len(), 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn old_markers_keep_their_rows() {
+        for kind in ["notification", "deck"] {
+            let (app, path) = moments_app();
+            let row = old_notice(&app, "celebration");
+            let day = app
+                .store
+                .lock()
+                .unwrap()
+                .clock("hill")
+                .unwrap()
+                .day(now_ms());
+            let (reference, key) = if kind == "notification" {
+                (
+                    json!({"notification": row}),
+                    format!("share:hill:notification:{row}"),
+                )
+            } else {
+                (
+                    deck_to(json!("circle"))["moment"].clone(),
+                    format!("deck-share:hill:7:{day}"),
+                )
+            };
+            // This row predates the shared delivery ledger and belongs to its old action.
+            app.store
+                .lock()
+                .unwrap()
+                .send_once(
+                    &Outgoing {
+                        to: "cerro",
+                        from: "hill",
+                        title: "An older share",
+                        body: "Keep this message",
+                        kind: "share",
+                    },
+                    &key,
+                    day,
+                    now_ms() - 1000,
+                    false,
+                )
+                .unwrap();
+            let (status, sent) =
+                share_as_hill(&app, json!({"moment": reference, "to": "circle"})).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(sent["recipients"], 1, "{kind}");
+            assert_eq!(inbox(&app, "cerro").len(), 1);
+            let undo = format!(
+                "/api/share/hill/{}?until={}",
+                sent["win"], sent["undo_until"]
+            );
+            assert_eq!(
+                call(&app, "DELETE", &undo, "hill-secret", Value::Null)
+                    .await
+                    .1["retracted"],
+                1
+            );
+            assert!(inbox(&app, "friend").is_empty());
+            assert_eq!(inbox(&app, "cerro")[0].body, "Keep this message");
+            cleanup(app, path);
+        }
+    }
+
+    #[tokio::test]
+    async fn extra_moments_have_pictures() {
+        let (app, path) = moments_app();
+        let row = old_notice(&app, "reminder_weekly_recap");
+        for reference in [
+            json!({"notification": row}),
+            deck_to(json!("circle"))["moment"].clone(),
+        ] {
+            let (_, sent) = share_as_hill(&app, json!({"moment": reference, "to": "circle"})).await;
+            let picture = format!("/api/wins/hill/{}/card.png", sent["win"]);
+            assert_eq!(
+                call(&app, "GET", &picture, "hill-secret", Value::Null)
+                    .await
+                    .0,
+                StatusCode::OK
+            );
+        }
+        cleanup(app, path);
+    }
+
+    fn deck_to(to: Value) -> Value {
+        json!({"moment": {"deck": {"id": "7", "name": "My Japanese"}}, "to": to})
+    }
+
+    #[tokio::test]
+    async fn legacy_quotes_stay_private() {
+        let (app, path) = moments_app();
+        for kind in SHAREABLE {
+            let row = old_notice(&app, kind);
+            let (status, sent) = share_as_hill(&app, json!({"notification": row})).await;
+            assert_eq!((status, sent), (StatusCode::OK, json!({"recipients": 2})));
+            let store = app.store.lock().unwrap();
+            let id = wins::id_of(&store.conn, "hill", &format!("notification:{row}"))
+                .unwrap()
+                .unwrap();
+            let win = wins::win(&store.conn, "hill", id).unwrap();
+            assert!(
+                win.link_token.is_none(),
+                "the released button only sends to friends"
+            );
+        }
+        assert!(inbox(&app, "cerro").iter().all(|row| row.image.is_none()));
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn deck_friends_stay_private() {
+        let (app, path) = moments_app();
+        let (status, sent) = share_as_hill(&app, deck_to(json!({"friends": ["cerro"]}))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(sent["recipients"], 1);
+        assert_eq!(sent["link"], Value::Null, "a deck name has no public page");
+        {
+            let store = app.store.lock().unwrap();
+            let win = wins::win(&store.conn, "hill", sent["win"].as_i64().unwrap()).unwrap();
+            assert!(win.link_token.is_none());
+            assert_eq!(win.stats["deck"], "My Japanese");
+        }
+        let row = inbox(&app, "cerro").remove(0);
+        assert!(row.body.contains("My Japanese"));
+        assert!(row.image.is_none());
+        assert!(inbox(&app, "friend").is_empty());
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn deck_links_are_rejected() {
+        let (app, path) = moments_app();
+        crate::test_support::used_app(&app, &["hill", "cerro", "friend"]);
+        let legacy = json!({"id": "7", "name": "Private studies", "recipients": ["cerro"]});
+        assert_eq!(
+            call(&app, "POST", "/api/decks/hill/share", "hill-secret", legacy)
+                .await
+                .0,
+            StatusCode::OK
+        );
+        let id = inbox(&app, "cerro")[0].win.unwrap();
+        assert_eq!(
+            share_as_hill(&app, json!({"win": id, "to": "link"}))
+                .await
+                .0,
+            StatusCode::NOT_FOUND,
+            "saving an explicitly shared completion does not publish its name"
+        );
+        let (status, sent) = share_as_hill(&app, json!({"win": id, "to": "friends"})).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(sent["recipients"], 1);
+        assert_eq!(sent["link"], Value::Null);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn manual_kinds_use_private_policy() {
+        let (app, path) = moments_app();
+        let row = old_notice(&app, "celebration");
+        assert_eq!(
+            share_as_hill(&app, json!({"notification": row})).await.0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            share_as_hill(&app, deck_to(json!("circle"))).await.0,
+            StatusCode::OK
+        );
+        let (status, listed) =
+            call(&app, "GET", "/api/wins/hill", "hill-secret", Value::Null).await;
+        assert_eq!(status, StatusCode::OK);
+        let rows = listed["wins"].as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+        for kind in ["moment", "deck"] {
+            let win = rows.iter().find(|win| win["kind"] == kind).unwrap();
+            assert_eq!(win["policy"], "private", "{kind} is shared only by hand");
+            assert!(win["shared_with_friends"].as_bool().unwrap());
+        }
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn deck_moment_keeps_chosen_name() {
+        let (app, path) = moments_app();
+        let mut body = deck_to(json!({"friends": ["cerro"]}));
+        body["note"] = "Finished before lunch".into();
+        let (status, sent) = share_as_hill(&app, body.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{sent}");
+        assert_eq!(sent["recipients"], 1);
+        let id = sent["win"].as_i64().unwrap();
+        {
+            let store = app.store.lock().unwrap();
+            let win = wins::win(&store.conn, "hill", id).unwrap();
+            assert_eq!(win.kind, "deck");
+            assert_eq!(win.stats["deck"], "My Japanese");
+            assert!(win.body.contains("My Japanese"));
+            assert!(!win.stats.to_string().contains("before lunch"));
+            assert!(store.decks("hill").unwrap().is_empty());
+            assert!(
+                wins::take_automatic(&store.conn, "hill")
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+        assert_eq!(inbox(&app, "cerro")[0].win, Some(id));
+        assert_eq!(
+            inbox(&app, "cerro")[0].note.as_deref(),
+            Some("Finished before lunch")
+        );
+        assert!(inbox(&app, "friend").is_empty());
+        assert_eq!(share_as_hill(&app, body).await.1["recipients"], 0);
+        let undo = format!("/api/share/hill/{id}?until={}", sent["undo_until"]);
+        assert_eq!(
+            call(&app, "DELETE", &undo, "hill-secret", Value::Null).await,
+            (StatusCode::OK, json!({"retracted": 1}))
+        );
+        assert!(inbox(&app, "cerro").is_empty());
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn deck_routes_share_delivery() {
+        let (app, path) = moments_app();
+        crate::test_support::used_app(&app, &["hill", "cerro", "friend"]);
+        let legacy = json!({"id": "7", "name": "My Japanese", "recipients": ["cerro"]});
+        assert_eq!(
+            call(&app, "POST", "/api/decks/hill/share", "hill-secret", legacy).await,
+            (StatusCode::OK, json!({"recipients": 1}))
+        );
+        let (status, sent) = share_as_hill(&app, deck_to(json!("circle"))).await;
+        assert_eq!(status, StatusCode::OK, "{sent}");
+        assert_eq!(sent["recipients"], 1);
+        let id = sent["win"].as_i64().unwrap();
+        assert_eq!(inbox(&app, "cerro")[0].win, Some(id));
+        assert_eq!(inbox(&app, "cerro")[0].kind, "completion");
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert_eq!(inbox(&app, "friend").len(), 1);
+        sql(
+            &app,
+            "update notifications set created_at = created_at - 1000 where recipient = 'cerro'",
+        );
+        let undo = format!("/api/share/hill/{id}?until={}", sent["undo_until"]);
+        assert_eq!(
+            call(&app, "DELETE", &undo, "hill-secret", Value::Null)
+                .await
+                .1,
+            json!({"retracted": 1})
+        );
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn new_deck_share_prevents_repeat() {
+        let (app, path) = moments_app();
+        crate::test_support::used_app(&app, &["hill", "cerro", "friend"]);
+        let (_, sent) = share_as_hill(&app, deck_to(json!({"friends": ["cerro"]}))).await;
+        let legacy =
+            json!({"id": "7", "name": "A changed name", "recipients": ["cerro", "friend"]});
+        assert_eq!(
+            call(&app, "POST", "/api/decks/hill/share", "hill-secret", legacy).await,
+            (StatusCode::OK, json!({"recipients": 1})),
+        );
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        let got = inbox(&app, "friend").remove(0);
+        assert_eq!(got.win, sent["win"].as_i64());
+        assert_eq!(got.kind, "completion");
+        assert!(
+            got.body.contains("My Japanese"),
+            "the first chosen name is retained"
+        );
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn deck_moment_checks_input_and_mutes() {
+        let (app, path) = moments_app();
+        for (id, name) in [
+            ("".into(), "name".into()),
+            ("7".into(), " ".into()),
+            ("x".repeat(129), "name".into()),
+            ("7".into(), "x".repeat(513)),
+            ("7".into(), "one\ntwo".into()),
+        ] {
+            let body = json!({"moment": {"deck": {"id": id, "name": name}}, "to": "circle"});
+            assert_eq!(share_as_hill(&app, body).await.0, StatusCode::BAD_REQUEST);
+        }
+        assert_eq!(
+            share_as_hill(&app, deck_to(json!({"friends": ["stranger"]})))
+                .await
+                .0,
+            StatusCode::BAD_REQUEST
+        );
+        let count: i64 = app
+            .store
+            .lock()
+            .unwrap()
+            .conn
+            .query_row("select count(*) from wins", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        sql(
+            &app,
+            "insert into incoming_settings (user, enabled) values ('cerro', 0); insert into sender_unsubscriptions (recipient, sender) values ('friend', 'hill');",
+        );
+        let (status, sent) = share_as_hill(&app, deck_to(json!("circle"))).await;
+        assert_eq!(status, StatusCode::OK, "{sent}");
+        assert_eq!(sent["recipients"], 0);
+        assert!(sent.get("undo_until").is_none());
+        assert!(inbox(&app, "cerro").is_empty());
+        assert!(inbox(&app, "friend").is_empty());
         cleanup(app, path);
     }
 
