@@ -1,5 +1,5 @@
 import {day, escape as esc, lexical, nativeAccount, number as num} from "../common";
-import {request, send} from "../http";
+import {failure, request, send} from "../http";
 
 const {t:aqText,html:aqHtml} = AnkiQuestI18n;
 
@@ -205,7 +205,7 @@ document.addEventListener("change", event => {
   render();
 });
 
-const ADDON_RELEASES = "https://github.com/AnkiQuest/ankiquest/releases/latest";
+const ADDON_RELEASES = "https://github.com/AnkiQuest/AnkiQuest-Desktop/releases/latest";
 const ANDROID_RELEASES = "https://github.com/AnkiQuest/AnkiQuest-Android/releases/latest";
 
 /** What AnkiQuest is and how to start, for visitors without an account on a server that takes sign-ups. */
@@ -246,8 +246,9 @@ function span(window: string, at: number, until: number) {
   return typeof format.formatRange === "function" ? format.formatRange(new Date(at), new Date(end)) : format.format(new Date(at));
 }
 
-function records(rows: RecordBoard[], me: string) {
+function records(rows: RecordBoard[], me: string, lock: Lock = null) {
   const held = Object.fromEntries(rows.map(row => [row.window, row]));
+  if (lock && !rows.some(row => row.holders?.some(holder => holder.user !== me))) return lockNote(lock);
   if (!rows.some(row => (row.holders ?? []).length)) return aqHtml`<p class="empty">Nobody has earned any XP yet.</p>`;
   return aqHtml`<div class="records">${entries(RECORDS).map(([window, label]) => {
     const row = held[window];
@@ -318,7 +319,24 @@ function streakBadge(row: Standing) {
   const label = aqText`${num(row.streak)} day streak · ${status}`;
   return aqHtml`<span class="streak" data-streak-state="${state}" role="img" tabindex="0" aria-label="${esc(label)}" title="${esc(label)}">${streakIcon(state)}${num(row.streak)}</span>`;
 }
-function board(rows: Standing[], me: string, hideFor?: string) {
+/** Why the server left other players out of an answer, from `X-Ankiquest-Locked`. */
+type Lock = "upload_first" | "sign_in" | null;
+
+/** A board's rows and why the server left other players out of them, if it did. */
+async function lockedRequest<T>(url: string, init: RequestInit): Promise<[T, Lock]> {
+  const response = await send(url, init);
+  if (!response.ok) throw await failure(response);
+  return [await response.json() as T, response.headers.get("X-Ankiquest-Locked") as Lock];
+}
+
+/** What to do to see other players: sign in, or study and sync once. */
+function lockNote(lock: Lock) {
+  if (lock === "sign_in") return aqHtml`<p class="empty">Sign in to see how others are doing.</p>`;
+  return aqHtml`<p class="empty">Study and sync once to see how others are doing.</p>`;
+}
+
+function board(rows: Standing[], me: string, hideFor?: string, lock: Lock = null) {
+  if (lock && !rows.length) return lockNote(lock);
   if (!rows.length) return aqHtml`<p class="empty">Nobody has uploaded reviews yet.</p>`;
   if (rows.every(row => row.xp === 0)) return aqHtml`<p class="empty">No XP in this period yet.</p>`;
   const lead = Math.max(1, rows[0].xp);
@@ -603,17 +621,17 @@ async function render() {
     if (!canRender()) return;
     globalHideOwner = currentView() !== "records" && scope === "global" && !user ? session?.user ?? null : null;
     if (currentView() === "records") {
-      const held = await request<RecordBoard[]>(scoped("/api/records"), auth);
+      const [held, recordsLock] = await lockedRequest<RecordBoard[]>(scoped("/api/records"), auth);
       if (!canRender()) return;
       document.title = aqText("Records · AnkiQuest");
       AnkiQuestSite.setProfile(me);
-      app.innerHTML = pageHero(aqText("Records worth chasing."), aqText("Personal bests become shared milestones. Celebrate the sessions, streaks, and study days that raised the bar."), aqHtml`<strong>All-time achievements</strong>A new record starts with one session.`) + scopePicker(choices, scope) + records(held, me) + receivingNotificationsEntry();
+      app.innerHTML = pageHero(aqText("Records worth chasing."), aqText("Personal bests become shared milestones. Celebrate the sessions, streaks, and study days that raised the bar."), aqHtml`<strong>All-time achievements</strong>A new record starts with one session.`) + scopePicker(choices, scope) + records(held, me, recordsLock) + receivingNotificationsEntry();
       return;
     }
     const period = currentPeriod();
     loadWinners();
-    const [rows, week, hidden] = await Promise.all([
-      request<Standing[]>(scoped("/api/leaderboard?period=" + period), auth),
+    const [[rows, lock], week, hidden] = await Promise.all([
+      lockedRequest<Standing[]>(scoped("/api/leaderboard?period=" + period), auth),
       request<WeekInfo>("/api/week").catch(() => null),
       session && globalHideOwner
         ? request<Person[]>(hiddenPath(session), {session, gate: false}).catch(() => null)
@@ -640,7 +658,7 @@ async function render() {
     document.title = aqText("Leaderboard · AnkiQuest");
     AnkiQuestSite.setProfile(me);
     const owner = hidden && session ? session : null;
-    app.innerHTML = pageHero(aqText("Every session counts."), aqText("A little friendly competition, a little more motivation. See how your study community is growing together."), aqHtml`<strong>Made for steady progress</strong>Standings update as members sync.`) + (newcomer ? welcome() : "") + leaderboardKpis(rows, period) + tabs(period) + scopePicker(choices, scope) + aqHtml`<section class="card" id="leaderboard-rows"><div class="card-head"><div><h2>${boardTitle(period)}</h2><p>XP earned together, one study session at a time.</p></div><span class="chip blue">${num(rows.length)} players</span></div>${board(rows, me, owner?.user)}${hidden ? hiddenPanel(hidden) : ""}</section>` + winnerSection() + receivingNotificationsEntry();
+    app.innerHTML = pageHero(aqText("Every session counts."), aqText("A little friendly competition, a little more motivation. See how your study community is growing together."), aqHtml`<strong>Made for steady progress</strong>Standings update as members sync.`) + (newcomer ? welcome() : "") + leaderboardKpis(rows, period) + tabs(period) + scopePicker(choices, scope) + aqHtml`<section class="card" id="leaderboard-rows"><div class="card-head"><div><h2>${boardTitle(period)}</h2><p>XP earned together, one study session at a time.</p></div><span class="chip blue">${num(rows.length)} players</span></div>${board(rows, me, owner?.user, lock)}${hidden ? hiddenPanel(hidden) : ""}</section>` + winnerSection() + receivingNotificationsEntry();
     if (owner) bindGlobalHides(owner, id);
   } catch (e) {
     if (!canRender()) return;
