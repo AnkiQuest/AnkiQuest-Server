@@ -678,6 +678,230 @@ mod tests {
             .collect()
     }
 
+    /// One real conquest and two friends, before the worker keeps its win.
+    async fn conquest_sharing_case() -> (Arc<App>, PathBuf, i64) {
+        let (app, path) = fixture();
+        with_reviews(&app, "cerro", 1);
+        with_reviews(&app, "friend", 1);
+        upload_as(
+            &app,
+            "hill",
+            plain_upload(reviews_at(now_ms() - 3_600_000, 2)),
+        )
+        .await;
+        let rows = hard_card(77);
+        let at = rows.last().unwrap().id;
+        upload_as(&app, "hill", plain_upload(rows)).await;
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .execute_batch(
+                "insert into friendships (a, b, requested_by, accepted, created_at)
+             values ('cerro', 'hill', 'hill', 1, 0), ('friend', 'hill', 'hill', 1, 0);",
+            )
+            .unwrap();
+        (app, path, at)
+    }
+
+    fn keep_conquest(app: &App, at: i64) {
+        crate::wins::create(
+            &app.store.lock().unwrap().conn,
+            "hill",
+            &format!("conquered:{at}"),
+            0,
+            at,
+            "Card conquered",
+            "",
+            &serde_json::json!({}),
+        )
+        .unwrap()
+        .unwrap();
+    }
+
+    async fn tell_conquest(app: &Arc<App>, at: i64, method: &str) -> serde_json::Value {
+        let (status, response) = call(
+            app,
+            method,
+            &format!("/api/conquests/hill/{at}/tell"),
+            "hill-secret",
+            serde_json::json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{response}");
+        response
+    }
+
+    async fn share_conquest(app: &Arc<App>, at: i64, friends: &[&str]) -> serde_json::Value {
+        let (status, response) = call(
+            app,
+            "POST",
+            "/api/share/hill",
+            "hill-secret",
+            serde_json::json!({"moment": {"conquest": at}, "to": {"friends": friends}}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{response}");
+        response
+    }
+
+    fn conquest_rows(app: &App, recipient: &str) -> usize {
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .query_row(
+                "select count(*) from notifications where sender = 'hill' and recipient = ?1
+             and kind in ('conquest', 'share')",
+                [recipient],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn tell_then_share_is_once() {
+        let (app, path, at) = conquest_sharing_case().await;
+        // Released clients can tell friends before the worker creates the win.
+        assert_eq!(tell_conquest(&app, at, "POST").await["told"], 2);
+        keep_conquest(&app, at);
+        let shared = share_conquest(&app, at, &["cerro", "friend"]).await;
+        assert_eq!(
+            shared["recipients"], 0,
+            "Tell already delivered this conquest"
+        );
+        assert!(shared.get("undo_until").is_none());
+        assert_eq!(tell_conquest(&app, at, "POST").await["told"], 2);
+        assert_eq!(conquest_rows(&app, "cerro"), 1);
+        assert_eq!(conquest_rows(&app, "friend"), 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn share_then_tell_is_once() {
+        let (app, path, at) = conquest_sharing_case().await;
+        keep_conquest(&app, at);
+        assert_eq!(share_conquest(&app, at, &["cerro"]).await["recipients"], 1);
+        assert_eq!(tell_conquest(&app, at, "POST").await["told"], 2);
+        assert_eq!(
+            conquest_rows(&app, "cerro"),
+            1,
+            "Share already reached Cerro"
+        );
+        assert_eq!(
+            conquest_rows(&app, "friend"),
+            1,
+            "Tell reaches the other friend"
+        );
+        assert_eq!(
+            share_conquest(&app, at, &["cerro", "friend"]).await["recipients"],
+            0
+        );
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn conquest_undo_keeps_other_send() {
+        let (app, path, at) = conquest_sharing_case().await;
+        keep_conquest(&app, at);
+        let first = share_conquest(&app, at, &["cerro"]).await;
+        // Separate the sends deterministically, as in the share Undo tests.
+        let until = first["undo_until"].as_i64().unwrap() - 1000;
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .execute(
+                "update notifications set created_at = created_at - 1000
+             where sender = 'hill' and recipient = 'cerro' and kind = 'share'",
+                [],
+            )
+            .unwrap();
+        tell_conquest(&app, at, "POST").await;
+        assert_eq!(tell_conquest(&app, at, "DELETE").await["retracted"], 1);
+        assert_eq!(
+            conquest_rows(&app, "cerro"),
+            1,
+            "Tell Undo leaves the chosen send"
+        );
+        assert_eq!(conquest_rows(&app, "friend"), 0);
+        assert_eq!(share_conquest(&app, at, &["friend"]).await["recipients"], 1);
+        let (status, result) = call(
+            &app,
+            "DELETE",
+            &format!("/api/share/hill/{}?until={until}", first["win"]),
+            "hill-secret",
+            serde_json::json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(result["retracted"], 1);
+        assert_eq!(conquest_rows(&app, "cerro"), 0);
+        assert_eq!(
+            conquest_rows(&app, "friend"),
+            1,
+            "Undo leaves the later send"
+        );
+        assert_eq!(share_conquest(&app, at, &["cerro"]).await["recipients"], 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn read_tell_stays_shared() {
+        let (app, path, at) = conquest_sharing_case().await;
+        tell_conquest(&app, at, "POST").await;
+        keep_conquest(&app, at);
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .execute(
+                "update notifications set read_at = 1
+             where recipient = 'cerro' and kind = 'conquest'",
+                [],
+            )
+            .unwrap();
+        assert_eq!(tell_conquest(&app, at, "DELETE").await["retracted"], 1);
+        assert_eq!(
+            share_conquest(&app, at, &["cerro", "friend"]).await["recipients"],
+            1,
+            "only the unread, retracted delivery can be sent again"
+        );
+        assert_eq!(conquest_rows(&app, "cerro"), 1);
+        assert_eq!(conquest_rows(&app, "friend"), 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn cheered_tell_stays_shared() {
+        let (app, path, at) = conquest_sharing_case().await;
+        tell_conquest(&app, at, "POST").await;
+        keep_conquest(&app, at);
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .execute(
+                "insert into reactions (reactor, notification, sender, created_at)
+             select recipient, id, sender, 0 from notifications
+             where recipient = 'cerro' and kind = 'conquest'",
+                [],
+            )
+            .unwrap();
+        let (status, _) = call(
+            &app,
+            "DELETE",
+            &format!("/api/conquests/hill/{at}/tell"),
+            "hill-secret",
+            serde_json::json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(share_conquest(&app, at, &["cerro"]).await["recipients"], 0);
+        assert_eq!(conquest_rows(&app, "cerro"), 1);
+        cleanup(app, path);
+    }
+
     #[tokio::test]
     async fn only_the_owner_labels_a_conquered_card_and_friends_hear_what_it_was() {
         let (app, path) = fixture();
