@@ -34,12 +34,29 @@ const METHOD: i32 = 6;
 /// 1100 px (AnkiQuest-Android#168), so smaller poses were upscaled.
 const WIDGET: u32 = 1024;
 
-/// One drawable: name, master PNG, square size and WebP quality.
+/// Luminance below which a pixel counts as line art in [`Look::Outline`].
+const LINE_LUMA: f32 = 90.0;
+
+/// Alpha above which a pixel is part of the picture in [`Look::Outline`].
+const LINE_ALPHA: u8 = 128;
+
+/// How a drawable shows its master.
+#[derive(Clone, Copy, PartialEq)]
+enum Look {
+    /// The master as drawn.
+    Colour,
+    /// Only the master's dark line art, in black on transparent: the
+    /// monochrome layer of a themed launcher icon, which keeps alpha only.
+    Outline,
+}
+
+/// One drawable: name, master PNG, square size, WebP quality and look.
 struct Art {
     name: &'static str,
     source: &'static str,
     size: u32,
     quality: f32,
+    look: Look,
 }
 
 /// A drawable at the default quality.
@@ -49,6 +66,18 @@ const fn art(name: &'static str, source: &'static str, size: u32) -> Art {
         source,
         size,
         quality: QUALITY,
+        look: Look::Colour,
+    }
+}
+
+/// A themed icon's monochrome layer, from the master's line art.
+const fn outline(name: &'static str, source: &'static str, size: u32) -> Art {
+    Art {
+        name,
+        source,
+        size,
+        quality: QUALITY,
+        look: Look::Outline,
     }
 }
 
@@ -59,11 +88,16 @@ const fn widget(name: &'static str, source: &'static str) -> Art {
         source,
         size: WIDGET,
         quality: WIDGET_QUALITY,
+        look: Look::Colour,
     }
 }
 
 const ART: &[Art] = &[
     widget("aki_face", "static/aki/face.png"),
+    widget("aki_sad", "static/aki/sad.png"),
+    widget("aki_hopeful", "static/aki/hopeful.png"),
+    widget("aki_frozen", "static/aki/frozen.png"),
+    widget("aki_neglected", "static/aki/neglected.png"),
     widget("ankilope_face", "static/ankilope/face.png"),
     widget("aki_celebrate", "static/aki/celebrate.png"),
     widget("aki_streak", "static/aki/streak.png"),
@@ -118,6 +152,37 @@ const ART: &[Art] = &[
         336,
     ),
     art("duo_friends", "static/duo/friends.png", 336),
+    widget(
+        "anki_tan_frozen",
+        "static/anki-tan/generated/frozen-full.png",
+    ),
+    widget(
+        "anki_tan_chibi_frozen",
+        "static/anki-tan/generated/frozen-chibi.png",
+    ),
+    // Anki-tan's launcher icons (AnkiQuest-Android AnkiquestIcon), CC BY-SA 4.0.
+    // The pack's icon is 256 px and is kept at that size.
+    art("anki_tan_icon", "static/anki-tan/icon.png", 432),
+    art(
+        "anki_tan_icon_happy",
+        "static/anki-tan/emoji/Ankitan_09_fire_eyes.png",
+        432,
+    ),
+    art(
+        "anki_tan_icon_worried",
+        "static/anki-tan/emoji/Ankitan_02_cry.png",
+        432,
+    ),
+    art(
+        "anki_tan_icon_sleepy",
+        "static/anki-tan/emoji/Ankitan_35_sleeping.png",
+        432,
+    ),
+    outline(
+        "anki_tan_icon_mono",
+        "static/anki-tan/emoji/Ankitan_00_smile.png",
+        432,
+    ),
 ];
 
 /// Whether to write drawables or only compare their sizes.
@@ -155,7 +220,7 @@ pub fn run(args: &[String]) -> ExitCode {
     }
 }
 
-/// Runs the add-on pose exporter: `[--check | --replace]`.
+/// Runs the add-on pose exporter: `[--check | --replace] <desktop-checkout>`.
 pub fn addon(args: &[String]) -> ExitCode {
     addon::run(args)
 }
@@ -193,7 +258,7 @@ fn export(android: &Path) -> Result<ExitCode, String> {
     let folder = android.join(DRAWABLES);
     fs::create_dir_all(&folder).map_err(|e| format!("{}: {e}", folder.display()))?;
     for art in ART {
-        let master = load(&root().join(art.source))?;
+        let master = look(load(&root().join(art.source))?, art.look);
         let (width, height) = target(master.width(), master.height(), art.size);
         if (width, height) != (art.size, art.size) {
             println!(
@@ -246,6 +311,23 @@ fn check(android: &Path) -> Result<ExitCode, String> {
 fn load(path: &Path) -> Result<RgbaImage, String> {
     let image = image::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(image.into_rgba8())
+}
+
+/// The master as [`Look`] asks for it.
+fn look(master: RgbaImage, look: Look) -> RgbaImage {
+    if look == Look::Colour {
+        return master;
+    }
+
+    // Keep opaque dark pixels as black line art; drop everything else.
+    let mut lines = master;
+    for pixel in lines.pixels_mut() {
+        let [r, g, b, a] = pixel.0;
+        let luma = 0.299 * f32::from(r) + 0.587 * f32::from(g) + 0.114 * f32::from(b);
+        let line = a > LINE_ALPHA && luma < LINE_LUMA;
+        pixel.0 = if line { [0, 0, 0, 255] } else { [0, 0, 0, 0] };
+    }
+    lines
 }
 
 /// A PNG's pixel size, read from its header.
@@ -322,10 +404,13 @@ mod tests {
 
     #[test]
     fn widget_poses_are_large() {
-        // Every pose the big streak widget shows, with either companion
-        // (AnkiquestStreakWidget.poses, AnkiquestCompanion), and nothing else.
+        // Large widget poses, including core art awaiting companion selection wiring.
         let poses = [
             "aki_face",
+            "aki_sad",
+            "aki_hopeful",
+            "aki_frozen",
+            "aki_neglected",
             "ankilope_face",
             "aki_celebrate",
             "aki_streak",
@@ -345,6 +430,8 @@ mod tests {
             "aki_goal",
             "aki_sleeping",
             "aki_at_risk",
+            "anki_tan_frozen",
+            "anki_tan_chibi_frozen",
         ];
         let large: Vec<_> = ART.iter().filter(|art| art.size == WIDGET).collect();
         let names: Vec<_> = large.iter().map(|art| art.name).collect();
@@ -378,6 +465,18 @@ mod tests {
             features.format(),
             Some(webp::BitstreamFormat::Lossy)
         ));
+    }
+
+    #[test]
+    fn outline_keeps_only_dark_lines() {
+        let mut image = RgbaImage::new(3, 1);
+        image.put_pixel(0, 0, image::Rgba([10, 10, 10, 255]));
+        image.put_pixel(1, 0, image::Rgba([250, 200, 180, 255]));
+        image.put_pixel(2, 0, image::Rgba([10, 10, 10, 40]));
+        let lines = look(image, Look::Outline);
+        assert_eq!([0, 0, 0, 255], lines.get_pixel(0, 0).0, "black line");
+        assert_eq!(0, lines.get_pixel(1, 0)[3], "skin");
+        assert_eq!(0, lines.get_pixel(2, 0)[3], "faint dark pixel");
     }
 
     #[test]
