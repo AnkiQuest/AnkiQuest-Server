@@ -745,7 +745,7 @@ mod tests {
         response
     }
 
-    fn conquest_rows(app: &App, recipient: &str) -> usize {
+    fn conquest_rows(app: &App, recipient: &str) -> i64 {
         app.store
             .lock()
             .unwrap()
