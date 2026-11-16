@@ -278,9 +278,16 @@ pub(crate) fn send_wins(
         }
         let mut fresh = Vec::new();
         for win in wins {
+            // Tell -> legacy marker -> share sheet, including sends before a win existed.
+            // Reading the marker preserves the legacy route's read/cheer and Undo rules.
+            let told = win
+                .key
+                .strip_prefix("conquered:")
+                .map(|at| format!("conquest:{sender}:{at}"));
             if !tx.query_row(
-                "select exists (select 1 from win_deliveries where win = ?1 and recipient = ?2)",
-                params![win.id, friend],
+                "select exists (select 1 from win_deliveries where win = ?1 and recipient = ?2)
+                 or exists (select 1 from seen where user = ?2 and key = ?3)",
+                params![win.id, friend, told],
                 |r| r.get::<_, bool>(0),
             )? {
                 fresh.push(win);
