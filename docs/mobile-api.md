@@ -208,6 +208,11 @@ a refusal has `{ "error" }` to show: `400` for a group name, `403` for an owner 
 
 the same endpoint sends any moment that is a win to chosen friends and groups with a note: `{ "moment": { "win" | "key" | "notification" | "conquest": … }, "to": "circle" | { "friends": [...], "groups": [...] }, "note"? }` answers `{ "recipients", "link", "win", "undo_until" }`, and `DELETE /api/share/{user}/{win}` takes it back for a day; with `?until={undo_until}` only that send (see [sharing.md](sharing.md)). examples: `share_moment.json`, `share_moment_group.json`, `share_undo.json` and `share_undo_send.json`.
 
+Conquest shares and `/api/conquests/{user}/{at}/tell` recognize each other's deliveries:
+one friend gets one copy, whichever action sends first. Each Undo still owns only that
+action's messages; a read, cheered or answered copy prevents sending it again through
+the other action. Existing request and response shapes are unchanged.
+
 friends receive a `share` row from the player, with the title and body quoted in the player's own words ("I reached level 4 with 900 XP." rather than "You reached…") and the same `topic` (`place:N` for a place), so it shows the same art and can be replied to.
 
 wins, the daily goal (`/api/goal/{user}`), sharing policies (`/api/sharing/{user}`), `{ "win": id, "to": "friends" | "link" }` shares, `GET /api/wins/{user}`, `DELETE /api/wins/{user}/{id}/link`, automatic digests and `POST /api/react/{user}` are described in [sharing.md](sharing.md). Inbox rows may carry `win` (the win they are about), `share_title` and `share_body` (on the player's own shareable rows, what sharing it tells others, when that differs from `title` and `body`; clients share these and fall back to `title` and `body`), `image` (a friend's shared card), `note` (what the friend wrote with a moment they sent by hand) and `reacted: true` (you cheered it); the sender of a cheer gets a replyable `reaction` row. Each win reaches each friend once; friends who muted the player are skipped. Unknown or unshareable notifications are `404`, a place the player doesn't hold is `409`, and anything else is `400`.
