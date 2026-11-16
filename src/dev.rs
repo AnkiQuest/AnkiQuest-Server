@@ -465,9 +465,9 @@ async fn get_crash_reports(
     State(app): State<Arc<App>>,
     Path(user): Path<String>,
     headers: HeaderMap,
-) -> Result<Json<Vec<crash_reports::Summary>>, StatusCode> {
+) -> Result<Json<Vec<crash_reports::Group>>, StatusCode> {
     check(&app, &user, &headers)?;
-    crash_reports::recent(&app.store.lock().unwrap().conn)
+    crash_reports::groups(&app.store.lock().unwrap().conn)
         .map(Json)
         .map_err(store_error)
 }
@@ -721,39 +721,63 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn devs_read_crash_reports_newest_first_without_identifiers() {
+    async fn devs_read_crash_signatures_newest_first_with_their_samples() {
+        /// Monday 16 November 2026, 09:00 UTC.
+        const NOW_MS: i64 = 1_794_819_600_000;
+        const A: &str = "java.lang.A: first 1\n\tat a.B.c(B.kt:1)";
+        const B: &str = "java.lang.B: second\n\tat b.C.d(C.kt:2)";
         let (app, path) = fixture();
-        for (code, trace) in [
-            (1, "java.lang.A: first\n\tat a"),
-            (2, "java.lang.B: second\n\tat b"),
-        ] {
+
+        // A crashes three times across two versions, B once in between.
+        let sent = [
+            (A, 1, "2.21.0"),
+            (B, 1, "2.21.0"),
+            (A, 1, "2.21.0"),
+            (A, 2, "2.22.0"),
+        ];
+        for (index, (trace, code, name)) in sent.into_iter().enumerate() {
+            crate::app::fix_now_ms(Some(NOW_MS + index as i64 * 1_000));
             let report = serde_json::json!({
                 "APP_VERSION_CODE": code,
-                "APP_VERSION_NAME": "2.21.0",
+                "APP_VERSION_NAME": name,
                 "ANDROID_VERSION": "14",
-                "STACK_TRACE": trace,
+                "STACK_TRACE": trace.replace(" 1\n", &format!(" {index}\n")),
                 "USER_EMAIL": "player@example.com"
             });
             let sent = call(&app, "POST", "/api/crash-reports", None, report).await;
             assert_eq!(sent.0, StatusCode::NO_CONTENT);
         }
 
-        // The list names the versions and each report's first stack trace line.
+        // One row per signature, last seen first, with the count and the latest version.
         let (status, list) = get(&app, "/api/dev/hill/crash-reports", Some("hill-token")).await;
         assert_eq!(status, StatusCode::OK);
         let rows = list.as_array().unwrap();
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0]["app_version_code"], 2);
-        assert_eq!(rows[0]["app_version_name"], "2.21.0");
-        assert_eq!(rows[0]["android_version"], "14");
-        assert_eq!(rows[0]["exception"], "java.lang.B: second");
-        assert_eq!(rows[1]["exception"], "java.lang.A: first");
+        let a = &rows[0];
+        assert_eq!(a["signature"], crate::crash_signature::of_trace(A));
+        assert_eq!(a["count"], 3);
+        assert_eq!(a["first_seen"], NOW_MS);
+        assert_eq!(a["last_seen"], NOW_MS + 3_000);
+        assert_eq!(a["app_version"], "2.22.0");
+        assert_eq!(a["app_versions"], serde_json::json!(["2.21.0", "2.22.0"]));
+        assert_eq!(a["exception"], "java.lang.A: first 0");
+        assert_eq!(a["reports"].as_array().unwrap().len(), 2);
+        let b = &rows[1];
+        assert_eq!(b["signature"], crate::crash_signature::of_trace(B));
+        assert_eq!(
+            (b["count"].as_i64(), b["last_seen"].as_i64()),
+            (Some(1), Some(NOW_MS + 1_000))
+        );
+        assert_eq!(b["exception"], "java.lang.B: second");
 
-        // One report is the stored JSON; only devs read it.
-        let one = format!("/api/dev/hill/crash-reports/{}", rows[1]["id"]);
+        // Each sample is the stored JSON, oldest first; only devs read it.
+        let one = format!("/api/dev/hill/crash-reports/{}", a["reports"][1]);
         let (status, report) = get(&app, &one, Some("hill-token")).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(report["STACK_TRACE"], "java.lang.A: first\n\tat a");
+        assert_eq!(
+            report["STACK_TRACE"],
+            "java.lang.A: first 2\n\tat a.B.c(B.kt:1)"
+        );
         assert!(report.get("USER_EMAIL").is_none());
         let theirs = one.replace("/hill/", "/cerro/");
         assert_eq!(
@@ -766,6 +790,7 @@ mod tests {
                 .0,
             StatusCode::NOT_FOUND
         );
+        crate::app::fix_now_ms(None);
         cleanup(app, path);
     }
 

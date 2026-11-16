@@ -24,6 +24,7 @@ mod competition;
 mod config;
 mod conquests;
 mod crash_reports;
+mod crash_signature;
 #[cfg(test)]
 mod day_verdicts;
 mod deck_copies;

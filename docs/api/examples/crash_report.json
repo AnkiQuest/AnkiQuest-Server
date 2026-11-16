@@ -16,7 +16,7 @@
   "TOTAL_MEM_SIZE": 117934768128,
   "AVAILABLE_MEM_SIZE": 81623904256,
   "BUILD_CONFIG": {"BUILD_TYPE": "release", "FLAVOR": "quest", "VERSION_CODE": 22100300},
-  "CUSTOM_DATA": {"WEBVIEW_VER_NAME": "131.0.6778.135", "WEBVIEW_VER_CODE": "677813533"},
+  "CUSTOM_DATA": {"WEBVIEW_VER_NAME": "131.0.6778.135", "WEBVIEW_VER_CODE": "677813533", "ANKIQUEST_SIGNATURE": "81f3b3d1ad826d834b1ba6df6df1afb43781a2bdba650fb6f8c8bb648c27242f"},
   "STACK_TRACE": "java.lang.IllegalStateException: Deck list not loaded\n\tat com.ichi2.anki.DeckPicker.onResume(DeckPicker.kt:812)\n\tat android.app.Activity.performResume(Activity.java:8936)\n",
   "STACK_TRACE_HASH": "5f1e6a2b",
   "CRASH_CONFIGURATION": {"orientation": "ORIENTATION_PORTRAIT", "locale": "en_US"},

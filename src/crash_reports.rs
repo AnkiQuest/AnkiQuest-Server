@@ -2,8 +2,9 @@
 //!
 //! Anyone can send one, so each client address gets a few per hour and a report is at most
 //! [`MAX_BYTES`]. Fields that identify a player, a device or an install are removed before
-//! a report is stored, and reports are deleted after [`RETENTION_DAYS`]. Devs read them in
-//! the dev console (`/dev`).
+//! a report is stored, and reports are deleted after [`RETENTION_DAYS`]. Reports of one
+//! failure share a signature ([`crate::crash_signature`]): the first [`MAX_SAMPLES`] are
+//! stored, later ones only counted. Devs read them in the dev console (`/dev`).
 
 use crate::app::{App, now_ms};
 use crate::game::{DAY_MS, HOUR_MS};
@@ -31,8 +32,10 @@ const MAX_CLIENTS: usize = 10_000;
 const RETENTION_DAYS: i64 = 30;
 /// Reports kept at most; the oldest go first, so the table stays bounded.
 const MAX_STORED: i64 = 5_000;
-/// Reports the dev console lists.
+/// Signatures the dev console lists.
 const LISTED: i64 = 100;
+/// App versions remembered per signature; the least recently seen is forgotten first.
+const MAX_VERSIONS: usize = 10;
 /// What replaces a value that looks like a credential.
 const REMOVED: &str = "[removed]";
 /// The shortest run of token characters treated as a credential.
@@ -65,18 +68,36 @@ const DROPPED_PREFERENCES: &[&str] = &[
 const QUEST_PREFIX: &str = "ankiquest";
 /// ACRA's random id for the report, kept so duplicates can be told apart.
 const REPORT_ID: &str = "REPORT_ID";
+const STACK_TRACE: &str = "STACK_TRACE";
 const SHARED_PREFERENCES: &str = "SHARED_PREFERENCES";
+/// Where ACRA puts the app's custom fields.
+const CUSTOM_DATA: &str = "CUSTOM_DATA";
+/// The custom field the app puts its signature of the crash in.
+const SIGNATURE_FIELD: &str = "ANKIQUEST_SIGNATURE";
+/// Reports stored per signature; later ones are only counted.
+const MAX_SAMPLES: i64 = 2;
 
 pub fn initialize(conn: &Connection) -> Result<(), Error> {
     conn.execute_batch(
         "create table if not exists crash_reports (
              id integer primary key,
              received_at integer not null,
+             signature text not null,
              app_version_code integer,
              android_version text,
              report text not null
          );
-         create index if not exists crash_reports_received_at on crash_reports (received_at);",
+         create index if not exists crash_reports_received_at on crash_reports (received_at);
+         create index if not exists crash_reports_signature on crash_reports (signature);
+         create table if not exists crash_signatures (
+             signature text primary key,
+             first_seen integer not null,
+             last_seen integer not null,
+             count integer not null,
+             exception text,
+             app_versions text not null
+         ) without rowid;
+         create index if not exists crash_signatures_last_seen on crash_signatures (last_seen);",
     )?;
     Ok(())
 }
@@ -128,14 +149,62 @@ fn client_key(client: IpAddr) -> IpAddr {
     }
 }
 
+/// Where a report may carry the app's signature: in ACRA's custom data, or at the top.
+#[derive(Clone, Copy)]
+enum Slot {
+    CustomData,
+    TopLevel,
+}
+
+impl Slot {
+    const ALL: [Slot; 2] = [Slot::CustomData, Slot::TopLevel];
+
+    fn get(self, report: &mut Value) -> Option<&mut Value> {
+        match self {
+            Slot::CustomData => report.get_mut(CUSTOM_DATA)?.get_mut(SIGNATURE_FIELD),
+            Slot::TopLevel => report.get_mut(SIGNATURE_FIELD),
+        }
+    }
+}
+
+/// The well-formed signatures in `report` and where they were, normalized.
+fn sent_signatures(report: &mut Value) -> Vec<(Slot, String)> {
+    Slot::ALL
+        .into_iter()
+        .filter_map(|slot| {
+            let sent = slot.get(report)?.as_str()?;
+            Some((slot, crate::crash_signature::parse_sent(sent)?))
+        })
+        .collect()
+}
+
+/// The report's signature: the app's when it sent a well-formed one, else computed from
+/// `STACK_TRACE` (an empty one when there is none).
+fn signature(report: &mut Value) -> String {
+    if let Some((_, sent)) = sent_signatures(report).into_iter().next() {
+        return sent;
+    }
+    let trace = report
+        .get(STACK_TRACE)
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    crate::crash_signature::of_trace(trace)
+}
+
 /// Removes everything in `report` that identifies a player, a device or an install.
 fn strip(report: &mut Value) {
-    // ACRA's report id is a random UUID, not a credential; keep it as sent.
+    // ACRA's report id is a random UUID and the signature a hash, not credentials; keep them.
     let id = report.get_mut(REPORT_ID).map(Value::take);
+    let signatures = sent_signatures(report);
     if let Some(preferences) = report.get_mut(SHARED_PREFERENCES) {
         drop_preferences(preferences);
     }
     scrub(report);
+    for (slot, signature) in signatures {
+        if let Some(value) = slot.get(report) {
+            *value = signature.into();
+        }
+    }
     if let (Some(id), Value::Object(fields)) = (id, report) {
         fields.insert(REPORT_ID.into(), id);
     }
@@ -218,24 +287,42 @@ fn without_tokens(text: &str) -> Option<String> {
     changed.then_some(out)
 }
 
-/// Saves a stripped report received at `now`, then deletes what is past the retention
+/// Counts a stripped report with `signature` received at `now` and stores it while the
+/// signature has fewer than [`MAX_SAMPLES`] stored; then deletes what is past the retention
 /// or over the stored maximum.
-fn insert(conn: &Connection, report: &Value, now: i64) -> Result<(), Error> {
+fn insert(conn: &Connection, report: &Value, signature: &str, now: i64) -> Result<(), Error> {
     // APP_VERSION_CODE is a number, but older senders wrote it as a string.
     let code = match &report["APP_VERSION_CODE"] {
         Value::Number(code) => code.as_i64(),
         Value::String(code) => code.trim().parse().ok(),
         _ => None,
     };
-    let android = report["ANDROID_VERSION"].as_str();
-    conn.execute(
-        "insert into crash_reports (received_at, app_version_code, android_version, report)
-         values (?1, ?2, ?3, ?4)",
-        params![now, code, android, report.to_string()],
-    )?;
+    let version = report["APP_VERSION_NAME"]
+        .as_str()
+        .map(str::to_string)
+        .or(code.map(|code| code.to_string()));
 
-    // Keep the table within the retention and the stored maximum.
+    // Count it first, so the retention below keeps a signature seen just now.
+    count(conn, signature, exception(report).as_deref(), version, now)?;
     prune(conn, now)?;
+
+    // Store it only while the signature has room for another sample.
+    let samples: i64 = conn.query_row(
+        "select count(*) from crash_reports where signature = ?1",
+        [signature],
+        |r| r.get(0),
+    )?;
+    if samples < MAX_SAMPLES {
+        let android = report["ANDROID_VERSION"].as_str();
+        conn.execute(
+            "insert into crash_reports
+                 (received_at, signature, app_version_code, android_version, report)
+             values (?1, ?2, ?3, ?4, ?5)",
+            params![now, signature, code, android, report.to_string()],
+        )?;
+    }
+
+    // Keep the table within the stored maximum.
     conn.execute(
         "delete from crash_reports where id <= (
              select id from crash_reports order by id desc limit 1 offset ?1
@@ -245,47 +332,126 @@ fn insert(conn: &Connection, report: &Value, now: i64) -> Result<(), Error> {
     Ok(())
 }
 
-/// Deletes reports older than [`RETENTION_DAYS`]; the worker calls it on every tick.
-pub(crate) fn prune(conn: &Connection, now: i64) -> Result<(), Error> {
+/// The first line of the report's stack trace: the exception and its message.
+fn exception(report: &Value) -> Option<String> {
+    let trace = report.get(STACK_TRACE)?.as_str()?;
+    trace.lines().next().map(str::to_string)
+}
+
+/// Records that a report with `signature` from app `version` came at `now`.
+fn count(
+    conn: &Connection,
+    signature: &str,
+    exception: Option<&str>,
+    version: Option<String>,
+    now: i64,
+) -> Result<(), Error> {
+    let known: Option<String> = conn
+        .query_row(
+            "select app_versions from crash_signatures where signature = ?1",
+            [signature],
+            |r| r.get(0),
+        )
+        .optional()?;
+
+    // The versions seen, the latest last; a version seen again moves to the end.
+    let mut versions: Vec<String> = known
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()?
+        .unwrap_or_default();
+    if let Some(version) = version {
+        versions.retain(|seen| *seen != version);
+        versions.push(version);
+    }
+    let excess = versions.len().saturating_sub(MAX_VERSIONS);
+    versions.drain(..excess);
+    let versions = serde_json::to_string(&versions)?;
+
+    // The first report of a signature names its exception; later ones only count.
     conn.execute(
-        "delete from crash_reports where received_at <= ?1",
-        [now - RETENTION_DAYS * DAY_MS],
+        "insert into crash_signatures
+             (signature, first_seen, last_seen, count, exception, app_versions)
+         values (?1, ?2, ?2, 1, ?3, ?4)
+         on conflict (signature) do update
+             set last_seen = excluded.last_seen, count = count + 1,
+                 app_versions = excluded.app_versions",
+        params![signature, now, exception, versions],
     )?;
     Ok(())
 }
 
-/// A report as the dev console lists it.
-#[derive(Debug, Serialize)]
-pub(crate) struct Summary {
-    id: i64,
-    received_at: i64,
-    app_version_code: Option<i64>,
-    app_version_name: Option<String>,
-    android_version: Option<String>,
-    /// The first line of the stack trace: the exception and its message.
-    exception: Option<String>,
+/// Deletes reports older than [`RETENTION_DAYS`], and signatures without reports that were
+/// last seen that long ago; the worker calls it on every tick.
+pub(crate) fn prune(conn: &Connection, now: i64) -> Result<(), Error> {
+    let cutoff = now - RETENTION_DAYS * DAY_MS;
+    conn.execute(
+        "delete from crash_reports where received_at <= ?1",
+        [cutoff],
+    )?;
+    conn.execute(
+        "delete from crash_signatures where last_seen <= ?1 and not exists (
+             select 1 from crash_reports where crash_reports.signature = crash_signatures.signature
+         )",
+        [cutoff],
+    )?;
+    Ok(())
 }
 
-/// The latest reports, newest first.
-pub(crate) fn recent(conn: &Connection) -> Result<Vec<Summary>, Error> {
+/// A signature as the dev console lists it.
+#[derive(Debug, Serialize)]
+pub(crate) struct Group {
+    signature: String,
+    count: i64,
+    first_seen: i64,
+    last_seen: i64,
+    /// The app version of the latest report that named one.
+    app_version: Option<String>,
+    /// The versions seen, the latest last.
+    app_versions: Vec<String>,
+    /// The first line of the first report's stack trace: the exception and its message.
+    exception: Option<String>,
+    /// The ids of the stored reports, oldest first.
+    reports: Vec<i64>,
+}
+
+/// The signatures seen most recently, newest first.
+pub(crate) fn groups(conn: &Connection) -> Result<Vec<Group>, Error> {
     let mut stmt = conn.prepare(
-        "select id, received_at, app_version_code, android_version,
-                json_extract(report, '$.APP_VERSION_NAME'),
-                json_extract(report, '$.STACK_TRACE')
-         from crash_reports order by id desc limit ?1",
+        "select signature, count, first_seen, last_seen, exception, app_versions,
+                (select json_group_array(id) from (
+                     select id from crash_reports
+                     where crash_reports.signature = crash_signatures.signature order by id
+                 ))
+         from crash_signatures order by last_seen desc, signature limit ?1",
     )?;
     let rows = stmt.query_map([LISTED], |r| {
-        let trace: Option<String> = r.get(5).ok().flatten();
-        Ok(Summary {
-            id: r.get(0)?,
-            received_at: r.get(1)?,
-            app_version_code: r.get(2)?,
-            android_version: r.get(3)?,
-            app_version_name: r.get(4).ok().flatten(),
-            exception: trace.and_then(|trace| trace.lines().next().map(str::to_string)),
-        })
+        Ok((
+            Group {
+                signature: r.get(0)?,
+                count: r.get(1)?,
+                first_seen: r.get(2)?,
+                last_seen: r.get(3)?,
+                exception: r.get(4)?,
+                app_version: None,
+                app_versions: Vec::new(),
+                reports: Vec::new(),
+            },
+            r.get::<_, String>(5)?,
+            r.get::<_, String>(6)?,
+        ))
     })?;
-    Ok(rows.collect::<Result<_, _>>()?)
+
+    // The versions and report ids are JSON arrays in the database.
+    let mut groups = Vec::new();
+    for row in rows {
+        let (mut group, versions, reports) = row?;
+        group.app_versions = serde_json::from_str(&versions)?;
+        group.app_version = group.app_versions.last().cloned();
+        group.reports = serde_json::from_str(&reports)?;
+        groups.push(group);
+    }
+    Ok(groups)
 }
 
 /// One stored report, as it was saved after stripping.
@@ -316,8 +482,10 @@ async fn receive(
         return StatusCode::BAD_REQUEST;
     };
 
+    // The signature comes from the report as sent, as the app computed it.
+    let signature = signature(&mut report);
     strip(&mut report);
-    match insert(&app.store.lock().unwrap().conn, &report, now) {
+    match insert(&app.store.lock().unwrap().conn, &report, &signature, now) {
         Ok(()) => StatusCode::NO_CONTENT,
         Err(error) => {
             log_error!("crash report not saved: {error}");
@@ -341,6 +509,9 @@ mod tests {
     /// Wednesday 28 October 2026, 10:30 UTC.
     const NOW_MS: i64 = 1_793_183_400_000;
     const TOKEN: &str = "0f3c9a7b1e2d4c6f8a0b2c4d6e8f0a1b3c5d7e9f1a2b3c4d5e6f7a8b9c0d1e2f";
+    const SIGNATURE: &str = "5e1f0c3a9b7d2e4f6a8c0b1d3e5f7a9c2b4d6e8f0a1c3e5b7d9f2a4c6e8b0d1f";
+    const OTHER: &str = "9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c";
+    const MINUTE_MS: i64 = 60_000;
 
     fn post_from(peer: &str, body: impl Into<Body>) -> (Request<Body>, String) {
         let request = Request::builder()
@@ -564,7 +735,16 @@ mod tests {
             send(&app, "192.0.2.10:4000", body()).await,
             StatusCode::NO_CONTENT
         );
-        assert_eq!(stored(&app).len(), 2 * REPORTS_PER_HOUR + 2);
+        // Every accepted report is counted; only the first of one crash are stored.
+        let total: i64 = app
+            .store
+            .lock()
+            .unwrap()
+            .conn
+            .query_row("select sum(count) from crash_signatures", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(total, 2 * REPORTS_PER_HOUR as i64 + 2);
+        assert_eq!(stored(&app).len(), MAX_SAMPLES as usize);
         cleanup(app, path);
     }
 
@@ -591,8 +771,8 @@ mod tests {
 
         // The worker deletes reports once they are older than the retention.
         let old = NOW_MS - RETENTION_DAYS * DAY_MS;
-        insert(&conn, &report(), old).unwrap();
-        insert(&conn, &report(), old + 1).unwrap();
+        insert(&conn, &report(), SIGNATURE, old).unwrap();
+        insert(&conn, &report(), SIGNATURE, old + 1).unwrap();
         prune(&conn, NOW_MS).unwrap();
         assert_eq!(
             count(),
@@ -603,14 +783,14 @@ mod tests {
         assert_eq!(count(), 0);
 
         // An insert also deletes what is past the retention.
-        insert(&conn, &report(), old).unwrap();
-        insert(&conn, &report(), NOW_MS).unwrap();
+        insert(&conn, &report(), SIGNATURE, old).unwrap();
+        insert(&conn, &report(), SIGNATURE, NOW_MS).unwrap();
         assert_eq!(count(), 1);
 
         // Past the maximum, the oldest reports go first.
         let small = json!({"STACK_TRACE": "x"});
         for index in 0..MAX_STORED {
-            insert(&conn, &small, NOW_MS + index).unwrap();
+            insert(&conn, &small, &format!("{index:064x}"), NOW_MS + index).unwrap();
         }
         assert_eq!(count(), MAX_STORED);
         let oldest: i64 = conn
@@ -628,12 +808,257 @@ mod tests {
         insert(
             &app.store.lock().unwrap().conn,
             &report(),
+            SIGNATURE,
             NOW_MS - RETENTION_DAYS * DAY_MS,
         )
         .unwrap();
         crate::worker::tick(&app).unwrap();
         assert!(stored(&app).is_empty());
         cleanup(app, path);
+    }
+
+    /// A report the app signed with `signature`, from app version `version`.
+    fn signed(signature: &str, version: &str) -> Value {
+        let mut report = report();
+        report["CUSTOM_DATA"][SIGNATURE_FIELD] = signature.into();
+        report["APP_VERSION_NAME"] = version.into();
+        report
+    }
+
+    /// The stored reports' arrival times and signatures, oldest first.
+    fn samples(app: &App) -> Vec<(i64, String)> {
+        let store = app.store.lock().unwrap();
+        let mut stmt = store
+            .conn
+            .prepare("select received_at, signature from crash_reports order by id")
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+
+    /// One signature's row: first and last seen, count and app versions.
+    fn seen(conn: &Connection, signature: &str) -> Option<(i64, i64, i64, Value)> {
+        conn.query_row(
+            "select first_seen, last_seen, count, app_versions
+             from crash_signatures where signature = ?1",
+            [signature],
+            |r| {
+                let versions: String = r.get(3)?;
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    serde_json::from_str(&versions).unwrap(),
+                ))
+            },
+        )
+        .optional()
+        .unwrap()
+    }
+
+    /// The signature whose row was last seen at `at`.
+    fn seen_at(app: &App, at: i64) -> String {
+        let store = app.store.lock().unwrap();
+        store
+            .conn
+            .query_row(
+                "select signature from crash_signatures where last_seen = ?1",
+                [at],
+                |r| r.get(0),
+            )
+            .unwrap()
+    }
+
+    /// The cases in `tests/fixtures/crash_signatures.json`: name, stack trace, signature.
+    fn shared_cases() -> Vec<(String, String, String)> {
+        let text = include_str!("../tests/fixtures/crash_signatures.json");
+        let fixture: Value = serde_json::from_str(text).unwrap();
+        fixture["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|case| {
+                let field = |name: &str| case[name].as_str().unwrap().to_string();
+                (field("name"), field("stack_trace"), field("signature"))
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn the_same_signature_is_stored_twice_and_then_counted() {
+        fix_now(NOW_MS);
+        let (app, path) = fixture();
+
+        // Three reports with one signature: the first two are kept, the third only counted.
+        for (minute, version) in [(0, "2.21.0"), (1, "2.21.0"), (2, "2.22.0")] {
+            fix_now(NOW_MS + minute * MINUTE_MS);
+            let sent = signed(SIGNATURE, version).to_string();
+            assert_eq!(
+                send(&app, "192.0.2.20:4000", sent).await,
+                StatusCode::NO_CONTENT
+            );
+        }
+        assert_eq!(
+            samples(&app),
+            vec![
+                (NOW_MS, SIGNATURE.to_string()),
+                (NOW_MS + MINUTE_MS, SIGNATURE.to_string())
+            ]
+        );
+        let row = seen(&app.store.lock().unwrap().conn, SIGNATURE);
+        assert_eq!(
+            row,
+            Some((
+                NOW_MS,
+                NOW_MS + 2 * MINUTE_MS,
+                3,
+                json!(["2.21.0", "2.22.0"])
+            ))
+        );
+
+        // The stored report keeps the signature, though it looks like a token.
+        let saved = &stored(&app)[0].3;
+        assert_eq!(saved["CUSTOM_DATA"][SIGNATURE_FIELD], SIGNATURE);
+
+        // Another signature is stored on its own; one in capitals is the same signature.
+        fix_now(NOW_MS + 3 * MINUTE_MS);
+        let other = signed(OTHER, "2.22.0").to_string();
+        assert_eq!(
+            send(&app, "192.0.2.21:4000", other).await,
+            StatusCode::NO_CONTENT
+        );
+        let upper = signed(&SIGNATURE.to_ascii_uppercase(), "2.21.0").to_string();
+        assert_eq!(
+            send(&app, "192.0.2.21:4000", upper).await,
+            StatusCode::NO_CONTENT
+        );
+        assert_eq!(samples(&app).len(), 3);
+        let row = seen(&app.store.lock().unwrap().conn, SIGNATURE).unwrap();
+        assert_eq!((row.2, row.3), (4, json!(["2.22.0", "2.21.0"])));
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn without_a_signature_the_server_computes_it() {
+        fix_now(NOW_MS);
+        let (app, path) = fixture();
+
+        // Every shared case groups under the signature the fixture gives for its stack trace.
+        for (index, (name, trace, expected)) in shared_cases().into_iter().enumerate() {
+            let at = NOW_MS + index as i64;
+            fix_now(at);
+            let mut sent = report();
+            sent["STACK_TRACE"] = trace.into();
+            let peer = format!("192.0.2.{}:4000", 30 + index);
+            assert_eq!(
+                send(&app, &peer, sent.to_string()).await,
+                StatusCode::NO_CONTENT
+            );
+            assert_eq!(seen_at(&app, at), expected, "{name}");
+        }
+
+        // A report without a stack trace has the signature of an empty one.
+        let at = NOW_MS + MINUTE_MS;
+        fix_now(at);
+        let mut sent = report();
+        sent.as_object_mut().unwrap().remove("STACK_TRACE");
+        assert_eq!(
+            send(&app, "192.0.2.60:4000", sent.to_string()).await,
+            StatusCode::NO_CONTENT
+        );
+        let empty = crate::crash_signature::of_trace("");
+        assert_eq!(seen_at(&app, at), empty);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn a_malformed_signature_is_ignored_and_computed_instead() {
+        fix_now(NOW_MS);
+        let (app, path) = fixture();
+        let (_, trace, expected) = shared_cases().remove(0);
+        let long = format!("{SIGNATURE}0");
+        let malformed = [
+            json!("abc"),
+            json!("g".repeat(64)),
+            json!(&SIGNATURE[1..]),
+            json!(long),
+            json!(12),
+            json!(null),
+        ];
+
+        // Each malformed value is ignored and scrubbed like any other field.
+        for (index, value) in malformed.into_iter().enumerate() {
+            let at = NOW_MS + index as i64;
+            fix_now(at);
+            let mut sent = report();
+            sent["STACK_TRACE"] = trace.clone().into();
+            sent["CUSTOM_DATA"][SIGNATURE_FIELD] = value;
+            let peer = format!("192.0.2.{}:4000", 70 + index);
+            assert_eq!(
+                send(&app, &peer, sent.to_string()).await,
+                StatusCode::NO_CONTENT
+            );
+            assert_eq!(seen_at(&app, at), expected, "{index}");
+        }
+        let saved = &stored(&app)[1].3;
+        assert_eq!(saved["CUSTOM_DATA"][SIGNATURE_FIELD], json!("g".repeat(64)));
+        cleanup(app, path);
+
+        // A well-formed signature at the top level of the report is used too.
+        let (app, path) = fixture();
+        fix_now(NOW_MS);
+        let mut sent = report();
+        sent[SIGNATURE_FIELD] = OTHER.into();
+        assert_eq!(
+            send(&app, "192.0.2.80:4000", sent.to_string()).await,
+            StatusCode::NO_CONTENT
+        );
+        assert_eq!(seen_at(&app, NOW_MS), OTHER);
+        assert_eq!(stored(&app)[0].3[SIGNATURE_FIELD], OTHER);
+        cleanup(app, path);
+    }
+
+    #[test]
+    fn a_signature_is_kept_while_it_has_reports_or_was_seen_lately() {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+        let reports = |signature: &str| -> i64 {
+            conn.query_row(
+                "select count(*) from crash_reports where signature = ?1",
+                [signature],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        let old = NOW_MS - RETENTION_DAYS * DAY_MS;
+
+        // Three reports of one signature 30 days ago, one of another just after.
+        for _ in 0..3 {
+            insert(&conn, &report(), SIGNATURE, old).unwrap();
+        }
+        insert(&conn, &report(), OTHER, old + 1).unwrap();
+        assert_eq!(reports(SIGNATURE), MAX_SAMPLES);
+
+        // Seen again now: its old samples are gone, the new report is kept, the count goes on.
+        insert(&conn, &report(), SIGNATURE, NOW_MS).unwrap();
+        assert_eq!(reports(SIGNATURE), 1);
+        assert_eq!(reports(OTHER), 1);
+        assert_eq!(seen(&conn, SIGNATURE).unwrap().2, 4);
+        assert_eq!(seen(&conn, SIGNATURE).unwrap().0, old);
+
+        // The other's report and row go once they are past the retention.
+        prune(&conn, NOW_MS + 1).unwrap();
+        assert_eq!(reports(OTHER), 0);
+        assert_eq!(seen(&conn, OTHER), None);
+
+        // Without reports a signature stays until it was last seen 30 days ago.
+        conn.execute("delete from crash_reports", []).unwrap();
+        prune(&conn, NOW_MS + 1).unwrap();
+        assert!(seen(&conn, SIGNATURE).is_some());
+        prune(&conn, NOW_MS + RETENTION_DAYS * DAY_MS).unwrap();
+        assert_eq!(seen(&conn, SIGNATURE), None);
     }
 
     fn fix_now(ms: i64) {
