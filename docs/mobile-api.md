@@ -213,6 +213,13 @@ one friend gets one copy, whichever action sends first. Each Undo still owns onl
 action's messages; a read, cheered or answered copy prevents sending it again through
 the other action. Existing request and response shapes are unchanged.
 
+With `share_place`, `{ "moment": { "place": 1 }, "to": { "friends": ["cerro"] } }`
+shares a verified current top-three weekly place through the same picker API, including notes
+and per-send Undo. The rank must still match the circle's board and have positive XP (`409`
+otherwise; `400` outside 1–3). The first explicit share keeps a daily snapshot, without
+automatic sending. Legacy `{ "place": 1 }` requests share that delivery path and retain their
+response shape; existing legacy deliveries still prevent duplicates. Example: `share_place.json`.
+
 friends receive a `share` row from the player, with the title and body quoted in the player's own words ("I reached level 4 with 900 XP." rather than "You reached…") and the same `topic` (`place:N` for a place), so it shows the same art and can be replied to.
 
 wins, the daily goal (`/api/goal/{user}`), sharing policies (`/api/sharing/{user}`), `{ "win": id, "to": "friends" | "link" }` shares, `GET /api/wins/{user}`, `DELETE /api/wins/{user}/{id}/link`, automatic digests and `POST /api/react/{user}` are described in [sharing.md](sharing.md). Inbox rows may carry `win` (the win they are about), `share_title` and `share_body` (on the player's own shareable rows, what sharing it tells others, when that differs from `title` and `body`; clients share these and fall back to `title` and `body`), `image` (a friend's shared card), `note` (what the friend wrote with a moment they sent by hand) and `reacted: true` (you cheered it); the sender of a cheer gets a replyable `reaction` row. Each win reaches each friend once; friends who muted the player are skipped. Unknown or unshareable notifications are `404`, a place the player doesn't hold is `409`, and anything else is `400`.
