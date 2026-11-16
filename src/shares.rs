@@ -1731,7 +1731,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_row_names_its_win_and_an_older_row_has_none_to_send() {
+    async fn a_row_names_its_win() {
         let (app, path) = moments_app();
         let row = win_for(&mut app.store.lock().unwrap(), "hill");
         let win = app
@@ -1746,8 +1746,257 @@ mod tests {
         let (status, sent) = share_as_hill(&app, body.clone()).await;
         assert_eq!((status, sent["win"].as_i64()), (StatusCode::OK, Some(win)));
         assert_eq!(inbox(&app, "friend")[0].win, Some(win));
-        sql(&app, "update notifications set win_id = null");
-        assert_eq!(share_as_hill(&app, body).await.0, StatusCode::CONFLICT);
+        cleanup(app, path);
+    }
+
+    fn old_notice(app: &App, kind: &str) -> i64 {
+        let store = app.store.lock().unwrap();
+        let at = now_ms() - 10 * crate::game::DAY_MS;
+        let day = store.clock("hill").unwrap().day(at);
+        let id = insert_notification(
+            &store.conn,
+            &Outgoing {
+                to: "hill",
+                from: "",
+                title: "Your weekly study recap",
+                body: "You have studied 30 days in a row.",
+                kind,
+            },
+            day,
+            at,
+            false,
+        )
+        .unwrap();
+        store
+            .conn
+            .execute(
+                "update notifications set topic = 'streak' where id = ?1",
+                [id],
+            )
+            .unwrap();
+        id
+    }
+
+    #[tokio::test]
+    async fn old_moments_keep_words_and_undo() {
+        let (app, path) = moments_app();
+        for kind in SHAREABLE {
+            let row = old_notice(&app, kind);
+            let body = json!({"moment": {"notification": row}, "to": {"friends": ["cerro"]}, "note": "Still proud of this"});
+            let (status, sent) = share_as_hill(&app, body.clone()).await;
+            assert_eq!(status, StatusCode::OK, "{kind}: {sent}");
+            let id = sent["win"].as_i64().unwrap();
+            let store = app.store.lock().unwrap();
+            let win = wins::win(&store.conn, "hill", id).unwrap();
+            let (at, day): (i64, i64) = store
+                .conn
+                .query_row(
+                    "select created_at, day from notifications where id = ?1",
+                    [row],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!((win.created_at, win.day), (at, day));
+            assert_eq!(
+                wins::shared_words(&store.conn, &win).unwrap(),
+                (
+                    "My weekly study recap".into(),
+                    "I have studied 30 days in a row.".into()
+                )
+            );
+            assert_eq!(win.topic(), "streak");
+            assert!(!win.stats.to_string().contains("Still proud"));
+            assert!(
+                wins::take_automatic(&store.conn, "hill")
+                    .unwrap()
+                    .is_empty()
+            );
+            drop(store);
+            assert_eq!(share_as_hill(&app, body).await.1["recipients"], 0);
+            assert!(inbox(&app, "friend").is_empty());
+            assert_eq!(
+                inbox(&app, "cerro")[0].note.as_deref(),
+                Some("Still proud of this")
+            );
+            let undo = format!("/api/share/hill/{id}?until={}", sent["undo_until"]);
+            assert_eq!(
+                call(&app, "DELETE", &undo, "hill-secret", Value::Null).await,
+                (StatusCode::OK, json!({"retracted": 1}))
+            );
+            assert!(inbox(&app, "cerro").is_empty());
+        }
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn old_moments_require_ownership() {
+        let (app, path) = moments_app();
+        let row = old_notice(&app, "celebration");
+        let body = json!({"moment": {"notification": row}, "to": "circle"});
+        assert_eq!(
+            call(
+                &app,
+                "POST",
+                "/api/share/cerro",
+                "cerro-secret",
+                body.clone()
+            )
+            .await
+            .0,
+            StatusCode::NOT_FOUND
+        );
+        for kind in ["message", "reply", "nudge", "share", "completion"] {
+            let row = old_notice(&app, kind);
+            assert_eq!(
+                share_as_hill(
+                    &app,
+                    json!({"moment": {"notification": row}, "to": "circle"})
+                )
+                .await
+                .0,
+                StatusCode::NOT_FOUND
+            );
+        }
+        sql(&app, "update notifications set push_only = 1");
+        assert_eq!(share_as_hill(&app, body).await.0, StatusCode::NOT_FOUND);
+        let count: i64 = app
+            .store
+            .lock()
+            .unwrap()
+            .conn
+            .query_row("select count(*) from wins", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn old_notice_routes_share_delivery() {
+        let (app, path) = moments_app();
+        let row = old_notice(&app, "reminder_weekly_recap");
+        let body = json!({"moment": {"notification": row}, "to": {"friends": ["cerro"]}});
+        assert_eq!(share_as_hill(&app, body.clone()).await.1["recipients"], 1);
+        assert_eq!(
+            share_as_hill(&app, json!({"notification": row})).await.1["recipients"],
+            1
+        );
+        assert_eq!(share_as_hill(&app, body).await.1["recipients"], 0);
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert_eq!(inbox(&app, "friend").len(), 1);
+        cleanup(app, path);
+    }
+
+    fn deck_to(to: Value) -> Value {
+        json!({"moment": {"deck": {"id": "7", "name": "My Japanese"}}, "to": to})
+    }
+
+    #[tokio::test]
+    async fn deck_moment_keeps_chosen_name() {
+        let (app, path) = moments_app();
+        let mut body = deck_to(json!({"friends": ["cerro"]}));
+        body["note"] = "Finished before lunch".into();
+        let (status, sent) = share_as_hill(&app, body.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{sent}");
+        assert_eq!(sent["recipients"], 1);
+        let id = sent["win"].as_i64().unwrap();
+        let store = app.store.lock().unwrap();
+        let win = wins::win(&store.conn, "hill", id).unwrap();
+        assert_eq!(win.kind, "deck");
+        assert_eq!(win.stats["deck"], "My Japanese");
+        assert!(win.body.contains("My Japanese"));
+        assert!(!win.stats.to_string().contains("before lunch"));
+        assert!(store.decks("hill").unwrap().is_empty());
+        assert!(
+            wins::take_automatic(&store.conn, "hill")
+                .unwrap()
+                .is_empty()
+        );
+        drop(store);
+        assert_eq!(inbox(&app, "cerro")[0].win, Some(id));
+        assert_eq!(
+            inbox(&app, "cerro")[0].note.as_deref(),
+            Some("Finished before lunch")
+        );
+        assert!(inbox(&app, "friend").is_empty());
+        assert_eq!(share_as_hill(&app, body).await.1["recipients"], 0);
+        let undo = format!("/api/share/hill/{id}?until={}", sent["undo_until"]);
+        assert_eq!(
+            call(&app, "DELETE", &undo, "hill-secret", Value::Null).await,
+            (StatusCode::OK, json!({"retracted": 1}))
+        );
+        assert!(inbox(&app, "cerro").is_empty());
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn deck_routes_share_delivery() {
+        let (app, path) = moments_app();
+        crate::test_support::used_app(&app, &["hill", "cerro", "friend"]);
+        let legacy = json!({"id": "7", "name": "My Japanese", "recipients": ["cerro"]});
+        assert_eq!(
+            call(&app, "POST", "/api/decks/hill/share", "hill-secret", legacy).await,
+            (StatusCode::OK, json!({"recipients": 1}))
+        );
+        let (status, sent) = share_as_hill(&app, deck_to(json!("circle"))).await;
+        assert_eq!(status, StatusCode::OK, "{sent}");
+        assert_eq!(sent["recipients"], 1);
+        let id = sent["win"].as_i64().unwrap();
+        assert_eq!(inbox(&app, "cerro")[0].win, Some(id));
+        assert_eq!(inbox(&app, "cerro")[0].kind, "completion");
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert_eq!(inbox(&app, "friend").len(), 1);
+        sql(
+            &app,
+            "update notifications set created_at = created_at - 1000 where recipient = 'cerro'",
+        );
+        let undo = format!("/api/share/hill/{id}?until={}", sent["undo_until"]);
+        assert_eq!(
+            call(&app, "DELETE", &undo, "hill-secret", Value::Null)
+                .await
+                .1,
+            json!({"retracted": 1})
+        );
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn deck_moment_checks_input_and_mutes() {
+        let (app, path) = moments_app();
+        for (id, name) in [
+            ("".into(), "name".into()),
+            ("7".into(), " ".into()),
+            ("x".repeat(129), "name".into()),
+            ("7".into(), "x".repeat(513)),
+            ("7".into(), "one\ntwo".into()),
+        ] {
+            let body = json!({"moment": {"deck": {"id": id, "name": name}}, "to": "circle"});
+            assert_eq!(share_as_hill(&app, body).await.0, StatusCode::BAD_REQUEST);
+        }
+        assert_eq!(
+            share_as_hill(&app, deck_to(json!({"friends": ["stranger"]})))
+                .await
+                .0,
+            StatusCode::BAD_REQUEST
+        );
+        let count: i64 = app
+            .store
+            .lock()
+            .unwrap()
+            .conn
+            .query_row("select count(*) from wins", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        sql(
+            &app,
+            "insert into incoming_settings (user, enabled) values ('cerro', 0); insert into sender_unsubscriptions (recipient, sender) values ('friend', 'hill');",
+        );
+        let (status, sent) = share_as_hill(&app, deck_to(json!("circle"))).await;
+        assert_eq!(status, StatusCode::OK, "{sent}");
+        assert_eq!(sent["recipients"], 0);
+        assert!(sent.get("undo_until").is_none());
+        assert!(inbox(&app, "cerro").is_empty());
+        assert!(inbox(&app, "friend").is_empty());
         cleanup(app, path);
     }
 
