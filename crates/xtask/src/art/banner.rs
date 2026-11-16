@@ -503,7 +503,12 @@ fn overlay(canvas: &mut tiny_skia::Pixmap, fonts: &Fonts, body: &str) -> Result<
 /// The drawn width of a text fragment.
 fn width(fonts: &Fonts, text: &str) -> Result<f32, String> {
     let tree = tree(fonts, (1, 1), text)?;
-    Ok(tree.root().abs_bounding_box().width())
+
+    // resvg 0.50 has no bounding box for a fragment that draws nothing; it is zero wide.
+    Ok(tree
+        .root()
+        .abs_bounding_box()
+        .map_or(0.0, |bounds| bounds.width()))
 }
 
 /// A centred line of Roboto with its baseline at `y`.

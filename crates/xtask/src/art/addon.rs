@@ -1,5 +1,5 @@
-//! Writes the desktop add-on's companion poses into `addon/art` from the
-//! master PNGs in `static/`.
+//! Writes the desktop add-on's companion poses into `addon/art` of an
+//! AnkiQuest-Desktop checkout from the master PNGs in `static/`.
 //!
 //! Each pose is a 256 px square, 256-colour palette PNG with transparency.
 //! Export writes only the poses that are missing, because the existing ones
@@ -15,7 +15,7 @@ use image::RgbaImage;
 
 use super::{load, png_size, root, shrink, target};
 
-/// The add-on's pose folder, relative to the repository root.
+/// The add-on's pose folder inside an AnkiQuest-Desktop checkout.
 const FOLDER: &str = "addon/art";
 
 /// Pose edge in pixels: the Today panel shows 96 px at up to 2x, and
@@ -42,6 +42,18 @@ const fn pose(name: &'static str, source: &'static str) -> Pose {
 /// Every pose the add-on shows, as Android names its drawables.
 const POSES: &[Pose] = &[
     pose("aki_face", "static/aki/face.png"),
+    pose("aki_sad", "static/aki/sad.png"),
+    pose("aki_hopeful", "static/aki/hopeful.png"),
+    pose("aki_frozen", "static/aki/frozen.png"),
+    pose("aki_neglected", "static/aki/neglected.png"),
+    pose(
+        "anki_tan_frozen",
+        "static/anki-tan/generated/frozen-full.png",
+    ),
+    pose(
+        "anki_tan_chibi_frozen",
+        "static/anki-tan/generated/frozen-chibi.png",
+    ),
     pose("aki_welcome", "static/aki/welcome.png"),
     pose("aki_review", "static/aki/review.png"),
     pose("aki_celebrate", "static/aki/celebrate.png"),
@@ -75,22 +87,27 @@ enum Existing {
     Replace,
 }
 
-/// Runs the exporter: `[--check | --replace]`.
+/// Runs the exporter: `[--check | --replace] <desktop-checkout>`.
 pub fn run(args: &[String]) -> ExitCode {
     let mut mode = Mode::Export;
     let mut existing = Existing::Keep;
+    let mut desktop = None;
     for arg in args {
         match arg.as_str() {
             "--check" => mode = Mode::Check,
             "--replace" => existing = Existing::Replace,
-            _ => return usage(),
+            _ if arg.starts_with('-') || desktop.is_some() => return usage(),
+            _ => desktop = Some(PathBuf::from(arg)),
         }
     }
     if mode == Mode::Check && existing == Existing::Replace {
         return usage();
     }
+    let Some(desktop) = desktop else {
+        return usage();
+    };
 
-    let folder = root().join(FOLDER);
+    let folder = desktop.join(FOLDER);
     let result = match mode {
         Mode::Export => export(&folder, &existing),
         Mode::Check => check(&folder),
@@ -106,7 +123,7 @@ pub fn run(args: &[String]) -> ExitCode {
 
 /// Prints the usage text and fails.
 fn usage() -> ExitCode {
-    eprintln!("usage: xtask export-addon-art [--check | --replace]");
+    eprintln!("usage: xtask export-addon-art [--check | --replace] <desktop-checkout>");
     ExitCode::FAILURE
 }
 
@@ -130,8 +147,8 @@ fn export(folder: &Path, existing: &Existing) -> Result<ExitCode, String> {
         let bytes = encode(&shrink(master, width, height))?;
         fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
         println!(
-            "{FOLDER}/{}.png: {width}x{height}, {} bytes",
-            pose.name,
+            "{}: {width}x{height}, {} bytes",
+            path.display(),
             bytes.len()
         );
     }
@@ -159,16 +176,13 @@ fn missing(folder: &Path) -> Result<Vec<String>, String> {
         let expected = target(width, height, SIZE);
         let path = file(folder, pose.name);
         if !path.exists() {
-            failed.push(format!("missing: {FOLDER}/{}.png", pose.name));
+            failed.push(format!("missing: {}", path.display()));
             continue;
         }
         let actual = png_size(&path)?;
         if actual != expected {
             let ((aw, ah), (ew, eh)) = (actual, expected);
-            failed.push(format!(
-                "{FOLDER}/{}.png: {aw}x{ah}, expected {ew}x{eh}",
-                pose.name
-            ));
+            failed.push(format!("{}: {aw}x{ah}, expected {ew}x{eh}", path.display()));
         }
     }
     Ok(failed)
@@ -209,12 +223,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_addon_pose_is_exported() {
-        let failed = missing(&root().join(FOLDER)).unwrap();
-        assert!(
-            failed.is_empty(),
-            "run `cargo run -p ankiquest-xtask -- export-addon-art`: {failed:?}"
-        );
+    fn export_writes_missing_poses() {
+        // An empty checkout misses every pose.
+        let desktop = tempfile::tempdir().unwrap();
+        let folder = desktop.path().join(FOLDER);
+        fs::create_dir_all(&folder).unwrap();
+        assert_eq!(POSES.len(), missing(&folder).unwrap().len());
+
+        // Export writes the others and keeps a hand-tuned pose.
+        let tuned = file(&folder, POSES[0].name);
+        fs::write(&tuned, b"tuned").unwrap();
+        export(&folder, &Existing::Keep).unwrap();
+        assert_eq!(b"tuned".as_slice(), fs::read(&tuned).unwrap());
+
+        // Once the tuned pose is gone, export fills it in and check passes.
+        fs::remove_file(&tuned).unwrap();
+        export(&folder, &Existing::Keep).unwrap();
+        let failed = missing(&folder).unwrap();
+        assert!(failed.is_empty(), "{failed:?}");
+    }
+
+    #[test]
+    fn checkout_is_required() {
+        assert_eq!(ExitCode::FAILURE, run(&[]));
+        assert_eq!(ExitCode::FAILURE, run(&["--check".into()]));
+        let two = ["a".to_string(), "b".to_string()];
+        assert_eq!(ExitCode::FAILURE, run(&two));
     }
 
     #[test]

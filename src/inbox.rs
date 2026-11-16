@@ -23,6 +23,7 @@ pub(crate) async fn get_notifications(
     challenges::refresh(&mut store, &app.participants(), now).map_err(store_error)?;
     let profile = app.profile(&user);
     let clock = app.players.read().unwrap().get(&user).map(|p| p.clock);
+    let peer_study = peer_study(&app, &user);
     if let (Some(profile), Some(clock)) = (&profile, &clock) {
         reminders::cancel_stale(&mut store, &user, profile, clock, &app.week, now)
             .map_err(store_error)?;
@@ -31,7 +32,7 @@ pub(crate) async fn get_notifications(
     let base = base_url(&app, &headers);
     let language = i18n::owned(&headers, &store, &user).map_err(store_error)?;
     for mut notice in store
-        .notifications_for(&user, now, Drawable::of(&headers))
+        .notifications_for(&user, now, Drawable::of(&headers), peer_study)
         .map_err(store_error)?
     {
         if notice.kind.starts_with("reminder_") {
@@ -58,6 +59,14 @@ pub(crate) async fn get_notifications(
         .mark_fetched(&user, &fetched, now)
         .map_err(store_error)?;
     Ok(Json(result))
+}
+
+/// Whether `user`'s feed may show other players' study yet; see [`crate::reciprocity`].
+fn peer_study(app: &App, user: &str) -> notifications::PeerStudy {
+    match app.member_lock(user) {
+        Some(_) => notifications::PeerStudy::Withheld,
+        None => notifications::PeerStudy::Shown,
+    }
 }
 
 #[derive(Deserialize, Default)]
@@ -102,9 +111,11 @@ async fn activity(
                 category: query.category,
                 unread_only: query.unread_only.unwrap_or(false),
                 drawable: Drawable::of(&headers),
+                peer_study: peer_study(&app, &user),
             },
         )
         .map_err(store_error)?;
+    activity.locked = app.member_lock(&user);
     let base = base_url(&app, &headers);
     for notice in activity.items.iter_mut().chain(&mut activity.attention) {
         shares::share_words(&store.conn, &user, notice, &language).map_err(store_error)?;
@@ -246,6 +257,8 @@ mod tests {
     #[tokio::test]
     async fn spanish_inbox_preserves_names_decks_and_authored_messages() {
         let (app, _path) = fixture();
+        // Hill has studied, so friends' completions reach Hill's inbox.
+        with_reviews(&app, "hill", 1);
         let now = now_ms();
         {
             let mut store = app.store.lock().unwrap();
@@ -331,6 +344,7 @@ mod tests {
     async fn a_completion_can_be_answered_once_and_the_answer_answered_back() {
         let (app, path) = fixture();
         crate::test_support::used_app(&app, &["cerro", "hill", "friend"]);
+        with_reviews(&app, "hill", 1);
         let post = |app: Arc<App>, body: Upload| async move {
             let _ = upload(
                 State(app),

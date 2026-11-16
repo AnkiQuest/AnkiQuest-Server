@@ -48,6 +48,27 @@ pub struct ActivityOptions {
     pub unread_only: bool,
     /// The unlock moments the client can draw; see [`crate::companions::Drawable`].
     pub drawable: Drawable,
+    pub peer_study: PeerStudy,
+}
+
+/// Whether a feed includes notifications that report another player's study; see
+/// [`crate::reciprocity`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PeerStudy {
+    Shown,
+    Withheld,
+}
+
+/// Rows of `table` a feed with `peer_study` shows: all of them, or none that report another
+/// player's study.
+fn peer_study_sql(table: &str, recipient: &str, peer_study: PeerStudy) -> String {
+    match peer_study {
+        PeerStudy::Shown => "1".into(),
+        PeerStudy::Withheld => format!(
+            "({table}.sender in ('', {recipient}) or {table}.kind not in ({}))",
+            crate::reciprocity::STUDY_NOTICES
+        ),
+    }
 }
 
 const ACTIVITY_CATEGORY_SQL: &str = "case
@@ -161,6 +182,9 @@ pub struct Activity {
     pub retention_days: u32,
     pub window_days: u32,
     pub next_before: Option<i64>,
+    /// Why the feed leaves out other players' study; see [`crate::reciprocity`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locked: Option<crate::reciprocity::Lock>,
 }
 
 fn notification(row: &rusqlite::Row<'_>) -> rusqlite::Result<Notification> {
@@ -293,24 +317,27 @@ fn next_page<T>(items: &mut Vec<T>, limit: u32, id: impl Fn(&T) -> i64) -> Optio
 
 impl Store {
     pub fn notifications(&self, user: &str, now_ms: i64) -> Result<Vec<Notification>, Error> {
-        self.notifications_for(user, now_ms, Drawable::all())
+        self.notifications_for(user, now_ms, Drawable::all(), PeerStudy::Shown)
     }
 
-    /// [`Store::notifications`], leaving out unlock moments the client cannot draw.
-    pub(crate) fn notifications_for(
+    /// [`Store::notifications`], leaving out unlock moments the client cannot draw, and
+    /// others' study when `peer_study` says so.
+    pub fn notifications_for(
         &self,
         user: &str,
         now_ms: i64,
         drawable: Drawable,
+        peer_study: PeerStudy,
     ) -> Result<Vec<Notification>, Error> {
         let mut stmt = self.conn.prepare(&format!(
             "select {NOTICE_COLUMNS} from notifications n where n.id in (
                  select id from notifications where recipient=?1 and push_only=0
                  and created_at>=?3
-                 and {} and {}
+                 and {} and {} and {}
                  order by id desc limit 500) order by n.id",
             completion_visible_sql("notifications", "?1"),
-            drawable.sql("notifications")
+            drawable.sql("notifications"),
+            peer_study_sql("notifications", "?1", peer_study)
         ))?;
         Ok(stmt
             .query_map(params![user, now_ms, now_ms - INBOX_AGE_MS], notification)?
@@ -336,6 +363,7 @@ impl Store {
                 category: None,
                 unread_only: false,
                 drawable: Drawable::all(),
+                peer_study: PeerStudy::Shown,
             },
         )
     }
@@ -353,15 +381,18 @@ impl Store {
             category,
             unread_only,
             drawable,
+            peer_study,
         } = options;
-        // Rows the caller may see: only companions it can draw.
+        // Rows the caller may see: only companions it can draw, and others' study only
+        // when `peer_study` shows it.
         let shown = drawable.sql("n");
+        let peers = peer_study_sql("n", "?1", peer_study);
         let cutoff = now_ms - i64::from(days) * DAY_MS;
         let category = category.map(ActivityCategory::as_str);
         let mut stmt = self.conn.prepare(&format!(
             "select {NOTICE_COLUMNS} from notifications n
             where n.recipient=?1 and n.push_only=0 and n.created_at>=?3 and (?4 is null or n.id<?4)
-            and {} and {shown}
+            and {} and {shown} and {peers}
             and (?6 is null or (?6='needs_action' and {ACTION_REQUIRED_SQL})
                 or (?6!='needs_action' and ({ACTIVITY_CATEGORY_SQL})=?6))
             and (?7=0 or n.read_at is null)
@@ -396,7 +427,7 @@ impl Store {
             &format!(
                 "select coalesce(sum(n.read_at is null),0),coalesce(sum({ACTION_REQUIRED_SQL}),0),max(n.id)
                  from notifications n where n.recipient=?1 and n.push_only=0 and n.created_at>=?3
-                 and {} and {shown}",
+                 and {} and {shown} and {peers}",
                 completion_visible_sql("n", "?1")
             ),
             params![user, now_ms, cutoff],
@@ -417,6 +448,7 @@ impl Store {
             retention_days: ACTIVITY_DAYS,
             window_days: days,
             next_before,
+            locked: None,
         })
     }
 
@@ -883,6 +915,7 @@ mod tests {
             category: Some(ActivityCategory::Messages),
             unread_only: false,
             drawable: Drawable::all(),
+            peer_study: PeerStudy::Shown,
         };
         let page = store.activity_filtered("hill", NOW, options).unwrap();
         assert_eq!(page.items[0].id, sent[5]);
@@ -981,6 +1014,7 @@ mod tests {
             category: Some(ActivityCategory::NeedsAction),
             unread_only: false,
             drawable: Drawable::all(),
+            peer_study: PeerStudy::Shown,
         };
         let pending = store.activity_filtered("hill", NOW, options).unwrap();
         assert_eq!(pending.items[0].id, id);

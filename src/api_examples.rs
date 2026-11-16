@@ -717,7 +717,7 @@ async fn examples_match_the_handlers() {
         f.call(
             "GET",
             "/api/community?year=2026&month=10",
-            None,
+            Some("hill-secret"),
             Value::Null,
         )
         .await,
@@ -1032,6 +1032,46 @@ async fn examples_match_the_handlers() {
             Some("cerro-secret"),
             Value::Null,
             &[("x-ankiquest-companion-art", "aki, ankilope, cow")],
+        )
+        .await,
+    ));
+
+    // A new account with no review uploaded yet sees no one else, not even a friend who
+    // studies; see crate::reciprocity. Last, so no other example sees this account.
+    let newcomer = f
+        .call(
+            "POST",
+            "/api/accounts",
+            None,
+            json!({"user": "newcomer", "password": PASSWORD, "device": "Pixel 7"}),
+        )
+        .await;
+    f.keep_secret(&newcomer["token"], "example-token");
+    let newcomer = newcomer["token"].as_str().unwrap().to_string();
+    for (user, token, other) in [
+        ("newcomer", newcomer.as_str(), "hill"),
+        ("hill", "hill-secret", "newcomer"),
+    ] {
+        f.call(
+            "POST",
+            &format!("/api/social/{user}"),
+            Some(token),
+            json!({"action": "befriend", "user": other}),
+        )
+        .await;
+    }
+    examples.push((
+        "leaderboard_locked",
+        f.call("GET", "/api/leaderboard", Some(&newcomer), Value::Null)
+            .await,
+    ));
+    examples.push((
+        "activity_locked",
+        f.call(
+            "GET",
+            "/api/activity/newcomer?limit=2",
+            Some(&newcomer),
+            Value::Null,
         )
         .await,
     ));

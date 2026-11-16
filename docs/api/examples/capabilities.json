@@ -17,6 +17,7 @@
     "share_cards",
     "share_moments",
     "share_undo_send",
+    "upload_first",
     "wins"
   ],
   "public_url": "https://anki.example.test",
