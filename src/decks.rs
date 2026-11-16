@@ -771,6 +771,33 @@ pub(crate) struct Finished {
     pub(crate) recipients: Vec<String>,
 }
 
+/// A completion the player explicitly shares; it changes no automatic deck setting.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Completion {
+    id: String,
+    name: String,
+}
+
+impl Completion {
+    pub(crate) fn keep(&self, store: &Store, user: &str, now: i64) -> Result<Option<i64>, Error> {
+        if !valid_text(&self.id, 128) || !valid_text(&self.name, 512) {
+            return Ok(None);
+        }
+        let day = store.clock(user)?.day(now);
+        Ok(crate::wins::keep(
+            &store.conn,
+            user,
+            &format!("deck:{day}:{}", self.id),
+            day,
+            now,
+            "Deck complete",
+            &crate::i18n::english("I finished my {0} studies for today.", &[&self.name]),
+            &serde_json::json!({"deck": self.name}),
+        )?)
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub(crate) struct Told {
     /// Recipients who got it now; those told already today, unsubscribed or pausing alerts are left out.
@@ -778,8 +805,7 @@ pub(crate) struct Told {
 }
 
 /// Tells the chosen friends that the player finished a deck today, when the client asked them
-/// right after it happened. Unlike announcements set up per deck, the name comes from this
-/// request only and is not kept with the player's decks; only the recipients' rows carry it.
+/// right after it happened. The chosen name is saved in the win without changing deck settings.
 pub(crate) fn share_finished(
     app: &App,
     store: &mut Store,
@@ -793,47 +819,31 @@ pub(crate) fn share_finished(
         .map(|recipient| recipient.user)
         .collect();
     let unique: HashSet<&String> = finished.recipients.iter().collect();
-    if !valid_text(&finished.id, 128)
-        || !valid_text(&finished.name, 512)
-        || finished.recipients.is_empty()
+    if finished.recipients.is_empty()
         || finished.recipients.len() > MAX_RECIPIENTS
         || unique.len() != finished.recipients.len()
         || !finished.recipients.iter().all(|r| allowed.contains(r))
     {
         return Ok(None);
     }
-    let day = store.clock(user)?.day(now_ms);
-    let body = format!(
-        "{} has finished their {} studies for today.",
-        app.display(user),
-        finished.name
-    );
-    let mut told = 0;
-    for recipient in &finished.recipients {
-        let listening: bool = store.conn.query_row(
-            &format!("select {}", completion_allowed_sql("?1", "?2")),
-            params![recipient, user],
-            |r| r.get(0),
-        )?;
-        let key = format!("deck-share:{user}:{}:{day}", finished.id);
-        if !listening || store.is_seen(recipient, &key)? {
-            continue;
-        }
-        store.send_once(
-            &Outgoing {
-                to: recipient,
-                from: user,
-                title: "Deck complete",
-                body: &body,
-                kind: "completion",
-            },
-            &key,
-            day,
-            now_ms,
-            false,
-        )?;
-        told += 1;
-    }
+    let deck = Completion {
+        id: finished.id.clone(),
+        name: finished.name.clone(),
+    };
+    let Some(id) = deck.keep(store, user, now_ms)? else {
+        return Ok(None);
+    };
+    let win =
+        crate::wins::win(&store.conn, user, id).ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+    let told = crate::shares::send_wins(
+        store,
+        user,
+        &app.display(user),
+        &finished.recipients,
+        &[win],
+        crate::shares::Sending::Deck,
+        now_ms,
+    )?;
     Ok(Some(Told { recipients: told }))
 }
 
@@ -867,6 +877,38 @@ pub(crate) mod tests {
 
     pub(crate) const DAY: i64 = 20_000;
     pub(crate) const NOW: i64 = DAY * 86_400_000 + 12 * 3_600_000;
+
+    #[test]
+    fn completion_keeps_a_daily_name() {
+        let (store, _path) = temporary_store();
+        let deck = Completion {
+            id: "7:child".into(),
+            name: "My Japanese".into(),
+        };
+        let id = deck.keep(&store, "hill", NOW).unwrap().unwrap();
+        let renamed = Completion {
+            id: deck.id.clone(),
+            name: "Renamed".into(),
+        };
+        assert_eq!(renamed.keep(&store, "hill", NOW + 1000).unwrap(), Some(id));
+        let win = crate::wins::win(&store.conn, "hill", id).unwrap();
+        assert_eq!(win.stats["deck"], "My Japanese");
+        assert_eq!(win.created_at, NOW);
+        let next = renamed
+            .keep(&store, "hill", NOW + crate::game::DAY_MS)
+            .unwrap()
+            .unwrap();
+        assert_ne!(next, id);
+        assert_eq!(
+            crate::wins::win(&store.conn, "hill", next).unwrap().stats["deck"],
+            "Renamed"
+        );
+        assert!(
+            crate::wins::take_automatic(&store.conn, "hill")
+                .unwrap()
+                .is_empty()
+        );
+    }
 
     fn incoming(enabled: bool, muted_senders: &[&str]) -> IncomingSettings {
         IncomingSettings {
