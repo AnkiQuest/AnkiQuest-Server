@@ -278,8 +278,8 @@ pub(crate) fn send_wins(
         }
         let mut fresh = Vec::new();
         for win in wins {
-            // Tell -> legacy marker -> share sheet, including sends before a win existed.
-            // Reading the marker preserves the legacy route's read/cheer and Undo rules.
+            // A legacy Tell marker also covers sends made before the win existed.
+            // Reading it preserves that route's read, cheer, reply and Undo rules.
             let told = win
                 .key
                 .strip_prefix("conquered:")
