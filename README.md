@@ -2,37 +2,58 @@
 <img alt="" src="docs/graphics/banner_readme.png"/>
 </p>
 
-<a href="https://github.com/AnkiQuest/ankiquest/releases/latest"><img src="https://img.shields.io/github/v/release/AnkiQuest/ankiquest" alt="release"/></a>
-<a href="https://ankiweb.net/shared/info/414948448"><img src="https://img.shields.io/badge/AnkiWeb-414948448-2a6db0" alt="AnkiWeb add-on"/></a>
-<a href="https://github.com/AnkiQuest/ankiquest/actions/workflows/ci.yml"><img src="https://github.com/AnkiQuest/ankiquest/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI"/></a>
-<a href="https://github.com/AnkiQuest/ankiquest/actions/workflows/addon.yml"><img src="https://github.com/AnkiQuest/ankiquest/actions/workflows/addon.yml/badge.svg?branch=master" alt="Desktop add-on"/></a>
-<a href="https://github.com/AnkiQuest/ankiquest/commits/master"><img src="https://img.shields.io/github/commit-activity/m/AnkiQuest/ankiquest" alt="commit-activity"/></a>
-<a href="https://github.com/AnkiQuest/ankiquest/graphs/contributors"><img src="https://img.shields.io/github/contributors/AnkiQuest/ankiquest" alt="contributors"/></a>
-<a href="https://github.com/AnkiQuest/ankiquest/blob/master/LICENSE"><img src="https://img.shields.io/github/license/AnkiQuest/ankiquest" alt="license"/></a>
+<a href="https://github.com/AnkiQuest/AnkiQuest-Server/actions/workflows/ci.yml"><img src="https://github.com/AnkiQuest/AnkiQuest-Server/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI"/></a>
+<a href="https://github.com/AnkiQuest/AnkiQuest-Server/commits/master"><img src="https://img.shields.io/github/commit-activity/m/AnkiQuest/AnkiQuest-Server" alt="commit-activity"/></a>
+<a href="https://github.com/AnkiQuest/AnkiQuest-Server/graphs/contributors"><img src="https://img.shields.io/github/contributors/AnkiQuest/AnkiQuest-Server" alt="contributors"/></a>
+<a href="https://github.com/AnkiQuest/AnkiQuest-Server/blob/master/LICENSE"><img src="https://img.shields.io/github/license/AnkiQuest/AnkiQuest-Server" alt="license"/></a>
 
-# AnkiQuest
+# AnkiQuest-Server
 
-XP, streaks, daily quests, friends and leaderboards for Anki. Clients send review history without card content. Sharing a conquered card label or a deck copy is an explicit choice.
+The Rust server and web pages for AnkiQuest: XP, streaks, daily quests, friends and leaderboards for Anki. Clients send review history without card content. Sharing a conquered card label or a deck copy is an explicit choice.
 
-## use it
+The clients live in their own repositories:
 
-1. create an account on an AnkiQuest server, such as [ankiquest.rationality-munich.com](https://ankiquest.rationality-munich.com).
-2. Connect Anki:
-   - **desktop:** in Anki 23.10 or newer (Qt 6), open **Tools → Add-ons → Get Add-ons** and enter **414948448** ([AnkiWeb listing](https://ankiweb.net/shared/info/414948448)). Restart Anki, then choose **Tools → AnkiQuest → Settings → Account**. AnkiWeb manages updates. The [GitHub package](https://github.com/AnkiQuest/ankiquest/releases/latest) remains available; remove the other installation before switching channels and sign in with the same AnkiQuest account.
-   - **Android:** install `AnkiQuest.apk` from the [latest release](https://github.com/AnkiQuest/AnkiQuest-Android/releases/latest). it installs next to AnkiDroid as **AnkiQuest**; sync your collection through AnkiWeb as usual. then open **Settings → ankiquest → Account & connection → Sign in or create account**.
-3. study as usual. On desktop, open **Tools → AnkiQuest → Friends** to manage friends and groups, preview a group invitation, or start a friend goal. The website's **Friends** page is also available.
+- [AnkiQuest-Desktop](https://github.com/AnkiQuest/AnkiQuest-Desktop): the Anki desktop add-on.
+- [AnkiQuest-Android](https://github.com/AnkiQuest/AnkiQuest-Android): AnkiDroid with AnkiQuest.
 
-## run your own server
+## Use a hosted server
 
-Follow the [installation and deployment guide](docs/install.md) for prerequisites,
-a local build, NixOS with HTTPS, health checks, backups and updates. AnkiQuest
-does not replace AnkiWeb or an Anki sync server.
+Create an account on a server, such as [ankiquest.rationality-munich.com](https://ankiquest.rationality-munich.com), then sign in from a client.
 
-- [Server configuration and administration](docs/server.md)
-- [Client API and compatibility](docs/mobile-api.md)
-- [Development and tests](docs/server.md#development)
-- [Desktop compatibility, tests and packages](docs/desktop.md)
+## Self-host
 
-## license
+Follow the [installation guide](docs/install.md) for a local build, NixOS with HTTPS, health checks, backups and updates, and [server configuration](docs/server.md) for settings and administration. AnkiQuest does not replace AnkiWeb or an Anki sync server.
+
+On NixOS, add the flake input and import its module:
+
+```nix
+inputs.ankiquest.url = "github:AnkiQuest/AnkiQuest-Server";
+imports = [inputs.ankiquest.nixosModules.default];
+```
+
+## Development
+
+```sh
+rustup target add wasm32-unknown-unknown
+npm ci
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+npm run typecheck
+npm run test:web
+```
+
+Repository tools are in `crates/xtask` (`cargo run -p ankiquest-xtask -- <command>`), including the exporters that write companion art from `static/` into an Android or Desktop checkout. See [development](docs/server.md#development).
+
+## API and shared fixtures
+
+- [Client API](docs/mobile-api.md) and recorded [API examples](docs/api/examples/).
+- `tests/fixtures/*.json`: rules both clients compute (streak verdicts, heatmap, card labels, deck names, companion poses). The server and both clients test against these cases.
+
+Clients copy the examples and fixtures at a pinned commit of this repository.
+
+## License
 
 AGPL-3.0-only.
+
+Anki-tan (`static/anki-tan/`) is by [Shigeyuki](https://www.patreon.com/Shigeyuki), from the [Anki-tan asset pack](https://shigeyukey.github.io/shige-addons-wiki/Anki-tan.html), licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Derivatives of her art are CC BY-SA 4.0 too.

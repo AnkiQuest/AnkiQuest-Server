@@ -1,6 +1,6 @@
 # community, reminders, and challenges
 
-open **Community** from the leaderboard, or visit `/community`. on a private server, first unlock the site with a member token or the shared website password. public servers can still be explored without signing in. choose a player, year, and, in the daily calendar, a month. see [private access](private-site.md) for server setup.
+open **Community** from the leaderboard, or visit `/community`. on a private server, first unlock the site with a member token or the shared website password. on a public server, a visitor who is not signed in, or a player who has not uploaded a review yet, sees the calendar without anyone in it (see [mobile-api.md](mobile-api.md#seeing-other-players-upload-first)). choose a player, year, and, in the daily calendar, a month. see [private access](private-site.md) for server setup.
 
 for **Reminders** or **Challenges**, the Android app's dashboard connects with the account already saved in the app. **settings → ankiquest → Community reminders** opens the reminder controls directly. in a standalone browser, select **Connect account** and use the player's existing AnkiQuest bearer token. bearer tokens stay in page memory only, never URLs, local storage, or session storage. supported servers issue a secure account cookie for use across pages; older servers keep the connection only while the page is open. disconnecting stops private requests until you explicitly connect again. each account can manage only its own preferences and invitations.
 

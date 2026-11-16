@@ -68,5 +68,7 @@ Random values are replaced, numbered in order of appearance: device tokens by `e
 | `leaderboard_global_hidden.json` | `GET /api/leaderboard?scope=global` for a player with a private profile and `"shown": false`. The viewer gets a full row and sees summaries for public players outside their circle. |
 | `global_leaderboard_on.json` | `POST /api/decks/{user}` `{"decks": [], "global_leaderboard": true}` |
 | `leaderboard_global.json` | `GET /api/leaderboard?scope=global&period=day`: the viewer's own row and a stranger with a private profile who turned it on |
+| `leaderboard_locked.json` | `GET /api/leaderboard` for a new account with no review uploaded yet, whose friend studies: empty, with `X-Ankiquest-Locked: upload_first` |
+| `activity_locked.json` | `GET /api/activity/{user}?limit=2` for the same account: `"locked": "upload_first"` |
 
-The Android repository's CI fetches these files and parses them with the app's real client code. The desktop CI jobs exercise its client and consumers against the same recordings in `tests/test_desktop_contract.py` and the activity, board and social tests. A server response change that would break a client can therefore fail CI before deployment.
+The Android repository's CI fetches these files and parses them with the app's real client code. AnkiQuest-Desktop's CI exercises the add-on's client and consumers against the same recordings in its `tests/test_desktop_contract.py` and the activity, board and social tests. A server response change that would break a client can therefore fail CI before deployment.

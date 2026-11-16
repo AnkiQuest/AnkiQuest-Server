@@ -1776,6 +1776,8 @@ mod tests {
     #[tokio::test]
     async fn a_note_is_seen_only_by_its_recipients() {
         let (app, path) = moments_app();
+        // Cerro has studied, so friends' shares reach Cerro's feed.
+        crate::test_support::with_reviews(&app, "cerro", 1);
         let id = moment(&app.store.lock().unwrap(), "hill", "level:7");
         let body = json!({"moment": {"win": id}, "to": {"friends": ["cerro"]}, "note": NOTE});
         let (status, sent) = share_as_hill(&app, body).await;
