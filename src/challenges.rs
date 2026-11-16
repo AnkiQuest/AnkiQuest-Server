@@ -856,6 +856,19 @@ struct ChallengeList {
     challenges: Vec<Challenge>,
     recipients: Vec<decks::Recipient>,
     weekly_suggestion: Option<weekly_challenges::Suggestion>,
+    /// Why other members' progress reads 0; see [`crate::reciprocity`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    locked: Option<crate::reciprocity::Lock>,
+}
+
+/// `challenges` as `user` may see them before their first review: their own progress only.
+fn withhold_progress(challenges: &mut [Challenge], user: &str) {
+    for challenge in challenges {
+        for member in challenge.members.iter_mut().filter(|m| m.user != user) {
+            member.progress = 0;
+        }
+        challenge.progress = challenge.members.iter().map(|m| m.progress).sum();
+    }
 }
 
 /// The player and everyone they can challenge, with display names.
@@ -918,9 +931,15 @@ fn challenge_list(
     players: &[competition::Participant],
 ) -> Result<ChallengeList, Error> {
     let recipients = app.sorted_recipients(app.reachable(store, user)?);
+    let mut challenges = list(store, user, players, now_ms())?;
+    let locked = app.member_lock(user);
+    if locked.is_some() {
+        withhold_progress(&mut challenges, user);
+    }
     Ok(ChallengeList {
-        challenges: list(store, user, players, now_ms())?,
+        challenges,
         recipients,
+        locked,
         weekly_suggestion: weekly_challenges::suggestion(
             store,
             user,
