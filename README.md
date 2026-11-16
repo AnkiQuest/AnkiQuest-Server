@@ -9,20 +9,19 @@
 
 # AnkiQuest-Server
 
-The Rust server and web pages for AnkiQuest: XP, streaks, daily quests, friends and leaderboards for Anki. Clients send review history without card content. Sharing a conquered card label or a deck copy is an explicit choice.
+The AnkiQuest server (Rust) and its website (TypeScript), with the API examples, shared fixtures and companion art both clients use.
 
-The clients live in their own repositories:
+AnkiQuest adds XP, streaks, daily quests, friends and leaderboards to Anki. Clients send review history without card content; sharing a conquered card label or a deck copy is an explicit choice. AnkiQuest has three repositories:
 
+- [AnkiQuest-Server](https://github.com/AnkiQuest/AnkiQuest-Server): the server and its website.
 - [AnkiQuest-Desktop](https://github.com/AnkiQuest/AnkiQuest-Desktop): the Anki desktop add-on.
-- [AnkiQuest-Android](https://github.com/AnkiQuest/AnkiQuest-Android): AnkiDroid with AnkiQuest.
+- [AnkiQuest-Android](https://github.com/AnkiQuest/AnkiQuest-Android): the Android app, a fork of AnkiDroid.
 
-## Use a hosted server
+## Install
 
-Create an account on a server, such as [ankiquest.rationality-munich.com](https://ankiquest.rationality-munich.com), then sign in from a client.
+To play, create an account on a server, such as [ankiquest.rationality-munich.com](https://ankiquest.rationality-munich.com), then sign in from the desktop add-on or the Android app.
 
-## Self-host
-
-Follow the [installation guide](docs/install.md) for a local build, NixOS with HTTPS, health checks, backups and updates, and [server configuration](docs/server.md) for settings and administration. AnkiQuest does not replace AnkiWeb or an Anki sync server.
+To run your own server, follow the [installation guide](docs/install.md) for a local build, NixOS with HTTPS, health checks, backups and updates, and [server configuration](docs/server.md) for settings and administration. AnkiQuest does not replace AnkiWeb or an Anki sync server.
 
 On NixOS, add the flake input and import its module:
 
@@ -45,12 +44,9 @@ npm run test:web
 
 Repository tools are in `crates/xtask` (`cargo run -p ankiquest-xtask -- <command>`), including the exporters that write companion art from `static/` into an Android or Desktop checkout. See [development](docs/server.md#development).
 
-## API and shared fixtures
-
-- [Client API](docs/mobile-api.md) and recorded [API examples](docs/api/examples/).
+- [Client API](docs/mobile-api.md) and recorded [API examples](docs/api/examples/). Clients copy the examples and fixtures at a pinned commit of this repository.
 - `tests/fixtures/*.json`: rules both clients compute (streak verdicts, heatmap, card labels, deck names, companion poses). The server and both clients test against these cases.
-
-Clients copy the examples and fixtures at a pinned commit of this repository.
+- The banner above shows the website. `npm run banner` renders the pages in `static/` with Playwright's Chromium into `docs/screenshots/web/`, answering every API call from `docs/api/examples/` with the clock pinned to the examples', then draws `docs/graphics/banner_readme.png` with `cargo run -p ankiquest-xtask -- banner`. `cargo test -p ankiquest-xtask` fails while the banner does not match the screenshots.
 
 ## License
 

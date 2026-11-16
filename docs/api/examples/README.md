@@ -21,6 +21,7 @@ Random values are replaced, numbered in order of appearance: device tokens by `e
 | `share_to_link.json` | `POST /api/share/{user}` `{"win", "to": "link"}` |
 | `share_moment.json` | `POST /api/share/{user}` `{"moment": {"conquest"}, "to": {"friends"}, "note"}` |
 | `share_moment_group.json` | `POST /api/share/{user}` `{"moment": {"key"}, "to": {"groups"}}` |
+| `share_place.json` | `POST /api/share/{user}` `{"moment": {"place": 1}, "to": {"friends"}, "note"}` |
 | `share_undo.json` | `DELETE /api/share/{user}/{win}`, taking a moment sent by hand back |
 | `share_undo_send.json` | `DELETE /api/share/{user}/{win}?until={undo_until}`, taking one send back |
 | `deck_share.json` | `POST /api/decks/{user}/share` |

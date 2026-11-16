@@ -803,6 +803,33 @@ mod tests {
     }
 
     #[test]
+    fn quiet_hours_match_fixture() {
+        #[derive(Deserialize)]
+        struct Case {
+            name: String,
+            start: u8,
+            end: u8,
+            hour: i64,
+            quiet: bool,
+        }
+        #[derive(Deserialize)]
+        struct Fixture {
+            cases: Vec<Case>,
+        }
+        let fixture: Fixture =
+            serde_json::from_str(include_str!("../tests/fixtures/quiet_hours.json")).unwrap();
+        for case in fixture.cases {
+            let settings = Settings {
+                quiet_start: case.start,
+                quiet_end: case.end,
+                ..Settings::default()
+            };
+            assert!(settings.valid(), "{}", case.name);
+            assert_eq!(settings.quiet(case.hour), case.quiet, "{}", case.name);
+        }
+    }
+
+    #[test]
     fn reminders_are_individually_opt_in_and_settings_validate() {
         let (mut store, path) = store();
         let defaults = settings(&store, "hill").unwrap();

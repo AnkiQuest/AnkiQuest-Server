@@ -2,8 +2,8 @@ name: Pull Request Labels
 
 # Keeps pull request labels current:
 # - area labels from the changed paths (.github/labeler.yml)
-# - "needs review" while a pull request is open and not a draft
-# - "new contributor" on a first pull request from someone new to the repo
+# - "Needs Review" while a pull request is open and not a draft
+# - "New contributor" on a first pull request from someone new to the repo
 # - workflow labels are cleared when a pull request is closed
 #
 # pull_request_target runs the base branch's workflow with a token that can
@@ -43,7 +43,8 @@ jobs:
             const { owner, repo } = context.repo;
             const pr = context.payload.pull_request;
             const issue_number = pr.number;
-            const has = (name) => pr.labels.some((label) => label.name === name);
+            // Label names are case-insensitive on GitHub.
+            const has = (name) => pr.labels.some((label) => label.name.toLowerCase() === name.toLowerCase());
 
             async function add(name) {
               if (has(name)) return;
@@ -63,17 +64,17 @@ jobs:
 
             switch (context.payload.action) {
               case 'closed':
-                await remove('needs review');
-                await remove('conflicts');
+                await remove('Needs Review');
+                await remove('Has Conflicts');
                 break;
               case 'converted_to_draft':
-                await remove('needs review');
+                await remove('Needs Review');
                 break;
               default: // opened, reopened, ready_for_review
-                if (!pr.draft) await add('needs review');
+                if (!pr.draft) await add('Needs Review');
             }
 
             const newcomer = ['FIRST_TIMER', 'FIRST_TIME_CONTRIBUTOR', 'NONE'];
             if (context.payload.action === 'opened' && newcomer.includes(pr.author_association)) {
-              await add('new contributor');
+              await add('New contributor');
             }
