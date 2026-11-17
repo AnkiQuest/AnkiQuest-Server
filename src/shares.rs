@@ -2541,6 +2541,71 @@ mod tests {
         cleanup(app, path);
     }
 
+    fn receipt_rows(app: &App) -> i64 {
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .query_row("select count(*) from win_receipts", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn expired_receipts_are_deleted_on_send() {
+        let at = 1_800_000_000_000;
+        let _clock = FixedClock::at(at);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        assert_eq!(receipt_rows(&app), 1);
+
+        // Once its deadline has passed, the next send deletes the first receipt.
+        let expiry = first["undo_until"].as_i64().unwrap();
+        crate::app::fix_now_ms(Some(expiry));
+        let second = send_to(&app, win, "friend").await;
+        assert_eq!(receipt_rows(&app), 1);
+        assert_eq!(undo_send(&app, &first).await.0, StatusCode::CONFLICT);
+        assert_eq!(undo_send(&app, &second).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn clock_return_after_expiry_keeps_old_undo() {
+        let at = 1_800_000_000_000;
+        let _clock = FixedClock::at(at);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+
+        // The clock passes the first receipt's deadline; a send deletes the receipt.
+        let expiry = first["undo_until"].as_i64().unwrap();
+        crate::app::fix_now_ms(Some(expiry + 1));
+        let second = send_to(&app, win, "friend").await;
+        assert_eq!(undo_send(&app, &second).await.1["retracted"], 1);
+
+        // Back to the first send's time, no receipt above the deleted ones fits in the day,
+        // so the send is refused rather than reusing the first receipt.
+        crate::app::fix_now_ms(Some(at));
+        let (status, _) = share_as_hill(
+            &app,
+            json!({"moment": {"win": win}, "to": {"friends": ["cerro"]}}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(inbox(&app, "cerro").is_empty());
+
+        // A smaller step back gets a receipt the first never had.
+        crate::app::fix_now_ms(Some(at + 2));
+        let third = send_to(&app, win, "cerro").await;
+        assert_ne!(third["undo_until"], first["undo_until"]);
+        crate::app::fix_now_ms(Some(at + 3));
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 0);
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert_eq!(undo_send(&app, &third).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
     #[tokio::test]
     async fn collision_keeps_its_deadline() {
         let at = 1_800_000_000_000;
