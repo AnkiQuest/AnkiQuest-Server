@@ -342,6 +342,8 @@ const FORGOTTEN_SEPARATELY: &[(&str, &str)] = &[
 #[cfg(test)]
 const SHARED: &[&str] = &[
     "server_settings",
+    // The deadline up to which Undo receipts were deleted; one row, about no player.
+    "win_receipt_floor",
     "streak_minutes",
     "competition_meta",
     "competition_periods",

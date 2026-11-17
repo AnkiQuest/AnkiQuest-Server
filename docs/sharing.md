@@ -267,6 +267,10 @@ Pass the returned `undo_until` unchanged. New sends reserve distinct values dura
 when two sends happen in the same millisecond or the server clock moves backwards. A collision
 shortens the deadline by a millisecond; it never extends the one-day window. Undo keeps the
 receipt reserved, so retrying an old Undo cannot retract a later resend, even after a restart.
+Each hand send deletes receipts whose `undo_until` has passed, so `win_receipts` holds about one
+day of sends, and records up to when it deleted them; new receipts are always later than that.
+If the server clock goes back more than a day behind that point, hand sends answer `500` until
+it catches up, rather than reuse an old receipt.
 Existing outstanding receipts are retained on upgrade. Sends from before this fix that already
 shared a timestamp cannot be distinguished retroactively.
 

@@ -70,6 +70,10 @@ pub fn initialize(conn: &Connection) -> Result<(), Error> {
              created_at integer not null,
              primary key (win, until)
          ) without rowid;
+         create table if not exists win_receipt_floor (
+             id integer primary key check (id = 1),
+             until integer not null
+         );
          create table if not exists win_auto_queue (win integer primary key);
          create table if not exists sharing_settings (
              user text primary key,

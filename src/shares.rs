@@ -405,11 +405,18 @@ pub(crate) fn send_wins(
     })
 }
 
-/// Reserve a receipt forever for this win, even after its deliveries are undone. Moving a
-/// collision earlier by one millisecond keeps the released deadline field within one day.
+/// Reserve a receipt for this win that none of its earlier sends had, even after their
+/// deliveries are undone. Moving a collision earlier by one millisecond keeps the released
+/// deadline field within one day. A receipt is always above the floor of deleted ones, so a
+/// clock that goes back cannot hand out an old receipt again; when the clock went back more
+/// than a day, none fits and the send is refused.
 fn receipt(conn: &Connection, win: i64, now: i64) -> Result<i64, Error> {
+    let floor = prune_receipts(conn, now)?;
     let mut until = now.checked_add(UNDO_MS).ok_or("invalid share time")?;
     loop {
+        if until <= now.max(floor) {
+            return Err("no Undo receipt available".into());
+        }
         let inserted = conn.execute(
             "insert or ignore into win_receipts (win, until, created_at) values (?1, ?2, ?3)",
             params![win, until, now],
@@ -418,10 +425,20 @@ fn receipt(conn: &Connection, win: i64, now: i64) -> Result<i64, Error> {
             return Ok(until);
         }
         until = until.checked_sub(1).ok_or("no Undo receipt available")?;
-        if until <= now {
-            return Err("no Undo receipt available".into());
-        }
     }
+}
+
+/// Deletes receipts whose deadline passed by `now`, since they can no longer take anything
+/// back, and raises the floor to `now`. Answers the floor: every receipt at or below it may
+/// have been deleted, so none of those is issued again.
+fn prune_receipts(conn: &Connection, now: i64) -> Result<i64, Error> {
+    conn.execute("delete from win_receipts where until <= ?1", [now])?;
+    conn.execute(
+        "insert into win_receipt_floor (id, until) values (1, ?1)
+         on conflict (id) do update set until = max(until, excluded.until)",
+        [now],
+    )?;
+    Ok(conn.query_row("select until from win_receipt_floor", [], |r| r.get(0))?)
 }
 
 /// The pre-upgrade delivery marker for a moment whose legacy route used a separate ledger.
