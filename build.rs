@@ -85,7 +85,7 @@ fn art(root: &Path, out: &Path) -> Result<(), Error> {
     let mut count = 0;
 
     // Card art for every folder in static/ with a happy master: a companion.
-    for companion in companions(&masters)? {
+    for companion in ankiquest_art::companions_with(&masters, "happy")? {
         for pose in CARD_POSES {
             let stem = ankiquest_art::stem(pose);
             let master = masters.join(&companion).join(format!("{stem}.png"));
@@ -118,25 +118,6 @@ fn art(root: &Path, out: &Path) -> Result<(), Error> {
         )?;
     }
     Ok(())
-}
-
-/// Folders in static/ that hold a happy master, sorted.
-fn companions(masters: &Path) -> Result<Vec<String>, Error> {
-    let happy = format!("{}.png", ankiquest_art::stem("happy"));
-    let mut found = Vec::new();
-    for entry in std::fs::read_dir(masters)? {
-        let entry = entry?;
-        if !entry.path().join(&happy).is_file() {
-            continue;
-        }
-        let name = entry
-            .file_name()
-            .into_string()
-            .map_err(|_| "folder name is not UTF-8")?;
-        found.push(name);
-    }
-    found.sort();
-    Ok(found)
 }
 
 /// Writes `master` fitted into `size` square as PNG to `path`.

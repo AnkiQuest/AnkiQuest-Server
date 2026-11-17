@@ -2,11 +2,14 @@
 //! checkout from the master PNGs in `static/`: every `addon` entry of the
 //! checkout's art manifest (`art-exports.json`).
 //!
-//! Each pose is a 256 px square, 256-colour palette PNG with transparency.
-//! Export writes every pose whose picture changed, retires the file it
-//! replaces, and records each file's SHA-256 in the manifest. `--check`
-//! writes nothing and fails when a pose differs from what export would
-//! write, or from the hash in the manifest.
+//! Each pose is a 256 px square, 256-colour palette PNG with transparency;
+//! an icon pose (`ankiquest_art::ICON_POSES`) is 64 px, and export adds one
+//! for every companion with its master. A companion without one shows the
+//! pose's fallback. Export writes every pose whose picture changed, retires
+//! the file it replaces, and records each file's SHA-256 in the manifest.
+//! `--check` writes nothing and fails when a pose differs from what export
+//! would write, from the hash in the manifest, or when an icon master has
+//! no manifest entry yet.
 //!
 //! Linux exports are canonical. Another platform, or a new quantiser
 //! version, maps a few colours to other palette entries: a few hundred
@@ -19,15 +22,26 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use ankiquest_art::{ICON_POSES, companions_with};
 use color_quant::NeuQuant;
 use image::RgbaImage;
 
-use super::exports::{self, DESKTOP_MANIFEST, Export, Exporter, Retired};
+use super::exports::{self, DESKTOP_MANIFEST, Export, Exporter, Manifest, Retired};
 use super::{load, root, shrink, target};
 
 /// Pose edge in pixels: the Today panel shows 96 px at up to 2x, and
 /// moments 112 px.
 const SIZE: u32 = 256;
+
+/// Icon edge in pixels: an icon beside the streak number, drawn at up to
+/// 32 px at 2x.
+const ICON: u32 = 64;
+
+/// The add-on's pose folder, relative to a Desktop checkout.
+const FOLDER: &str = "addon/art";
+
+/// The masters folder, relative to this repository's root.
+const MASTERS: &str = "static";
 
 /// Palette size, the most an indexed PNG holds.
 const COLOURS: usize = 256;
@@ -87,16 +101,45 @@ fn usage() -> ExitCode {
     ExitCode::FAILURE
 }
 
-/// Whether a manifest entry is an add-on pose.
+/// Whether a manifest entry is an add-on pose or icon.
 fn is_pose(export: &Export) -> bool {
-    export.exporter == Exporter::Addon
+    matches!(export.exporter, Exporter::Addon | Exporter::AddonIcon)
+}
+
+/// The edge, in pixels, `exporter` writes.
+fn size(exporter: Exporter) -> u32 {
+    match exporter {
+        Exporter::Addon => SIZE,
+        Exporter::AddonIcon => ICON,
+    }
 }
 
 /// The pose `export` describes, made from its master.
 fn render(export: &Export) -> Result<Vec<u8>, String> {
     let master = load(&root().join(&export.master))?;
-    let (width, height) = target(master.width(), master.height(), SIZE);
+    let (width, height) = target(master.width(), master.height(), size(export.exporter));
     encode(&shrink(master, width, height))
+}
+
+/// An entry for every icon master in `masters` that `manifest` does not
+/// list yet, as `addon/art/<companion>_<pose>.png`.
+fn unlisted(manifest: &Manifest, masters: &Path) -> Result<Vec<Export>, String> {
+    let mut icons = Vec::new();
+    for pose in ICON_POSES {
+        for companion in companions_with(masters, pose)? {
+            let file = format!("{FOLDER}/{}_{pose}.png", companion.replace('-', "_"));
+            if manifest.exports.iter().any(|export| export.file == file) {
+                continue;
+            }
+            icons.push(Export {
+                file,
+                master: format!("{MASTERS}/{companion}/{pose}.png"),
+                exporter: Exporter::AddonIcon,
+                sha256: String::new(),
+            });
+        }
+    }
+    Ok(icons)
 }
 
 /// Writes every pose whose picture changed into the Desktop checkout,
@@ -106,6 +149,11 @@ fn export(desktop: &Path) -> Result<ExitCode, String> {
     let manifest_path = desktop.join(DESKTOP_MANIFEST);
     let mut manifest = exports::read_at(&manifest_path)?;
     let mut retired = Vec::new();
+
+    // List icons whose masters were added since the last export.
+    let icons = unlisted(&manifest, &root().join(MASTERS))?;
+    manifest.exports.extend(icons);
+
     for export in manifest.exports.iter_mut().filter(|export| is_pose(export)) {
         let fresh = render(export)?;
         let path = desktop.join(&export.file);
@@ -214,11 +262,14 @@ fn check(desktop: &Path) -> Result<ExitCode, String> {
 /// One line for each pose that is missing, edited or out of date.
 fn stale(desktop: &Path) -> Result<Vec<String>, String> {
     let mut failed = Vec::new();
-    for export in exports::read_at(&desktop.join(DESKTOP_MANIFEST))?
-        .exports
-        .iter()
-        .filter(|export| is_pose(export))
-    {
+    let manifest = exports::read_at(&desktop.join(DESKTOP_MANIFEST))?;
+
+    // An icon master added without running export.
+    for icon in unlisted(&manifest, &root().join(MASTERS))? {
+        failed.push(format!("not exported: {}", icon.master));
+    }
+
+    for export in manifest.exports.iter().filter(|export| is_pose(export)) {
         let path = desktop.join(&export.file);
         let Ok(committed) = fs::read(&path) else {
             failed.push(format!("missing: {}", export.file));
@@ -384,6 +435,40 @@ mod tests {
         assert_eq!(ExitCode::FAILURE, run(&["--check".into()]));
         let two = ["a".to_string(), "b".to_string()];
         assert_eq!(ExitCode::FAILURE, run(&two));
+    }
+
+    #[test]
+    fn icon_masters_are_listed_once() {
+        let masters = tempfile::tempdir().unwrap();
+        for (folder, file) in [
+            ("aki", "icon_fire.png"),
+            ("anki-tan", "icon_fire.png"),
+            ("cow", "happy.png"),
+        ] {
+            fs::create_dir_all(masters.path().join(folder)).unwrap();
+            fs::write(masters.path().join(folder).join(file), b"").unwrap();
+        }
+
+        // Both icon masters are new; Bluma has none.
+        let mut manifest = Manifest {
+            exports: Vec::new(),
+            retired: Vec::new(),
+        };
+        let icons = unlisted(&manifest, masters.path()).unwrap();
+        let files: Vec<&str> = icons.iter().map(|icon| icon.file.as_str()).collect();
+        assert_eq!(
+            files,
+            [
+                "addon/art/aki_icon_fire.png",
+                "addon/art/anki_tan_icon_fire.png"
+            ]
+        );
+        assert_eq!(icons[1].master, "static/anki-tan/icon_fire.png");
+        assert!(icons.iter().all(|icon| size(icon.exporter) == ICON));
+
+        // Once listed, an icon is not listed again.
+        manifest.exports.extend(icons);
+        assert!(unlisted(&manifest, masters.path()).unwrap().is_empty());
     }
 
     #[test]

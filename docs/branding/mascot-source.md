@@ -98,10 +98,27 @@ Anki-tan's folder holds Shigeyuki's asset pack as published
 (`static/anki-tan/README.md` maps its files to poses). It has no
 `<pose>.png` masters yet, so share cards show no art for her.
 
+## Icon poses
+
+`ankiquest_art::ICON_POSES` lists small pictures of a companion, exported
+for every companion that has the master and for no other:
+
+| Pose | Fallback | Use | Add-on | Android |
+|---|---|---|---|---|
+| `icon_fire` | `streak` | the companion on fire, beside the streak number | `addon/art/<companion>_icon_fire.png`, 64 px | `<companion>_icon_fire.webp`, 96 px |
+
+The add-on shows the streak beside its flame at up to 32 px at 2x; the
+Android widget draws its flame at 12 dp, 48 px at xxxhdpi, and the export
+doubles that for larger widgets. `export-addon-art` adds the entry to the
+Desktop checkout's manifest when the master appears, and its check fails
+until it has. A client that finds no icon shows the fallback from
+`tests/fixtures/companion_poses.json`.
+
 ## Adding art
 
 - A new master: add `static/<companion>/<pose>.png`. Share cards pick it up
-  on the next build when it is a card pose.
+  on the next build when it is a card pose. An icon pose master needs
+  `export-addon-art` and `export-android-art` run.
 - A new add-on pose: add an `addon` entry to the Desktop checkout's
   manifest and run `export-addon-art <desktop-checkout>`.
 - A new Android drawable: add it to `ART` in `crates/xtask/src/art.rs` and
