@@ -10,7 +10,7 @@
 //! `export-addon-art` writes.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path};
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -110,6 +110,16 @@ pub(super) fn read_at(path: &Path) -> Result<Manifest, String> {
         });
     }
 
+    // Every path stays inside the checkout it is read from.
+    let outside = exports
+        .iter()
+        .flat_map(|e| [&e.file, &e.master])
+        .chain(retired.iter().map(|r| &r.file))
+        .find(|path| !is_relative(path));
+    if let Some(path) = outside {
+        return Err(format!("{name}: {path} is not a relative path"));
+    }
+
     // Each copy is written by one entry.
     let mut files: Vec<&str> = exports.iter().map(|e| e.file.as_str()).collect();
     files.sort_unstable();
@@ -117,6 +127,13 @@ pub(super) fn read_at(path: &Path) -> Result<Manifest, String> {
         return Err(format!("{name}: {file} is listed twice"));
     }
     Ok(Manifest { exports, retired })
+}
+
+/// Whether `path` is relative and never leaves its folder.
+fn is_relative(path: &str) -> bool {
+    Path::new(path)
+        .components()
+        .all(|part| matches!(part, Component::Normal(_)))
 }
 
 /// Writes `manifest` to `path`, in its committed format.
@@ -167,5 +184,27 @@ mod tests {
             panic!("a duplicate was accepted");
         };
         assert!(error.contains("a.png is listed twice"), "{error}");
+    }
+
+    #[test]
+    fn a_path_outside_the_checkout_is_refused() {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join(DESKTOP_MANIFEST);
+        let export = |file: &str, master: &str| json!({"file": file, "master": master, "exporter": "addon", "sha256": ""});
+        let retired = |file: &str| json!({"file": file, "why": ""});
+        let face = "static/aki/face.png";
+        let manifests = [
+            json!({"exports": [export("../a.png", face)], "retired": []}),
+            json!({"exports": [export("/tmp/a.png", face)], "retired": []}),
+            json!({"exports": [export("a.png", "static/../../a.png")], "retired": []}),
+            json!({"exports": [], "retired": [retired("assets/../../a.png")]}),
+        ];
+        for value in manifests {
+            fs::write(&path, value.to_string()).unwrap();
+            let Err(error) = read_at(&path) else {
+                panic!("accepted {value}");
+            };
+            assert!(error.contains("not a relative path"), "{error}");
+        }
     }
 }

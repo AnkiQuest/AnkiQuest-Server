@@ -37,7 +37,8 @@ large size and 32 px.
 
 Exports use the existing Rust tools: 1024 px WebP for Android and 256 px indexed
 PNG for desktop. Export Android art into an empty staging directory, then copy
-only the eleven new files; export desktop without `--replace`. Existing art stays
+only the eleven new files; export desktop without `--replace` (since removed:
+export-addon-art now retires a replaced pose itself). Existing art stays
 untouched. Android parity is supplied in a linked companion-art PR.
 
 [Desktop and Android export comparison](exports-review.png) checks the generated

@@ -130,7 +130,16 @@ fn export(desktop: &Path) -> Result<ExitCode, String> {
         export.sha256 = exports::sha256(&fresh);
         println!("{}: {} bytes", export.file, fresh.len());
     }
-    manifest.retired.extend(retired);
+    // A picture retired before keeps its one entry.
+    for entry in retired {
+        if !manifest
+            .retired
+            .iter()
+            .any(|known| known.file == entry.file)
+        {
+            manifest.retired.push(entry);
+        }
+    }
     exports::write(&manifest_path, &manifest)?;
     Ok(ExitCode::SUCCESS)
 }
@@ -349,6 +358,24 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert_eq!(edited, fs::read(desktop.join(retired)).unwrap());
+    }
+
+    #[test]
+    fn retiring_the_same_picture_twice_lists_it_once() {
+        let desktop = checkout();
+        let desktop = desktop.path();
+        export(desktop).unwrap();
+        let path = desktop.join(WINNER);
+        let blue = RgbaImage::from_pixel(SIZE, SIZE, image::Rgba([0, 0, 255, 255]));
+        let edited = encode(&blue).unwrap();
+
+        // Edit, export, edit back to the same bytes, export again.
+        for _ in 0..2 {
+            fs::write(&path, &edited).unwrap();
+            export(desktop).unwrap();
+        }
+        let manifest = exports::read_at(&desktop.join(DESKTOP_MANIFEST)).unwrap();
+        assert_eq!(1, manifest.retired.len());
     }
 
     #[test]
