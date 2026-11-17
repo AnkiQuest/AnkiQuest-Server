@@ -86,7 +86,9 @@ const EXPORT: &[(&str, &str)] = &[
     ("pending_removal", "select requested_at from account_removals where user = ?1"),
     ("wins", "select id, kind, key, day, created_at, title, body, stats, art, shared_friends, link_token
          from wins where user = ?1 order by id"),
-    ("wins_delivered", "select d.win, d.recipient, d.day, d.automatic from win_deliveries d
+    ("win_receipts", "select r.win, r.until, r.created_at from win_receipts r
+         join wins w on w.id = r.win where w.user = ?1 order by r.win, r.until"),
+    ("wins_delivered", "select d.win, d.recipient, d.day, d.automatic, d.send_until from win_deliveries d
          join wins w on w.id = d.win where w.user = ?1 order by d.win"),
     ("daily_goal", "select mode, value, reached_day from goals where user = ?1"),
     ("sharing", "select policies, daily_cap from sharing_settings where user = ?1"),
@@ -160,6 +162,10 @@ const OWNED: &[(&str, &str)] = &[
     ("community_weekly_suggestions", "owner = ?1 or friend = ?1"),
     ("friendships", "a = ?1 or b = ?1 or requested_by = ?1"),
     ("avatars", "user = ?1"),
+    (
+        "win_receipts",
+        "win in (select id from wins where user = ?1)",
+    ),
     ("wins", "user = ?1"),
     ("conquest_labels", "user = ?1"),
     ("conquest_tells", "user = ?1"),
