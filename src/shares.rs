@@ -670,7 +670,7 @@ fn place_win(app: &App, user: &str, place: usize, now: i64) -> Result<Option<i64
         &format!("place:current:{day}:{place}"),
         day,
         now,
-        &crate::i18n::english("#{0} on this week's leaderboard", &[&place.to_string()]),
+        &wins::place_title(place as u64),
         &crate::i18n::english("I earned {0} XP this week.", &[&here.week_xp.to_string()]),
         &json!({"place": place, "week_xp": here.week_xp}),
     )?)
@@ -1585,6 +1585,8 @@ mod tests {
         assert_eq!(got.win, Some(id));
         let win = wins::win(&app.store.lock().unwrap().conn, "hill", id).unwrap();
         assert_eq!(win.kind, "place");
+        // The same title as the worker's completed-week award.
+        assert_eq!(win.title, "#1 on the weekly board");
         assert_eq!(win.stats["place"], 1);
         assert!(win.stats["week_xp"].as_u64().unwrap() > 0);
         assert!(!win.stats.to_string().contains("A good study week"));

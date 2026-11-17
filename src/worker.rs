@@ -360,10 +360,10 @@ fn place_win(
         &key,
         profile.day,
         now,
-        &format!("#{rank} on the weekly board"),
-        &format!(
-            "{} XP over {} study days last week.",
-            recap.xp, recap.days_studied
+        &wins::place_title(rank),
+        &i18n::english(
+            "{0} XP over {1} study days last week.",
+            &[&recap.xp.to_string(), &recap.days_studied.to_string()],
         ),
         &stats,
     )?;

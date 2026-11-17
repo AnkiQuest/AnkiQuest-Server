@@ -1338,6 +1338,8 @@
   "{0} cards today in {1} minute.": "{0} Karten heute in {1} Minute.",
   "{0} cards today in {1} minutes.": "{0} Karten heute in {1} Minuten.",
   "#{0} on this week's leaderboard": "Platz {0} in der Rangliste dieser Woche",
+  "#{0} on the weekly board": "Platz {0} in der Wochenrangliste",
+  "{0} XP over {1} study days last week.": "{0} XP an {1} Lerntagen letzte Woche.",
   "I earned {0} XP this week.": "Ich habe diese Woche {0} XP verdient.",
   "I finished my {0} studies for today.": "Ich habe heute mit {0} fertig gelernt.",
   "{0}: {1} Join me on AnkiQuest: {2}": "{0}: {1} Lern mit mir auf AnkiQuest: {2}",
