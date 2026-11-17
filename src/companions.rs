@@ -181,14 +181,14 @@ impl Drawable {
     /// SQL that is true for the notifications in `table` such a client may list: everything
     /// but the player's own unlock moments about companions it cannot draw. A batch of
     /// unlocks ("4 new unlocks") has no win naming them, so it shows only to a client that
-    /// draws every unlock.
+    /// draws every live unlock.
     pub(crate) fn sql(self, table: &str) -> String {
         let keys: Vec<String> = Unlock::ALL
             .into_iter()
             .filter(|unlock| self.contains(*unlock))
             .map(|unlock| format!("'{MOMENT_PREFIX}{}'", unlock.id()))
             .collect();
-        let batch = i32::from(self == Self::all());
+        let batch = i32::from(live().all(|unlock| self.contains(unlock)));
         format!(
             "({table}.kind != 'celebration' or {table}.topic is not '{TOPIC}'
               or ({table}.win_id is null and {batch})
@@ -196,6 +196,23 @@ impl Drawable {
             keys.join(",")
         )
     }
+}
+
+/// The unlocks players can earn now, as the fixture says; planned ones have no art yet.
+fn live() -> impl Iterator<Item = Unlock> {
+    static LIVE: OnceLock<Vec<Unlock>> = OnceLock::new();
+    let live = LIVE.get_or_init(|| {
+        let rules: Rules = serde_json::from_str(RULES).expect("the unlock fixture parses");
+        let is_live = |unlock: &Unlock| {
+            let rule = rules
+                .companions
+                .iter()
+                .find(|rule| rule.companion == unlock.id());
+            rule.is_some_and(|rule| rule.status == Status::Live)
+        };
+        Unlock::ALL.into_iter().filter(is_live).collect()
+    });
+    live.iter().copied()
 }
 
 /// The inbox topic of unlock moments: [`MOMENT_PREFIX`] without its colon.
@@ -947,7 +964,9 @@ mod tests {
             )
             .unwrap();
 
-        // Only a client that draws every unlock can show the whole batch.
+        // Only a client that draws every live unlock can show the whole batch.
+        let every: Vec<&str> = live().map(Unlock::id).collect();
+        let some: Vec<&str> = every.iter().copied().filter(|id| *id != COW).collect();
         let listed = |art: Option<&str>| {
             let mut headers = HeaderMap::new();
             if let Some(art) = art {
@@ -959,8 +978,8 @@ mod tests {
                 .unwrap();
             rows.len()
         };
-        assert_eq!(listed(Some("aki, ankilope, cow")), 1);
-        assert_eq!(listed(Some("aki, ankilope")), 0);
+        assert_eq!(listed(Some(&every.join(", "))), 1);
+        assert_eq!(listed(Some(&some.join(", "))), 0);
         assert_eq!(listed(None), 0);
         let peers = crate::notifications::PeerStudy::Shown;
         let all = store.notifications_for("hill", now, Drawable::all(), peers);
