@@ -40,6 +40,11 @@ const LINE_LUMA: f32 = 90.0;
 /// Alpha above which a pixel is part of the picture in [`Look::Outline`].
 const LINE_ALPHA: u8 = 128;
 
+/// How far [`Look::BoldOutline`] widens each line, in thousandths of the
+/// master's width: 5 px on a 1254 px master. Thinner lines fade out when a
+/// themed launcher icon is drawn at 48 dp.
+const BOLD_SPREAD: u32 = 4;
+
 /// How a drawable shows its master.
 #[derive(Clone, Copy, PartialEq)]
 enum Look {
@@ -48,6 +53,9 @@ enum Look {
     /// Only the master's dark line art, in black on transparent: the
     /// monochrome layer of a themed launcher icon, which keeps alpha only.
     Outline,
+    /// [`Look::Outline`] with every line widened by [`BOLD_SPREAD`], for
+    /// masters drawn with thin lines.
+    BoldOutline,
 }
 
 /// One drawable: name, master PNG, square size, WebP quality and look.
@@ -78,6 +86,17 @@ const fn outline(name: &'static str, source: &'static str, size: u32) -> Art {
         size,
         quality: QUALITY,
         look: Look::Outline,
+    }
+}
+
+/// A themed icon's monochrome layer from a master with thin line art.
+const fn bold_outline(name: &'static str, source: &'static str, size: u32) -> Art {
+    Art {
+        name,
+        source,
+        size,
+        quality: QUALITY,
+        look: Look::BoldOutline,
     }
 }
 
@@ -183,6 +202,11 @@ const ART: &[Art] = &[
         "static/anki-tan/emoji/Ankitan_00_smile.png",
         432,
     ),
+    // Ankilope and Bluma have no mood faces yet; the app shows the face for every mood.
+    art("ankilope_icon", "static/ankilope/face.png", 432),
+    bold_outline("ankilope_icon_mono", "static/ankilope/face.png", 432),
+    art("cow_icon", "static/cow/face.png", 432),
+    bold_outline("cow_icon_mono", "static/cow/face.png", 432),
 ];
 
 /// Whether to write drawables or only compare their sizes.
@@ -327,7 +351,45 @@ fn look(master: RgbaImage, look: Look) -> RgbaImage {
         let line = a > LINE_ALPHA && luma < LINE_LUMA;
         pixel.0 = if line { [0, 0, 0, 255] } else { [0, 0, 0, 0] };
     }
-    lines
+    if look == Look::Outline {
+        return lines;
+    }
+
+    // Widen the lines so they survive the downscale to launcher size.
+    let spread = (lines.width() * BOLD_SPREAD).div_ceil(1000);
+    let wide = widen(&lines, spread, Axis::Across);
+    widen(&wide, spread, Axis::Down)
+}
+
+/// Direction of one [`widen`] pass.
+#[derive(Clone, Copy, PartialEq)]
+enum Axis {
+    Across,
+    Down,
+}
+
+/// Makes every pixel opaque that has an opaque pixel within `spread`
+/// along `axis`; two passes widen lines by a square of that radius.
+fn widen(lines: &RgbaImage, spread: u32, axis: Axis) -> RgbaImage {
+    let (width, height) = lines.dimensions();
+    RgbaImage::from_fn(width, height, |x, y| {
+        let (at, end) = if axis == Axis::Across {
+            (x, width)
+        } else {
+            (y, height)
+        };
+        let from = at.saturating_sub(spread);
+        let to = (at + spread).min(end - 1);
+        let hit = (from..=to).any(|i| {
+            let (px, py) = if axis == Axis::Across { (i, y) } else { (x, i) };
+            lines.get_pixel(px, py)[3] > 0
+        });
+        if hit {
+            image::Rgba([0, 0, 0, 255])
+        } else {
+            image::Rgba([0, 0, 0, 0])
+        }
+    })
 }
 
 /// A PNG's pixel size, read from its header.
@@ -493,5 +555,33 @@ mod tests {
         let small = shrink(image, 16, 16);
         let edge = small.get_pixel(7, 8);
         assert!(edge[1] < 8, "{edge:?}");
+    }
+
+    #[test]
+    fn bold_outline_widens_lines() {
+        // One dark pixel in the middle of a 1000 px row spreads 4 px each way.
+        let mut image = RgbaImage::from_pixel(1000, 9, image::Rgba([250, 200, 180, 255]));
+        image.put_pixel(500, 4, image::Rgba([10, 10, 10, 255]));
+        let lines = look(image, Look::BoldOutline);
+        assert_eq!(255, lines.get_pixel(504, 8)[3], "within the spread");
+        assert_eq!(0, lines.get_pixel(505, 4)[3], "beyond the spread");
+        assert_eq!(0, lines.get_pixel(0, 0)[3], "skin");
+    }
+
+    #[test]
+    fn every_companion_has_launcher_icons() {
+        // AnkiQuest-Android AnkiquestIcon shows these; a missing one fell back to Aki (#313 there).
+        for name in [
+            "aki_icon_happy",
+            "anki_tan_icon",
+            "anki_tan_icon_mono",
+            "ankilope_icon",
+            "ankilope_icon_mono",
+            "cow_icon",
+            "cow_icon_mono",
+        ] {
+            let art = ART.iter().find(|art| art.name == name);
+            assert!(art.is_some_and(|art| art.size == 432), "{name}");
+        }
     }
 }
