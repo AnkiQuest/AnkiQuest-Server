@@ -30,8 +30,14 @@ const REPORTS_PER_HOUR: usize = 10;
 const MAX_CLIENTS: usize = 10_000;
 /// Days a report is kept.
 const RETENTION_DAYS: i64 = 30;
-/// Reports kept at most; the oldest go first, so the table stays bounded.
-const MAX_STORED: i64 = 5_000;
+/// Signatures remembered at most. A new one takes the place of the least recently seen
+/// signature without stored reports; when every one has reports, the new one is dropped.
+const MAX_SIGNATURES: i64 = 2_000;
+/// Reports stored per hour across all clients; over it, known signatures are only counted
+/// and new ones dropped, so a flood from many addresses cannot fill the tables.
+const STORED_PER_HOUR: i64 = 500;
+/// The longest exception line kept per signature, in bytes.
+const MAX_EXCEPTION_BYTES: usize = 1024;
 /// Signatures the dev console lists.
 const LISTED: i64 = 100;
 /// App versions remembered per signature; the least recently seen is forgotten first.
@@ -287,10 +293,21 @@ fn without_tokens(text: &str) -> Option<String> {
     changed.then_some(out)
 }
 
+/// What [`insert`] did with a report.
+#[derive(Debug, PartialEq, Eq)]
+enum Outcome {
+    /// Counted and stored as a sample of its signature.
+    Stored,
+    /// Counted under a known signature, not stored.
+    Counted,
+    /// Neither counted nor stored: a new signature with no room for it.
+    Dropped,
+}
+
 /// Counts a stripped report with `signature` received at `now` and stores it while the
 /// signature has fewer than [`MAX_SAMPLES`] stored; then deletes what is past the retention
 /// or over the stored maximum.
-fn insert(conn: &Connection, report: &Value, signature: &str, now: i64) -> Result<(), Error> {
+fn insert(conn: &Connection, report: &Value, signature: &str, now: i64) -> Result<Outcome, Error> {
     // APP_VERSION_CODE is a number, but older senders wrote it as a string.
     let code = match &report["APP_VERSION_CODE"] {
         Value::Number(code) => code.as_i64(),
@@ -327,9 +344,9 @@ fn insert(conn: &Connection, report: &Value, signature: &str, now: i64) -> Resul
         "delete from crash_reports where id <= (
              select id from crash_reports order by id desc limit 1 offset ?1
          )",
-        [MAX_STORED],
+        [5_000],
     )?;
-    Ok(())
+    Ok(Outcome::Stored)
 }
 
 /// The first line of the report's stack trace: the exception and its message.
@@ -486,7 +503,7 @@ async fn receive(
     let signature = signature(&mut report);
     strip(&mut report);
     match insert(&app.store.lock().unwrap().conn, &report, &signature, now) {
-        Ok(()) => StatusCode::NO_CONTENT,
+        Ok(_) => StatusCode::NO_CONTENT,
         Err(error) => {
             log_error!("crash report not saved: {error}");
             StatusCode::INTERNAL_SERVER_ERROR
@@ -761,7 +778,7 @@ mod tests {
     }
 
     #[test]
-    fn reports_are_kept_thirty_days_and_at_most_the_stored_maximum() {
+    fn reports_are_kept_thirty_days() {
         let conn = Connection::open_in_memory().unwrap();
         initialize(&conn).unwrap();
         let count = || -> i64 {
@@ -786,19 +803,6 @@ mod tests {
         insert(&conn, &report(), SIGNATURE, old).unwrap();
         insert(&conn, &report(), SIGNATURE, NOW_MS).unwrap();
         assert_eq!(count(), 1);
-
-        // Past the maximum, the oldest reports go first.
-        let small = json!({"STACK_TRACE": "x"});
-        for index in 0..MAX_STORED {
-            insert(&conn, &small, &format!("{index:064x}"), NOW_MS + index).unwrap();
-        }
-        assert_eq!(count(), MAX_STORED);
-        let oldest: i64 = conn
-            .query_row("select min(received_at) from crash_reports", [], |r| {
-                r.get(0)
-            })
-            .unwrap();
-        assert_eq!(oldest, NOW_MS);
     }
 
     #[tokio::test]
@@ -890,11 +894,13 @@ mod tests {
     async fn the_same_signature_is_stored_twice_and_then_counted() {
         fix_now(NOW_MS);
         let (app, path) = fixture();
+        let trace = report()["STACK_TRACE"].as_str().unwrap().to_string();
+        let mine = crate::crash_signature::of_trace(&trace);
 
         // Three reports with one signature: the first two are kept, the third only counted.
         for (minute, version) in [(0, "2.21.0"), (1, "2.21.0"), (2, "2.22.0")] {
             fix_now(NOW_MS + minute * MINUTE_MS);
-            let sent = signed(SIGNATURE, version).to_string();
+            let sent = signed(&mine, version).to_string();
             assert_eq!(
                 send(&app, "192.0.2.20:4000", sent).await,
                 StatusCode::NO_CONTENT
@@ -902,12 +908,9 @@ mod tests {
         }
         assert_eq!(
             samples(&app),
-            vec![
-                (NOW_MS, SIGNATURE.to_string()),
-                (NOW_MS + MINUTE_MS, SIGNATURE.to_string())
-            ]
+            vec![(NOW_MS, mine.clone()), (NOW_MS + MINUTE_MS, mine.clone())]
         );
-        let row = seen(&app.store.lock().unwrap().conn, SIGNATURE);
+        let row = seen(&app.store.lock().unwrap().conn, &mine);
         assert_eq!(
             row,
             Some((
@@ -920,22 +923,26 @@ mod tests {
 
         // The stored report keeps the signature, though it looks like a token.
         let saved = &stored(&app)[0].3;
-        assert_eq!(saved["CUSTOM_DATA"][SIGNATURE_FIELD], SIGNATURE);
+        assert_eq!(saved["CUSTOM_DATA"][SIGNATURE_FIELD], mine);
 
         // Another signature is stored on its own; one in capitals is the same signature.
         fix_now(NOW_MS + 3 * MINUTE_MS);
-        let other = signed(OTHER, "2.22.0").to_string();
+        let mut other = signed(OTHER, "2.22.0");
+        other["STACK_TRACE"] = "java.lang.IllegalStateException: other".into();
+        other["CUSTOM_DATA"][SIGNATURE_FIELD] =
+            crate::crash_signature::of_trace("java.lang.IllegalStateException: other").into();
+        let other = other.to_string();
         assert_eq!(
             send(&app, "192.0.2.21:4000", other).await,
             StatusCode::NO_CONTENT
         );
-        let upper = signed(&SIGNATURE.to_ascii_uppercase(), "2.21.0").to_string();
+        let upper = signed(&mine.to_ascii_uppercase(), "2.21.0").to_string();
         assert_eq!(
             send(&app, "192.0.2.21:4000", upper).await,
             StatusCode::NO_CONTENT
         );
         assert_eq!(samples(&app).len(), 3);
-        let row = seen(&app.store.lock().unwrap().conn, SIGNATURE).unwrap();
+        let row = seen(&app.store.lock().unwrap().conn, &mine).unwrap();
         assert_eq!((row.2, row.3), (4, json!(["2.22.0", "2.21.0"])));
         cleanup(app, path);
     }
@@ -1010,13 +1017,14 @@ mod tests {
         let (app, path) = fixture();
         fix_now(NOW_MS);
         let mut sent = report();
-        sent[SIGNATURE_FIELD] = OTHER.into();
+        let mine = crate::crash_signature::of_trace(sent["STACK_TRACE"].as_str().unwrap());
+        sent[SIGNATURE_FIELD] = mine.to_ascii_uppercase().into();
         assert_eq!(
             send(&app, "192.0.2.80:4000", sent.to_string()).await,
             StatusCode::NO_CONTENT
         );
-        assert_eq!(seen_at(&app, NOW_MS), OTHER);
-        assert_eq!(stored(&app)[0].3[SIGNATURE_FIELD], OTHER);
+        assert_eq!(seen_at(&app, NOW_MS), mine);
+        assert_eq!(stored(&app)[0].3[SIGNATURE_FIELD], mine);
         cleanup(app, path);
     }
 
@@ -1034,31 +1042,216 @@ mod tests {
         };
         let old = NOW_MS - RETENTION_DAYS * DAY_MS;
 
-        // Three reports of one signature 30 days ago, one of another just after.
+        // Three reports of one signature just under 30 days ago, one of another just after.
         for _ in 0..3 {
-            insert(&conn, &report(), SIGNATURE, old).unwrap();
+            insert(&conn, &report(), SIGNATURE, old + 1).unwrap();
         }
-        insert(&conn, &report(), OTHER, old + 1).unwrap();
+        insert(&conn, &report(), OTHER, old + 2).unwrap();
         assert_eq!(reports(SIGNATURE), MAX_SAMPLES);
 
-        // Seen again now: its old samples are gone, the new report is kept, the count goes on.
-        insert(&conn, &report(), SIGNATURE, NOW_MS).unwrap();
+        // Seen again: its old samples are gone, the new report is kept, the count goes on.
+        insert(&conn, &report(), SIGNATURE, NOW_MS + 1).unwrap();
         assert_eq!(reports(SIGNATURE), 1);
         assert_eq!(reports(OTHER), 1);
         assert_eq!(seen(&conn, SIGNATURE).unwrap().2, 4);
-        assert_eq!(seen(&conn, SIGNATURE).unwrap().0, old);
+        assert_eq!(seen(&conn, SIGNATURE).unwrap().0, old + 1);
 
         // The other's report and row go once they are past the retention.
-        prune(&conn, NOW_MS + 1).unwrap();
+        prune(&conn, NOW_MS + 2).unwrap();
         assert_eq!(reports(OTHER), 0);
         assert_eq!(seen(&conn, OTHER), None);
 
         // Without reports a signature stays until it was last seen 30 days ago.
         conn.execute("delete from crash_reports", []).unwrap();
-        prune(&conn, NOW_MS + 1).unwrap();
+        prune(&conn, NOW_MS + 2).unwrap();
         assert!(seen(&conn, SIGNATURE).is_some());
-        prune(&conn, NOW_MS + RETENTION_DAYS * DAY_MS).unwrap();
+        prune(&conn, NOW_MS + 1 + RETENTION_DAYS * DAY_MS).unwrap();
         assert_eq!(seen(&conn, SIGNATURE), None);
+    }
+
+    /// An empty database with the crash report tables.
+    fn memory() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        initialize(&conn).unwrap();
+        conn
+    }
+
+    /// The `index`th made-up signature, for tests that need many.
+    fn nth(index: i64) -> String {
+        format!("{index:064x}")
+    }
+
+    fn rows(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("select count(*) from {table}"), [], |r| r.get(0))
+            .unwrap()
+    }
+
+    fn exception_of(conn: &Connection, signature: &str) -> Option<String> {
+        conn.query_row(
+            "select exception from crash_signatures where signature = ?1",
+            [signature],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn the_exception_is_the_latest_and_at_most_a_kibibyte() {
+        let conn = memory();
+
+        // A long first line is cut at a character boundary.
+        let long = format!(
+            "java.lang.IllegalStateException: {}",
+            "\u{e9}".repeat(MAX_EXCEPTION_BYTES)
+        );
+        let trace = format!("{long}\n\tat a.B.c(B.kt:1)");
+        insert(&conn, &json!({"STACK_TRACE": trace}), SIGNATURE, NOW_MS).unwrap();
+        let kept = exception_of(&conn, SIGNATURE).unwrap();
+        assert_eq!(kept.len(), MAX_EXCEPTION_BYTES - 1);
+        assert!(long.starts_with(&kept));
+
+        // A later report replaces it, so the line is never older than the signature's last report.
+        let later = "java.lang.IllegalStateException: 7 left";
+        insert(&conn, &json!({"STACK_TRACE": later}), SIGNATURE, NOW_MS + 1).unwrap();
+        assert_eq!(exception_of(&conn, SIGNATURE).as_deref(), Some(later));
+    }
+
+    #[test]
+    fn at_most_five_hundred_reports_are_stored_an_hour() {
+        let conn = memory();
+        let small = json!({"STACK_TRACE": "x"});
+
+        // A known signature with one sample, then new signatures fill the hour.
+        assert_eq!(
+            insert(&conn, &small, SIGNATURE, NOW_MS).unwrap(),
+            Outcome::Stored
+        );
+        for index in 1..STORED_PER_HOUR {
+            let outcome = insert(&conn, &small, &nth(index), NOW_MS + index).unwrap();
+            assert_eq!(outcome, Outcome::Stored, "{index}");
+        }
+
+        // Over the cap a new signature is dropped and a known one only counted.
+        let late = NOW_MS + HOUR_MS - 1;
+        assert_eq!(
+            insert(&conn, &small, OTHER, late).unwrap(),
+            Outcome::Dropped
+        );
+        assert_eq!(seen(&conn, OTHER), None);
+        assert_eq!(
+            insert(&conn, &small, SIGNATURE, late).unwrap(),
+            Outcome::Counted
+        );
+        assert_eq!(seen(&conn, SIGNATURE).unwrap().2, 2);
+        assert_eq!(rows(&conn, "crash_reports"), STORED_PER_HOUR);
+
+        // An hour after the first report there is room again.
+        assert_eq!(
+            insert(&conn, &small, OTHER, NOW_MS + HOUR_MS).unwrap(),
+            Outcome::Stored
+        );
+    }
+
+    #[test]
+    fn signatures_are_capped_without_evicting_samples() {
+        let conn = memory();
+        let small = json!({"STACK_TRACE": "x"});
+
+        // Fill the table, one new signature a minute so the hourly cap is not reached.
+        for index in 0..MAX_SIGNATURES {
+            let outcome = insert(&conn, &small, &nth(index), NOW_MS + index * MINUTE_MS).unwrap();
+            assert_eq!(outcome, Outcome::Stored, "{index}");
+        }
+        let later = NOW_MS + MAX_SIGNATURES * MINUTE_MS;
+
+        // Every signature has samples: a new one is dropped, a known one still stored.
+        assert_eq!(
+            insert(&conn, &small, OTHER, later).unwrap(),
+            Outcome::Dropped
+        );
+        assert_eq!(seen(&conn, OTHER), None);
+        assert_eq!(
+            insert(&conn, &small, &nth(0), later).unwrap(),
+            Outcome::Stored
+        );
+        assert_eq!(rows(&conn, "crash_signatures"), MAX_SIGNATURES);
+        assert_eq!(rows(&conn, "crash_reports"), MAX_SIGNATURES + 1);
+
+        // Signatures without samples make room, the least recently seen first.
+        conn.execute(
+            "delete from crash_reports where signature in (?1, ?2)",
+            [nth(5), nth(3)],
+        )
+        .unwrap();
+        assert_eq!(
+            insert(&conn, &small, OTHER, later + 1).unwrap(),
+            Outcome::Stored
+        );
+        assert_eq!(seen(&conn, &nth(3)), None);
+        assert!(seen(&conn, &nth(5)).is_some());
+        assert_eq!(rows(&conn, "crash_signatures"), MAX_SIGNATURES);
+    }
+
+    #[test]
+    fn email_addresses_are_removed_from_every_string() {
+        let mut value = json!({
+            "LOGCAT": "D/Sync: signed in as player.one+anki@example.co.uk, ok",
+            "USER_COMMENT": "Write to me: Hill@Example.org.",
+            "nested": {"list": ["a@b.cd"]},
+            "STACK_TRACE": "java.lang.Object@1a2b3c\n\tat a.B.c(B.kt:1)",
+            "other": "@Override, user@localhost, @x.org and x@.org"
+        });
+        strip(&mut value);
+        assert_eq!(
+            value,
+            json!({
+                "LOGCAT": format!("D/Sync: signed in as {REMOVED}, ok"),
+                "USER_COMMENT": format!("Write to me: {REMOVED}."),
+                "nested": {"list": [REMOVED]},
+                "STACK_TRACE": "java.lang.Object@1a2b3c\n\tat a.B.c(B.kt:1)",
+                "other": "@Override, user@localhost, @x.org and x@.org"
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_sent_signature_counts_only_when_it_matches_the_trace() {
+        fix_now(NOW_MS);
+        let (app, path) = fixture();
+        let trace = report()["STACK_TRACE"].as_str().unwrap().to_string();
+        let computed = crate::crash_signature::of_trace(&trace);
+
+        // Another crash's signature, in custom data or at the top, is replaced by the trace's.
+        assert_eq!(
+            send(&app, "192.0.2.90:4000", signed(OTHER, "2.21.0").to_string()).await,
+            StatusCode::NO_CONTENT
+        );
+        assert_eq!(seen_at(&app, NOW_MS), computed);
+        fix_now(NOW_MS + 1);
+        let mut top = report();
+        top[SIGNATURE_FIELD] = OTHER.into();
+        assert_eq!(
+            send(&app, "192.0.2.91:4000", top.to_string()).await,
+            StatusCode::NO_CONTENT
+        );
+        assert_eq!(seen_at(&app, NOW_MS + 1), computed);
+        assert_eq!(seen(&app.store.lock().unwrap().conn, OTHER), None);
+
+        // The stored report keeps what was sent, so a mismatch can be looked into.
+        assert_eq!(stored(&app)[0].3["CUSTOM_DATA"][SIGNATURE_FIELD], OTHER);
+
+        // The trace's own signature, in capitals too, is the same crash.
+        fix_now(NOW_MS + 2);
+        let upper = signed(&computed.to_ascii_uppercase(), "2.21.0").to_string();
+        assert_eq!(
+            send(&app, "192.0.2.92:4000", upper).await,
+            StatusCode::NO_CONTENT
+        );
+        assert_eq!(
+            seen(&app.store.lock().unwrap().conn, &computed).unwrap().2,
+            3
+        );
+        cleanup(app, path);
     }
 
     fn fix_now(ms: i64) {
