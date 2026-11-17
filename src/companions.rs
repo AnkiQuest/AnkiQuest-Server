@@ -820,9 +820,8 @@ mod tests {
         )
     }
 
-    #[tokio::test]
-    async fn the_inbox_leaves_out_companions_a_client_cannot_draw() {
-        let (app, path) = fixture();
+    /// Uploads hill's study so that the worker grants Bluma with her moment.
+    async fn bring_bluma(app: &Arc<App>) {
         let now = crate::app::now_ms();
 
         // A first upload and worker pass record history; the next upload brings Bluma.
@@ -831,7 +830,7 @@ mod tests {
             (now - HOUR_MS, 60_000),
         ] {
             let upload = call(
-                &app,
+                app,
                 "POST",
                 "/api/reviews/hill",
                 "hill-secret",
@@ -839,8 +838,14 @@ mod tests {
             )
             .await;
             assert_eq!(upload.0, StatusCode::OK);
-            crate::worker::tick(&app).unwrap();
+            crate::worker::tick(app).unwrap();
         }
+    }
+
+    #[tokio::test]
+    async fn the_inbox_leaves_out_companions_a_client_cannot_draw() {
+        let (app, path) = fixture();
+        bring_bluma(&app).await;
         let joined = json!(["companion:cow"]);
 
         // Released clients draw Aki and Ankilope only, and send no list: Bluma stays out of
@@ -869,6 +874,87 @@ mod tests {
         let items = activity["items"].as_array().unwrap().len();
         assert_eq!(activity["unread_count"], items, "{activity}");
         cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn read_all_leaves_moments_the_client_cannot_draw_unread() {
+        let (app, path) = fixture();
+        bring_bluma(&app).await;
+
+        // A message arrives after Bluma's moment, so the released client's latest row is newer.
+        {
+            let store = app.store.lock().unwrap();
+            let message = crate::notifications::Outgoing {
+                to: "hill",
+                from: "cerro",
+                title: "Hello",
+                body: "Keep going",
+                kind: "message",
+            };
+            let now = crate::app::now_ms();
+            crate::notifications::insert_notification(&store.conn, &message, 1, now, false)
+                .unwrap();
+        }
+
+        // A released client reads everything it lists, up to its latest row.
+        let activity = "/api/activity/hill";
+        let (_, released) = call(&app, "GET", activity, "hill-secret", Value::Null).await;
+        let through = json!({"through": released["latest_id"]});
+        let read = call(&app, "POST", "/api/activity/hill/read", "hill-secret", through).await;
+        assert_eq!(read.0, StatusCode::NO_CONTENT);
+
+        // After an update that draws Bluma, her moment is still unread.
+        let rows = inbox(&app, activity, Some("aki, ankilope, cow")).await;
+        let bluma = rows
+            .iter()
+            .find(|row| row["moment"] == "companion:cow")
+            .expect("Bluma's moment");
+        assert_eq!(bluma["read_at"], Value::Null, "{bluma}");
+        cleanup(app, path);
+    }
+
+    #[test]
+    fn a_batch_of_unlocks_shows_only_where_every_unlock_is_drawn() {
+        let (store, path) = crate::test_support::temporary_store();
+        let now = crate::app::now_ms();
+
+        // More unlocks at once than get their own push share one row, without a win.
+        let batch = crate::notifications::Outgoing {
+            to: "hill",
+            from: "",
+            title: "4 new unlocks",
+            body: "Ankilope joined you!, Bluma joined you!",
+            kind: "celebration",
+        };
+        let id = crate::notifications::insert_notification(&store.conn, &batch, 1, now, false)
+            .unwrap();
+        store
+            .conn
+            .execute(
+                "update notifications set topic = ?1 where id = ?2",
+                rusqlite::params![TOPIC, id],
+            )
+            .unwrap();
+
+        // Only a client that draws every unlock can show the whole batch.
+        let listed = |art: Option<&str>| {
+            let mut headers = HeaderMap::new();
+            if let Some(art) = art {
+                headers.insert(ART_HEADER, art.parse().unwrap());
+            }
+            let peers = crate::notifications::PeerStudy::Shown;
+            let rows = store
+                .notifications_for("hill", now, Drawable::of(&headers), peers)
+                .unwrap();
+            rows.len()
+        };
+        assert_eq!(listed(Some("aki, ankilope, cow")), 1);
+        assert_eq!(listed(Some("aki, ankilope")), 0);
+        assert_eq!(listed(None), 0);
+        let peers = crate::notifications::PeerStudy::Shown;
+        let all = store.notifications_for("hill", now, Drawable::all(), peers);
+        assert_eq!(all.unwrap().len(), 1);
+        cleanup(store, path);
     }
 
     /// `POST /api/companion/hill` choosing `companion`, from a client that does or does not
