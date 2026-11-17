@@ -96,6 +96,19 @@ async function personal(t: TestContext, options: {width?: number; theme?: 'light
   return {page, calls, data};
 }
 
+test('deck wins can reach friends without offering a public link', async t => {
+  const {page, calls, data} = await personal(t);
+  data.wins = [win(31, {kind: 'deck', title: 'Deck complete', body: 'My private deck', policy: 'private'})];
+  await page.goto(`${origin}/today`);
+  const row = page.locator('[data-win-id="31"]');
+  await row.waitFor();
+  assert.equal(await row.locator('[data-win-action="link"]').count(), 0);
+  assert.equal(await row.locator('[data-win-action="download"]').count(), 1);
+  await row.locator('[data-win-action="friends"]').click();
+  await row.getByRole('status').filter({hasText: 'Sent to 2 friends'}).waitFor();
+  assert.deepEqual(calls.findLast(call => call.path === '/api/share/alice')?.body, {win: 31, to: 'friends'});
+});
+
 test('sharing settings save every moment policy and the daily cap', async t => {
   const {page, calls, data} = await personal(t);
   await page.goto(`${origin}/settings`);
