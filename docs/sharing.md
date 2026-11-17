@@ -263,6 +263,13 @@ second send leaves Cerro's row. It answers `{ "retracted": n }`, or `409` once t
 has passed; a `until` that is not a number is `400`. Servers with `share_undo_send` in
 `/api/capabilities` know `until`; older ones ignore it and take back every send from the last day.
 
+Pass the returned `undo_until` unchanged. New sends reserve distinct values durably, including
+when two sends happen in the same millisecond or the server clock moves backwards. A collision
+shortens the deadline by a millisecond; it never extends the one-day window. Undo keeps the
+receipt reserved, so retrying an old Undo cannot retract a later resend, even after a restart.
+Existing outstanding receipts are retained on upgrade. Sends from before this fix that already
+shared a timestamp cannot be distinguished retroactively.
+
 Telling friends about a conquest (`/api/conquests/{user}/{at}/tell`) and a finished deck
 (`/api/decks/{user}/share`) keep working as described here. Clients that see `share_moments` in
 `/api/capabilities` use this body instead for conquests.

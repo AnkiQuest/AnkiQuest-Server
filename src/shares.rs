@@ -118,8 +118,8 @@ struct MomentShared {
 enum Sends {
     /// Every send within [`UNDO_MS`].
     All,
-    /// The one send at this time (ms).
-    At(i64),
+    /// The one send with this durable receipt and deadline (ms).
+    Until(i64),
 }
 
 /// `DELETE /api/share/{user}/{win}?until=…`: the `undo_until` a send answered, to take back
@@ -144,6 +144,13 @@ pub(crate) enum Sending<'a> {
     ByHand(Option<&'a str>),
     /// A released client's explicit deck share, with its original completion wording.
     Deck,
+}
+
+/// The committed delivery and, for one hand-sent win, its Undo receipt.
+#[derive(Default)]
+pub(crate) struct Delivery {
+    pub(crate) recipients: usize,
+    undo_until: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -256,11 +263,12 @@ fn send(
         Sending::ByHand(None),
         now,
     )
+    .map(|delivery| delivery.recipients)
 }
 
 /// Sends `wins` to each friend who has not had them, as one `share` row per friend: the win
 /// itself, or a digest of several. Automatic rows stop at the sender's daily cap per friend.
-/// Returns how many friends got a row.
+/// Returns how many friends got a row and its Undo receipt, when it has one.
 pub(crate) fn send_wins(
     store: &mut Store,
     sender: &str,
@@ -269,9 +277,9 @@ pub(crate) fn send_wins(
     wins: &[Moment],
     sending: Sending,
     now: i64,
-) -> Result<usize, Error> {
+) -> Result<Delivery, Error> {
     if wins.is_empty() {
-        return Ok(0);
+        return Ok(Delivery::default());
     }
     let (automatic, note) = match sending {
         Sending::Automatic => (true, None),
@@ -282,6 +290,7 @@ pub(crate) fn send_wins(
     let cap = wins::sharing(&store.conn, sender)?.daily_cap;
     let tx = store.conn.transaction()?;
     let mut sent = 0;
+    let mut undo_until = None;
     for friend in friends {
         if muted(&tx, friend, sender)? {
             continue;
@@ -326,6 +335,10 @@ pub(crate) fn send_wins(
             if today >= cap {
                 continue;
             }
+        }
+        // Allocate only for a send that reaches someone, in the delivery transaction.
+        if !automatic && wins.len() == 1 && undo_until.is_none() {
+            undo_until = Some(receipt(&tx, first.id, now)?);
         }
         let (title, body) = if matches!(sending, Sending::Deck) {
             (
@@ -374,9 +387,9 @@ pub(crate) fn send_wins(
         )?;
         for win in &fresh {
             tx.execute(
-                "insert into win_deliveries (win, recipient, notification, day, automatic)
-                 values (?1, ?2, ?3, ?4, ?5)",
-                params![win.id, friend, id, day, automatic],
+                "insert into win_deliveries (win, recipient, notification, day, automatic, send_until)
+                 values (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![win.id, friend, id, day, automatic, undo_until],
             )?;
             tx.execute(
                 "update wins set shared_friends = shared_friends + 1 where id = ?1",
@@ -386,7 +399,29 @@ pub(crate) fn send_wins(
         sent += 1;
     }
     tx.commit()?;
-    Ok(sent)
+    Ok(Delivery {
+        recipients: sent,
+        undo_until,
+    })
+}
+
+/// Reserve a receipt forever for this win, even after its deliveries are undone. Moving a
+/// collision earlier by one millisecond keeps the released deadline field within one day.
+fn receipt(conn: &Connection, win: i64, now: i64) -> Result<i64, Error> {
+    let mut until = now.checked_add(UNDO_MS).ok_or("invalid share time")?;
+    loop {
+        let inserted = conn.execute(
+            "insert or ignore into win_receipts (win, until, created_at) values (?1, ?2, ?3)",
+            params![win, until, now],
+        )?;
+        if inserted > 0 {
+            return Ok(until);
+        }
+        until = until.checked_sub(1).ok_or("no Undo receipt available")?;
+        if until <= now {
+            return Err("no Undo receipt available".into());
+        }
+    }
 }
 
 /// The pre-upgrade delivery marker for a moment whose legacy route used a separate ledger.
@@ -502,6 +537,7 @@ pub(crate) fn share_automatically(
         Sending::Automatic,
         now,
     )
+    .map(|delivery| delivery.recipients)
 }
 
 /// The text a player pastes along with a win's link.
@@ -536,8 +572,8 @@ fn share_win(
     if to == "friends" {
         let friends = friends(app, &store.conn, user).map_err(store_error)?;
         drop(store);
-        let (recipients, link) = deliver(app, user, id, &friends, None, headers, now_ms())?;
-        return Ok(json!({ "recipients": recipients, "link": link }));
+        let (delivery, link) = deliver(app, user, id, &friends, None, headers, now_ms())?;
+        return Ok(json!({ "recipients": delivery.recipients, "link": link }));
     }
 
     let token = wins::ensure_link(&store.conn, user, id)
@@ -564,7 +600,7 @@ fn deliver(
     note: Option<&str>,
     headers: &HeaderMap,
     now: i64,
-) -> Result<(usize, Option<wins::Link>), StatusCode> {
+) -> Result<(Delivery, Option<wins::Link>), StatusCode> {
     let mut store = app.store.lock().unwrap();
     let token = wins::ensure_link(&store.conn, user, id).map_err(store_error)?;
     let win = wins::win(&store.conn, user, id).ok_or(StatusCode::NOT_FOUND)?;
@@ -717,10 +753,10 @@ fn share_moment(
 
     let (sent, link) = deliver(app, user, win, &recipients, note.as_deref(), headers, now)?;
     Ok(json!(MomentShared {
-        recipients: sent,
+        recipients: sent.recipients,
         link,
         win,
-        undo_until: (sent > 0).then_some(now + UNDO_MS),
+        undo_until: sent.undo_until,
     }))
 }
 
@@ -775,7 +811,8 @@ async fn share(
                 .ok_or(StatusCode::CONFLICT)?;
             let friends =
                 friends(&app, &app.store.lock().unwrap().conn, &user).map_err(store_error)?;
-            let (recipients, _) = deliver(&app, &user, id, &friends, None, &headers, now)?;
+            let (delivery, _) = deliver(&app, &user, id, &friends, None, &headers, now)?;
+            let recipients = delivery.recipients;
             return Ok(Json(json!(Shared { recipients })));
         }
         _ => return Err(StatusCode::BAD_REQUEST),
@@ -799,6 +836,7 @@ struct SentRow {
     recipient: String,
     /// Ms.
     sent_at: i64,
+    until: i64,
     /// Unread, not cheered or answered, and about this win alone.
     untouched: bool,
 }
@@ -808,15 +846,20 @@ fn sent_rows(conn: &Connection, win: i64) -> rusqlite::Result<Vec<SentRow>> {
         "select d.notification, d.recipient, n.created_at,
                 n.read_at is null and n.replied = 0
                 and not exists (select 1 from reactions r where r.notification = n.id)
-                and (select count(*) from win_deliveries o where o.notification = n.id) = 1
+                and (select count(*) from win_deliveries o where o.notification = n.id) = 1,
+                d.send_until
          from win_deliveries d join notifications n on n.id = d.notification
          where d.win = ?1 and d.automatic = 0",
     )?
     .query_map([win], |r| {
+        let sent_at: i64 = r.get(2)?;
         Ok(SentRow {
             notification: r.get(0)?,
             recipient: r.get(1)?,
-            sent_at: r.get(2)?,
+            sent_at,
+            until: r
+                .get::<_, Option<i64>>(4)?
+                .unwrap_or(sent_at.saturating_add(UNDO_MS)),
             untouched: r.get(3)?,
         })
     })?
@@ -834,10 +877,13 @@ fn retract(
 ) -> Result<Option<usize>, Error> {
     let tx = conn.transaction()?;
     let mut rows = sent_rows(&tx, win)?;
-    if let Sends::At(at) = sends {
-        rows.retain(|row| row.sent_at == at);
+    if let Sends::Until(until) = sends {
+        rows.retain(|row| row.until == until);
     }
-    let recent: Vec<&SentRow> = rows.iter().filter(|r| now < r.sent_at + UNDO_MS).collect();
+    let recent: Vec<&SentRow> = rows
+        .iter()
+        .filter(|r| now < r.until && now < r.sent_at.saturating_add(UNDO_MS))
+        .collect();
     if recent.is_empty() && !rows.is_empty() {
         return Ok(None);
     }
@@ -874,7 +920,10 @@ async fn unshare(
     require_owner(&app, &user, &headers)?;
     let sends = match query.until {
         None => Sends::All,
-        Some(until) => Sends::At(until.checked_sub(UNDO_MS).ok_or(StatusCode::BAD_REQUEST)?),
+        Some(until) => {
+            until.checked_sub(UNDO_MS).ok_or(StatusCode::BAD_REQUEST)?;
+            Sends::Until(until)
+        }
     };
     let mut store = app.store.lock().unwrap();
     wins::win(&store.conn, &user, win).ok_or(StatusCode::NOT_FOUND)?;
@@ -1083,6 +1132,7 @@ mod tests {
                 3_000,
             )
             .unwrap()
+            .recipients
         };
         assert_eq!(share(&mut store), 1);
         assert_eq!(share(&mut store), 0, "each win reaches each friend once");
@@ -1136,7 +1186,8 @@ mod tests {
                 Sending::Automatic,
                 3_000
             )
-            .unwrap(),
+            .unwrap()
+            .recipients,
             1
         );
         let got = store.notifications("cerro", 3_000).unwrap();
@@ -1156,7 +1207,8 @@ mod tests {
                 Sending::Automatic,
                 4_000
             )
-            .unwrap(),
+            .unwrap()
+            .recipients,
             0,
             "the cap counts rows, and one was sent today"
         );
@@ -1170,7 +1222,8 @@ mod tests {
                 Sending::ByHand(None),
                 4_000
             )
-            .unwrap(),
+            .unwrap()
+            .recipients,
             1,
             "a win over the cap can still be shared by hand"
         );
@@ -1559,11 +1612,7 @@ mod tests {
             0
         );
 
-        // Move the first send back to distinguish receipts without a timing dependency.
-        sql(
-            &app,
-            "update notifications set created_at = created_at - 1000 where recipient = 'cerro'",
-        );
+        // The actual second receipt identifies its send without rewriting timestamps.
         let undo = format!("/api/share/hill/{id}?until={}", again["undo_until"]);
         assert_eq!(
             call(&app, "DELETE", &undo, "hill-secret", Value::Null).await,
@@ -2385,8 +2434,233 @@ mod tests {
         assert_eq!(store.notifications("cerro", 4_000).unwrap().len(), 1);
     }
 
+    struct FixedClock;
+
+    impl FixedClock {
+        fn at(now: i64) -> Self {
+            crate::app::fix_now_ms(Some(now));
+            Self
+        }
+    }
+
+    impl Drop for FixedClock {
+        fn drop(&mut self) {
+            crate::app::fix_now_ms(None);
+        }
+    }
+
+    async fn send_to(app: &Arc<App>, win: i64, friend: &str) -> Value {
+        let (status, sent) = share_as_hill(
+            app,
+            json!({"moment": {"win": win}, "to": {"friends": [friend]}}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(sent["recipients"], 1);
+        sent
+    }
+
+    async fn undo_send(app: &Arc<App>, receipt: &Value) -> (StatusCode, Value) {
+        let path = format!(
+            "/api/share/hill/{}?until={}",
+            receipt["win"], receipt["undo_until"]
+        );
+        call(app, "DELETE", &path, "hill-secret", Value::Null).await
+    }
+
+    #[tokio::test]
+    async fn same_tick_undo_is_one_send() {
+        let _clock = FixedClock::at(1_800_000_000_000);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        let second = send_to(&app, win, "friend").await;
+
+        let (status, undone) = undo_send(&app, &second).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(undone["retracted"], 1);
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert!(inbox(&app, "friend").is_empty());
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn old_undo_cannot_take_resend() {
+        let _clock = FixedClock::at(1_800_000_000_000);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+        let second = send_to(&app, win, "cerro").await;
+
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 0);
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert_eq!(undo_send(&app, &second).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn clock_return_keeps_old_undo() {
+        let at = 1_800_000_000_000;
+        let _clock = FixedClock::at(at);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+
+        // A clock adjustment must not make a removed receipt reusable later.
+        crate::app::fix_now_ms(Some(at - 1_000));
+        let second = send_to(&app, win, "friend").await;
+        crate::app::fix_now_ms(Some(at));
+        let third = send_to(&app, win, "cerro").await;
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 0);
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert_eq!(inbox(&app, "friend").len(), 1);
+        assert_eq!(undo_send(&app, &second).await.1["retracted"], 1);
+        assert_eq!(undo_send(&app, &third).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn backwards_clock_keeps_expiry() {
+        let at = 1_800_000_000_000;
+        let _clock = FixedClock::at(at);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        let earlier = at - 1_000;
+        crate::app::fix_now_ms(Some(earlier));
+        let second = send_to(&app, win, "friend").await;
+        assert!(second["undo_until"].as_i64().unwrap() <= earlier + UNDO_MS);
+
+        crate::app::fix_now_ms(Some(earlier + UNDO_MS));
+        assert_eq!(undo_send(&app, &second).await.0, StatusCode::CONFLICT);
+        assert_eq!(inbox(&app, "friend").len(), 1);
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn collision_keeps_its_deadline() {
+        let at = 1_800_000_000_000;
+        let _clock = FixedClock::at(at);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        let second = send_to(&app, win, "friend").await;
+        let until = second["undo_until"].as_i64().unwrap();
+        assert!(until < first["undo_until"].as_i64().unwrap());
+
+        crate::app::fix_now_ms(Some(until));
+        assert_eq!(undo_send(&app, &second).await.0, StatusCode::CONFLICT);
+        assert_eq!(inbox(&app, "friend").len(), 1);
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    #[test]
+    fn receipts_survive_restart() {
+        let (mut store, path) = crate::test_support::temporary_store();
+        let id = moment(&store, "hill", "level:7");
+        let win = wins::win(&store.conn, "hill", id).unwrap();
+        let send = |store: &mut Store| {
+            send_wins(
+                store,
+                "hill",
+                "Hill",
+                &strings(&["cerro"]),
+                std::slice::from_ref(&win),
+                Sending::ByHand(None),
+                3_000,
+            )
+            .unwrap()
+            .undo_until
+            .unwrap()
+        };
+        let first = send(&mut store);
+        assert_eq!(
+            retract(&mut store.conn, id, Sends::Until(first), 3_000).unwrap(),
+            Some(1)
+        );
+        drop(store);
+
+        let mut store = Store::open(&path).unwrap();
+        let second = send(&mut store);
+        assert_ne!(first, second);
+        assert_eq!(
+            retract(&mut store.conn, id, Sends::Until(first), 3_000).unwrap(),
+            Some(0)
+        );
+        assert_eq!(store.notifications("cerro", 3_000).unwrap().len(), 1);
+        assert_eq!(
+            retract(&mut store.conn, id, Sends::Until(second), 3_000).unwrap(),
+            Some(1)
+        );
+
+        // Receipts remain private to the sender, and leave with the account.
+        let own = crate::privacy::export(&store.conn, "hill").unwrap();
+        assert_eq!(own["win_receipts"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            crate::privacy::export(&store.conn, "cerro").unwrap()["win_receipts"],
+            json!([])
+        );
+        crate::privacy::forget(&store.conn, "hill").unwrap();
+        let kept: i64 = store
+            .conn
+            .query_row("select count(*) from win_receipts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(kept, 0);
+        cleanup(store, path);
+    }
+
+    #[test]
+    fn failed_send_keeps_no_receipt() {
+        let (mut store, path) = crate::test_support::temporary_store();
+        let id = moment(&store, "hill", "level:7");
+        let win = wins::win(&store.conn, "hill", id).unwrap();
+        store
+            .conn
+            .execute_batch(
+                "create trigger refuse_share before insert on notifications
+             when new.recipient = 'cerro' begin select raise(abort, 'test failure'); end;",
+            )
+            .unwrap();
+        let send = |store: &mut Store| {
+            send_wins(
+                store,
+                "hill",
+                "Hill",
+                &strings(&["cerro"]),
+                std::slice::from_ref(&win),
+                Sending::ByHand(None),
+                3_000,
+            )
+        };
+        assert!(send(&mut store).is_err());
+        assert!(store.notifications("cerro", 3_000).unwrap().is_empty());
+        assert_eq!(
+            wins::win(&store.conn, "hill", id).unwrap().shared_friends,
+            0
+        );
+        let kept: i64 = store
+            .conn
+            .query_row("select count(*) from win_receipts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(kept, 0);
+
+        store
+            .conn
+            .execute_batch("drop trigger refuse_share;")
+            .unwrap();
+        assert_eq!(send(&mut store).unwrap().undo_until, Some(3_000 + UNDO_MS));
+        cleanup(store, path);
+    }
+
     #[tokio::test]
     async fn a_moment_is_taken_back_one_send_at_a_time() {
+        let at = 1_800_000_000_000;
+        let _clock = FixedClock::at(at);
         let (app, path) = moments_app();
         let id = moment(&app.store.lock().unwrap(), "hill", "level:7");
         let send_to = |friend: &str| json!({"moment": {"win": id}, "to": {"friends": [friend]}});
@@ -2398,15 +2672,9 @@ mod tests {
 
         // Two sends of one win; Cerro's an hour before Friend's.
         let (_, first) = share_as_hill(&app, send_to("cerro")).await;
+        crate::app::fix_now_ms(Some(at + 60 * 60 * 1000));
         let (_, second) = share_as_hill(&app, send_to("friend")).await;
-        let hour = 60 * 60 * 1000;
-        sql(
-            &app,
-            &format!(
-                "update notifications set created_at = created_at - {hour} where recipient = 'cerro'"
-            ),
-        );
-        let first = first["undo_until"].as_i64().unwrap() - hour;
+        let first = first["undo_until"].as_i64().unwrap();
         let second = second["undo_until"].as_i64().unwrap();
 
         // Undoing the second send leaves the first.
@@ -2426,13 +2694,8 @@ mod tests {
 
         // A send more than a day ago is too late, and `until` must be a time.
         let (_, late) = share_as_hill(&app, send_to("cerro")).await;
-        sql(
-            &app,
-            &format!(
-                "update notifications set created_at = created_at - {UNDO_MS} where recipient = 'cerro'"
-            ),
-        );
-        let late = late["undo_until"].as_i64().unwrap() - UNDO_MS;
+        let late = late["undo_until"].as_i64().unwrap();
+        crate::app::fix_now_ms(Some(late));
         assert_eq!(undo(late).await.0, StatusCode::CONFLICT);
         assert_eq!(inbox(&app, "cerro").len(), 1);
         let malformed = format!("/api/share/hill/{id}?until=soon");

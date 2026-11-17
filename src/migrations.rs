@@ -19,6 +19,7 @@ const STEPS: &[Step] = &[
     share_notes,
     cow_companion,
     companion_milestones,
+    share_receipts,
 ];
 
 /// Brings the database up to the latest step, then turns foreign keys on for the connection.
@@ -225,6 +226,25 @@ fn companion_milestones(conn: &Connection) -> Result<(), Error> {
          insert or ignore into seen (user, key)
              select user, 'companion:' || unlock from companion_unlocks
              where exists (select 1 from seen where seen.user = companion_unlocks.user);",
+    )?;
+    Ok(())
+}
+
+/// Preserve outstanding Undo values before new sends get durable, distinct receipts.
+fn share_receipts(conn: &Connection) -> Result<(), Error> {
+    add_column(conn, "win_deliveries", "send_until", "integer")?;
+    conn.execute(
+        "insert or ignore into win_receipts (win, until, created_at)
+         select d.win, n.created_at + ?1, n.created_at from win_deliveries d
+         join notifications n on n.id = d.notification join wins w on w.id = d.win
+         where d.automatic = 0",
+        [crate::conquests::UNDO_MS],
+    )?;
+    conn.execute(
+        "update win_deliveries set send_until = (
+             select n.created_at + ?1 from notifications n where n.id = notification
+         ) where automatic = 0 and send_until is null",
+        [crate::conquests::UNDO_MS],
     )?;
     Ok(())
 }
@@ -436,6 +456,88 @@ mod tests {
         conn.execute("delete from accounts where user = 'hill'", [])
             .unwrap();
         assert_eq!(count(conn, "account_tokens"), 0);
+        cleanup(store, dir);
+    }
+
+    #[test]
+    fn old_sends_keep_their_receipts() {
+        let dir = temp_dir("share-receipts");
+        let store = Store::open(&dir).unwrap();
+        let conn = &store.conn;
+        let win = crate::wins::keep(
+            conn,
+            "hill",
+            "level:7",
+            1,
+            3_000,
+            "Level",
+            "Body",
+            &serde_json::json!({}),
+        )
+        .unwrap()
+        .unwrap();
+        for (recipient, automatic) in [("cerro", false), ("friend", true)] {
+            let notice = crate::notifications::insert_notification(
+                conn,
+                &crate::notifications::Outgoing {
+                    to: recipient,
+                    from: "hill",
+                    title: "Level",
+                    body: "Body",
+                    kind: "share",
+                },
+                1,
+                3_000,
+                false,
+            )
+            .unwrap();
+            conn.execute("insert into win_deliveries (win, recipient, notification, day, automatic) values (?1, ?2, ?3, 1, ?4)", rusqlite::params![win, recipient, notice, automatic]).unwrap();
+        }
+        // Reproduce the released schema, then reopen through the real upgrade path.
+        conn.execute_batch("alter table win_deliveries drop column send_until; drop table win_receipts; pragma user_version = 8;").unwrap();
+        drop(store);
+        let store = Store::open(&dir).unwrap();
+        let expected = 3_000 + crate::conquests::UNDO_MS;
+        let until: i64 = store
+            .conn
+            .query_row(
+                "select send_until from win_deliveries where recipient = 'cerro'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(until, expected);
+        let automatic: Option<i64> = store
+            .conn
+            .query_row(
+                "select send_until from win_deliveries where recipient = 'friend'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(automatic, None);
+        assert_eq!(count(&store.conn, "win_receipts"), 1);
+        assert_eq!(version(&store.conn), STEPS.len());
+
+        // Undo may remove every delivery, but reopening must retain its reservation.
+        store
+            .conn
+            .execute("delete from win_deliveries", [])
+            .unwrap();
+        drop(store);
+        let store = Store::open(&dir).unwrap();
+        let receipt: (i64, i64, i64) = store
+            .conn
+            .query_row("select win, until, created_at from win_receipts", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(receipt, (win, expected, 3_000));
+        store
+            .conn
+            .execute("delete from wins where id = ?1", [win])
+            .unwrap();
+        assert_eq!(count(&store.conn, "win_receipts"), 0);
         cleanup(store, dir);
     }
 

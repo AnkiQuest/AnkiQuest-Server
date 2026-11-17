@@ -60,9 +60,16 @@ pub fn initialize(conn: &Connection) -> Result<(), Error> {
              notification integer not null,
              day integer not null,
              automatic integer not null,
+             send_until integer,
              primary key (win, recipient)
          ) without rowid;
          create index if not exists win_deliveries_recipient on win_deliveries (recipient, day);
+         create table if not exists win_receipts (
+             win integer not null references wins(id) on delete cascade,
+             until integer not null,
+             created_at integer not null,
+             primary key (win, until)
+         ) without rowid;
          create table if not exists win_auto_queue (win integer primary key);
          create table if not exists sharing_settings (
              user text primary key,

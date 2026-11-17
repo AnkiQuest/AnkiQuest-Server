@@ -805,18 +805,8 @@ mod tests {
         let (app, path, at) = conquest_sharing_case().await;
         keep_conquest(&app, at);
         let first = share_conquest(&app, at, &["cerro"]).await;
-        // Separate the sends deterministically, as in the share Undo tests.
-        let until = first["undo_until"].as_i64().unwrap() - 1000;
-        app.store
-            .lock()
-            .unwrap()
-            .conn
-            .execute(
-                "update notifications set created_at = created_at - 1000
-             where sender = 'hill' and recipient = 'cerro' and kind = 'share'",
-                [],
-            )
-            .unwrap();
+        // Keep the actual receipt: each send is distinct without rewriting timestamps.
+        let until = first["undo_until"].as_i64().unwrap();
         tell_conquest(&app, at, "POST").await;
         assert_eq!(tell_conquest(&app, at, "DELETE").await["retracted"], 1);
         assert_eq!(

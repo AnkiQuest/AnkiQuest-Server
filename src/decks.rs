@@ -844,7 +844,9 @@ pub(crate) fn share_finished(
         crate::shares::Sending::Deck,
         now_ms,
     )?;
-    Ok(Some(Told { recipients: told }))
+    Ok(Some(Told {
+        recipients: told.recipients,
+    }))
 }
 
 pub(crate) async fn share_deck(
