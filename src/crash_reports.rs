@@ -1,10 +1,12 @@
 //! Crash reports from the Android app, sent by ACRA's HTTP sender as JSON.
 //!
 //! Anyone can send one, so each client address gets a few per hour and a report is at most
-//! [`MAX_BYTES`]. Fields that identify a player, a device or an install are removed before
-//! a report is stored, and reports are deleted after [`RETENTION_DAYS`]. Reports of one
-//! failure share a signature ([`crate::crash_signature`]): the first [`MAX_SAMPLES`] are
-//! stored, later ones only counted. Devs read them in the dev console (`/dev`).
+//! [`MAX_BYTES`]. Fields that identify a player, a device or an install, email addresses and
+//! credentials are removed before a report is stored, and reports are deleted after
+//! [`RETENTION_DAYS`]. Reports of one failure share a signature ([`crate::crash_signature`]):
+//! the first [`MAX_SAMPLES`] are stored, later ones only counted. At most [`MAX_SIGNATURES`]
+//! signatures are kept and [`STORED_PER_HOUR`] reports stored an hour, so the tables stay
+//! bounded however many addresses send. Devs read them in the dev console (`/dev`).
 
 use crate::app::{App, now_ms};
 use crate::game::{DAY_MS, HOUR_MS};
@@ -19,6 +21,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
+use std::ops::Range;
 use std::sync::{Arc, Mutex};
 
 pub(crate) const PATH: &str = "/api/crash-reports";
@@ -184,12 +187,10 @@ fn sent_signatures(report: &mut Value) -> Vec<(Slot, String)> {
         .collect()
 }
 
-/// The report's signature: the app's when it sent a well-formed one, else computed from
-/// `STACK_TRACE` (an empty one when there is none).
-fn signature(report: &mut Value) -> String {
-    if let Some((_, sent)) = sent_signatures(report).into_iter().next() {
-        return sent;
-    }
+/// The report's signature, computed from `STACK_TRACE` (an empty one when there is none).
+/// The app's own `ANKIQUEST_SIGNATURE` is the same when it matches the trace; it is kept in
+/// the stored report but not used, so a sender cannot file reports under another crash.
+fn signature(report: &Value) -> String {
     let trace = report
         .get(STACK_TRACE)
         .and_then(Value::as_str)
@@ -216,7 +217,8 @@ fn strip(report: &mut Value) {
     }
 }
 
-/// Removes [`DROPPED_KEYS`] at any depth and replaces credentials in every string.
+/// Removes [`DROPPED_KEYS`] at any depth and replaces email addresses and credentials in
+/// every string.
 fn scrub(value: &mut Value) {
     match value {
         Value::Object(fields) => {
@@ -225,6 +227,9 @@ fn scrub(value: &mut Value) {
         }
         Value::Array(items) => items.iter_mut().for_each(scrub),
         Value::String(text) => {
+            if let Some(clean) = without_emails(text) {
+                *text = clean;
+            }
             if let Some(clean) = without_tokens(text) {
                 *text = clean;
             }
@@ -247,6 +252,71 @@ fn private_preference(key: &str) -> bool {
         .get(..QUEST_PREFIX.len())
         .is_some_and(|start| start.eq_ignore_ascii_case(QUEST_PREFIX));
     quest || DROPPED_PREFERENCES.contains(&key)
+}
+
+/// Characters of an email address's local part, before the `@`.
+fn local_char(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || b"._%+-".contains(&c)
+}
+
+/// Characters of an email address's domain, after the `@`.
+fn domain_char(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || c == b'.' || c == b'-'
+}
+
+/// `text` with each email address replaced by [`REMOVED`]. AnkiWeb usernames are email
+/// addresses, so this also removes them from log lines and comments. `None` when there is none.
+fn without_emails(text: &str) -> Option<String> {
+    let mut out = String::with_capacity(text.len());
+    let mut copied = 0;
+    for (at, _) in text.match_indices('@') {
+        if at < copied {
+            continue;
+        }
+        let Some(address) = email_at(text.as_bytes(), at) else {
+            continue;
+        };
+        out.push_str(&text[copied..address.start]);
+        out.push_str(REMOVED);
+        copied = address.end;
+    }
+    if copied == 0 {
+        return None;
+    }
+    out.push_str(&text[copied..]);
+    Some(out)
+}
+
+/// The bytes of the email address around the `@` at `at`, if it is one: a local part, and a
+/// domain of at least two labels ending in letters. Only ASCII is part of it, so the range
+/// falls on character boundaries.
+fn email_at(text: &[u8], at: usize) -> Option<Range<usize>> {
+    // The local part runs back to a character that cannot be in it; dots in front are not part.
+    let start = text[..at]
+        .iter()
+        .rposition(|&c| !local_char(c))
+        .map_or(0, |before| before + 1);
+    let start = start + text[start..at].iter().take_while(|&&c| c == b'.').count();
+    if start == at {
+        return None;
+    }
+
+    // The domain runs to a character that cannot be in it; dots and dashes after are not part.
+    let after = &text[at + 1..];
+    let len = after
+        .iter()
+        .position(|&c| !domain_char(c))
+        .unwrap_or(after.len());
+    let domain = std::str::from_utf8(&after[..len])
+        .ok()?
+        .trim_end_matches(['.', '-']);
+    let labels: Vec<&str> = domain.split('.').collect();
+    let top = labels.last()?;
+    let named = top.len() >= 2 && top.bytes().all(|c| c.is_ascii_alphabetic());
+    if labels.len() < 2 || labels.iter().any(|label| label.is_empty()) || !named {
+        return None;
+    }
+    Some(start..at + 1 + domain.len())
 }
 
 /// Characters of hex, base64url and similar credentials.
@@ -304,10 +374,19 @@ enum Outcome {
     Dropped,
 }
 
-/// Counts a stripped report with `signature` received at `now` and stores it while the
-/// signature has fewer than [`MAX_SAMPLES`] stored; then deletes what is past the retention
-/// or over the stored maximum.
+/// Deletes what is past the retention, then counts a stripped report with `signature`
+/// received at `now` and stores it while the signature has fewer than [`MAX_SAMPLES`] and the
+/// last hour fewer than [`STORED_PER_HOUR`]. A new signature is dropped when the hour or the
+/// signatures table has no room. One transaction, so the count and the samples agree.
 fn insert(conn: &Connection, report: &Value, signature: &str, now: i64) -> Result<Outcome, Error> {
+    let tx = conn.unchecked_transaction()?;
+    let outcome = file(&tx, report, signature, now)?;
+    tx.commit()?;
+    Ok(outcome)
+}
+
+/// [`insert`] inside its transaction.
+fn file(conn: &Connection, report: &Value, signature: &str, now: i64) -> Result<Outcome, Error> {
     // APP_VERSION_CODE is a number, but older senders wrote it as a string.
     let code = match &report["APP_VERSION_CODE"] {
         Value::Number(code) => code.as_i64(),
@@ -319,40 +398,76 @@ fn insert(conn: &Connection, report: &Value, signature: &str, now: i64) -> Resul
         .map(str::to_string)
         .or(code.map(|code| code.to_string()));
 
-    // Count it first, so the retention below keeps a signature seen just now.
-    count(conn, signature, exception(report).as_deref(), version, now)?;
+    // Delete what is past the retention first, so it does not take up room below.
     prune(conn, now)?;
 
-    // Store it only while the signature has room for another sample.
+    // A new signature needs room in the hour and in the table; a known one is always counted.
+    let known: bool = conn.query_row(
+        "select exists (select 1 from crash_signatures where signature = ?1)",
+        [signature],
+        |r| r.get(0),
+    )?;
+    let stored_lately: i64 = conn.query_row(
+        "select count(*) from crash_reports where received_at > ?1",
+        [now - HOUR_MS],
+        |r| r.get(0),
+    )?;
+    let hour_has_room = stored_lately < STORED_PER_HOUR;
+    if !known && !(hour_has_room && make_room(conn)?) {
+        return Ok(Outcome::Dropped);
+    }
+    count(conn, signature, exception(report).as_deref(), version, now)?;
+
+    // Store it only while the hour and the signature have room for another sample.
     let samples: i64 = conn.query_row(
         "select count(*) from crash_reports where signature = ?1",
         [signature],
         |r| r.get(0),
     )?;
-    if samples < MAX_SAMPLES {
-        let android = report["ANDROID_VERSION"].as_str();
-        conn.execute(
-            "insert into crash_reports
-                 (received_at, signature, app_version_code, android_version, report)
-             values (?1, ?2, ?3, ?4, ?5)",
-            params![now, signature, code, android, report.to_string()],
-        )?;
+    if !hour_has_room || samples >= MAX_SAMPLES {
+        return Ok(Outcome::Counted);
     }
-
-    // Keep the table within the stored maximum.
+    let android = report["ANDROID_VERSION"].as_str();
     conn.execute(
-        "delete from crash_reports where id <= (
-             select id from crash_reports order by id desc limit 1 offset ?1
-         )",
-        [5_000],
+        "insert into crash_reports
+             (received_at, signature, app_version_code, android_version, report)
+         values (?1, ?2, ?3, ?4, ?5)",
+        params![now, signature, code, android, report.to_string()],
     )?;
     Ok(Outcome::Stored)
 }
 
-/// The first line of the report's stack trace: the exception and its message.
+/// Whether the signatures table has room for a new one. When it is full, the least recently
+/// seen signature without stored reports makes room; one with reports is never deleted for a
+/// new one, so a flood of new signatures cannot push out the samples already kept.
+fn make_room(conn: &Connection) -> Result<bool, Error> {
+    let rows: i64 = conn.query_row("select count(*) from crash_signatures", [], |r| r.get(0))?;
+    if rows < MAX_SIGNATURES {
+        return Ok(true);
+    }
+    let deleted = conn.execute(
+        "delete from crash_signatures where signature = (
+             select signature from crash_signatures
+             where not exists (
+                 select 1 from crash_reports
+                 where crash_reports.signature = crash_signatures.signature
+             )
+             order by last_seen, signature limit 1
+         )",
+        [],
+    )?;
+    Ok(deleted > 0)
+}
+
+/// The first line of the report's stack trace, the exception and its message, cut to at most
+/// [`MAX_EXCEPTION_BYTES`].
 fn exception(report: &Value) -> Option<String> {
-    let trace = report.get(STACK_TRACE)?.as_str()?;
-    trace.lines().next().map(str::to_string)
+    let line = report.get(STACK_TRACE)?.as_str()?.lines().next()?;
+    let mut end = line.len().min(MAX_EXCEPTION_BYTES);
+    while !line.is_char_boundary(end) {
+        end -= 1;
+    }
+    Some(line[..end].to_string())
 }
 
 /// Records that a report with `signature` from app `version` came at `now`.
@@ -385,21 +500,23 @@ fn count(
     versions.drain(..excess);
     let versions = serde_json::to_string(&versions)?;
 
-    // The first report of a signature names its exception; later ones only count.
+    // The latest report names the exception, so the line is no older than `last_seen` and
+    // is deleted with the row 30 days after it.
     conn.execute(
         "insert into crash_signatures
              (signature, first_seen, last_seen, count, exception, app_versions)
          values (?1, ?2, ?2, 1, ?3, ?4)
          on conflict (signature) do update
              set last_seen = excluded.last_seen, count = count + 1,
-                 app_versions = excluded.app_versions",
+                 exception = excluded.exception, app_versions = excluded.app_versions",
         params![signature, now, exception, versions],
     )?;
     Ok(())
 }
 
-/// Deletes reports older than [`RETENTION_DAYS`], and signatures without reports that were
-/// last seen that long ago; the worker calls it on every tick.
+/// Deletes reports and signatures last seen [`RETENTION_DAYS`] ago or earlier; the worker
+/// calls it on every tick. A signature's reports are never younger than its `last_seen`, so
+/// no report is left without its signature.
 pub(crate) fn prune(conn: &Connection, now: i64) -> Result<(), Error> {
     let cutoff = now - RETENTION_DAYS * DAY_MS;
     conn.execute(
@@ -407,9 +524,7 @@ pub(crate) fn prune(conn: &Connection, now: i64) -> Result<(), Error> {
         [cutoff],
     )?;
     conn.execute(
-        "delete from crash_signatures where last_seen <= ?1 and not exists (
-             select 1 from crash_reports where crash_reports.signature = crash_signatures.signature
-         )",
+        "delete from crash_signatures where last_seen <= ?1",
         [cutoff],
     )?;
     Ok(())
@@ -499,8 +614,8 @@ async fn receive(
         return StatusCode::BAD_REQUEST;
     };
 
-    // The signature comes from the report as sent, as the app computed it.
-    let signature = signature(&mut report);
+    // The signature comes from the stack trace as sent, as the app computes it.
+    let signature = signature(&report);
     strip(&mut report);
     match insert(&app.store.lock().unwrap().conn, &report, &signature, now) {
         Ok(_) => StatusCode::NO_CONTENT,
@@ -1042,11 +1157,13 @@ mod tests {
         };
         let old = NOW_MS - RETENTION_DAYS * DAY_MS;
 
-        // Three reports of one signature just under 30 days ago, one of another just after.
-        for _ in 0..3 {
+        // Two reports of one signature just under 30 days ago and a third a day later, one of
+        // another in between.
+        for _ in 0..2 {
             insert(&conn, &report(), SIGNATURE, old + 1).unwrap();
         }
         insert(&conn, &report(), OTHER, old + 2).unwrap();
+        insert(&conn, &report(), SIGNATURE, old + DAY_MS).unwrap();
         assert_eq!(reports(SIGNATURE), MAX_SAMPLES);
 
         // Seen again: its old samples are gone, the new report is kept, the count goes on.

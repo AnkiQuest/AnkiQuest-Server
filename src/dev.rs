@@ -760,7 +760,10 @@ mod tests {
         assert_eq!(a["last_seen"], NOW_MS + 3_000);
         assert_eq!(a["app_version"], "2.22.0");
         assert_eq!(a["app_versions"], serde_json::json!(["2.21.0", "2.22.0"]));
-        assert_eq!(a["exception"], "java.lang.A: first 0");
+        assert_eq!(
+            a["exception"], "java.lang.A: first 3",
+            "the latest report's"
+        );
         assert_eq!(a["reports"].as_array().unwrap().len(), 2);
         let b = &rows[1];
         assert_eq!(b["signature"], crate::crash_signature::of_trace(B));
