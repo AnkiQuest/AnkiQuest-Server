@@ -553,6 +553,27 @@ mod tests {
     }
 
     #[test]
+    fn a_desktop_built_database_still_gets_share_receipts() {
+        let dir = temp_dir("desktop-version-9");
+        drop(Store::open(&dir).unwrap());
+        {
+            // A version 9 database from the server built from AnkiQuest-Desktop: its step 9 was
+            // `earned_companions`, so the companion table is current but Undo receipts are not.
+            let conn = Connection::open(dir.join("ankiquest.db")).unwrap();
+            conn.execute_batch(
+                "alter table win_deliveries drop column send_until;
+                 drop table win_receipts;
+                 pragma user_version = 9;",
+            )
+            .unwrap();
+        }
+        let store = Store::open(&dir).unwrap();
+        assert_eq!(version(&store.conn), STEPS.len());
+        assert!(has_column(&store.conn, "win_deliveries", "send_until").unwrap());
+        cleanup(store, dir);
+    }
+
+    #[test]
     fn the_cow_can_be_stored_after_the_companion_table_is_rebuilt() {
         let dir = temp_dir("cow-companion");
         drop(Store::open(&dir).unwrap());
