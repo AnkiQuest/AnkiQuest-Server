@@ -1029,7 +1029,7 @@ mod tests {
     use crate::game::Event;
     use crate::notifications::Notification;
     use crate::test_support::cleanup;
-    use crate::test_support::{call, fixture, headers, sign_up};
+    use crate::test_support::{FixedClock, call, fixture, headers, sign_up};
     use crate::wins::tests::moment;
     use std::path::PathBuf;
 
@@ -2436,21 +2436,6 @@ mod tests {
         assert_eq!(store.notifications("cerro", 4_000).unwrap().len(), 1);
     }
 
-    struct FixedClock;
-
-    impl FixedClock {
-        fn at(now: i64) -> Self {
-            crate::app::fix_now_ms(Some(now));
-            Self
-        }
-    }
-
-    impl Drop for FixedClock {
-        fn drop(&mut self) {
-            crate::app::fix_now_ms(None);
-        }
-    }
-
     async fn send_to(app: &Arc<App>, win: i64, friend: &str) -> Value {
         let (status, sent) = share_as_hill(
             app,
@@ -2505,16 +2490,16 @@ mod tests {
     #[tokio::test]
     async fn clock_return_keeps_old_undo() {
         let at = 1_800_000_000_000;
-        let _clock = FixedClock::at(at);
+        let clock = FixedClock::at(at);
         let (app, path) = moments_app();
         let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
         let first = send_to(&app, win, "cerro").await;
         assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
 
         // A clock adjustment must not make a removed receipt reusable later.
-        crate::app::fix_now_ms(Some(at - 1_000));
+        clock.set(at - 1_000);
         let second = send_to(&app, win, "friend").await;
-        crate::app::fix_now_ms(Some(at));
+        clock.set(at);
         let third = send_to(&app, win, "cerro").await;
         assert_eq!(undo_send(&app, &first).await.1["retracted"], 0);
         assert_eq!(inbox(&app, "cerro").len(), 1);
@@ -2527,16 +2512,16 @@ mod tests {
     #[tokio::test]
     async fn backwards_clock_keeps_expiry() {
         let at = 1_800_000_000_000;
-        let _clock = FixedClock::at(at);
+        let clock = FixedClock::at(at);
         let (app, path) = moments_app();
         let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
         let first = send_to(&app, win, "cerro").await;
         let earlier = at - 1_000;
-        crate::app::fix_now_ms(Some(earlier));
+        clock.set(earlier);
         let second = send_to(&app, win, "friend").await;
         assert!(second["undo_until"].as_i64().unwrap() <= earlier + UNDO_MS);
 
-        crate::app::fix_now_ms(Some(earlier + UNDO_MS));
+        clock.set(earlier + UNDO_MS);
         assert_eq!(undo_send(&app, &second).await.0, StatusCode::CONFLICT);
         assert_eq!(inbox(&app, "friend").len(), 1);
         assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
@@ -2546,7 +2531,7 @@ mod tests {
     #[tokio::test]
     async fn collision_keeps_its_deadline() {
         let at = 1_800_000_000_000;
-        let _clock = FixedClock::at(at);
+        let clock = FixedClock::at(at);
         let (app, path) = moments_app();
         let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
         let first = send_to(&app, win, "cerro").await;
@@ -2554,7 +2539,7 @@ mod tests {
         let until = second["undo_until"].as_i64().unwrap();
         assert!(until < first["undo_until"].as_i64().unwrap());
 
-        crate::app::fix_now_ms(Some(until));
+        clock.set(until);
         assert_eq!(undo_send(&app, &second).await.0, StatusCode::CONFLICT);
         assert_eq!(inbox(&app, "friend").len(), 1);
         assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
@@ -2662,7 +2647,7 @@ mod tests {
     #[tokio::test]
     async fn a_moment_is_taken_back_one_send_at_a_time() {
         let at = 1_800_000_000_000;
-        let _clock = FixedClock::at(at);
+        let clock = FixedClock::at(at);
         let (app, path) = moments_app();
         let id = moment(&app.store.lock().unwrap(), "hill", "level:7");
         let send_to = |friend: &str| json!({"moment": {"win": id}, "to": {"friends": [friend]}});
@@ -2674,7 +2659,7 @@ mod tests {
 
         // Two sends of one win; Cerro's an hour before Friend's.
         let (_, first) = share_as_hill(&app, send_to("cerro")).await;
-        crate::app::fix_now_ms(Some(at + 60 * 60 * 1000));
+        clock.set(at + 60 * 60 * 1000);
         let (_, second) = share_as_hill(&app, send_to("friend")).await;
         let first = first["undo_until"].as_i64().unwrap();
         let second = second["undo_until"].as_i64().unwrap();
@@ -2697,7 +2682,7 @@ mod tests {
         // A send more than a day ago is too late, and `until` must be a time.
         let (_, late) = share_as_hill(&app, send_to("cerro")).await;
         let late = late["undo_until"].as_i64().unwrap();
-        crate::app::fix_now_ms(Some(late));
+        clock.set(late);
         assert_eq!(undo(late).await.0, StatusCode::CONFLICT);
         assert_eq!(inbox(&app, "cerro").len(), 1);
         let malformed = format!("/api/share/hill/{id}?until=soon");

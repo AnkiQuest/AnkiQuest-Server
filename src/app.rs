@@ -436,8 +436,7 @@ mod tests {
     #[test]
     fn standings_are_cached_until_the_player_changes_and_stay_small() {
         // Keep the fixture's last ten minutes within one study day.
-        let study_time = 1_793_183_400_000;
-        fix_now_ms(Some(study_time));
+        let _clock = FixedClock::at(STUDY_TIME);
 
         let (app, path) = fixture();
         with_reviews(&app, "cerro", 5);
@@ -459,6 +458,5 @@ mod tests {
         );
         assert!(second.today.reviews > first.today.reviews);
         cleanup(app, path);
-        fix_now_ms(None);
     }
 }

@@ -864,7 +864,7 @@ mod tests {
             ..plain_upload(reviews_at(first, count))
         };
 
-        crate::app::fix_now_ms(Some(at_berlin(20, 18, 0)));
+        let clock = FixedClock::at(at_berlin(20, 18, 0));
         upload_as(&app, "hill", study(in_berlin, at_berlin(20, 17, 0), 40)).await;
         upload_as(
             &app,
@@ -876,7 +876,7 @@ mod tests {
         assert_eq!(sunday.order, vec!["hill", "cerro"]);
         assert!(phone_rank(&app, "hill", &[]).await.change.is_none());
 
-        crate::app::fix_now_ms(Some(at_berlin(21, 9, 30)));
+        clock.set(at_berlin(21, 9, 30));
         assert!(app.week.start_of(now_ms()) > sunday.week);
         upload_as(
             &app,
@@ -884,10 +884,10 @@ mod tests {
             study(in_buenos_aires, at_berlin(21, 9, 10), 5),
         )
         .await;
-        crate::app::fix_now_ms(Some(at_berlin(21, 10, 30)));
+        clock.set(at_berlin(21, 10, 30));
         upload_as(&app, "hill", study(in_berlin, at_berlin(21, 10, 0), 2)).await;
 
-        crate::app::fix_now_ms(Some(at_berlin(21, 11, 0)));
+        clock.set(at_berlin(21, 11, 0));
         let monday = phone_rank(&app, "cerro", &["hill", "cerro"]).await;
         assert_eq!(monday.order, vec!["cerro", "hill"]);
         assert!(
@@ -903,7 +903,7 @@ mod tests {
             "nobody passed Hill this week either"
         );
 
-        crate::app::fix_now_ms(Some(at_berlin(21, 12, 0)));
+        clock.set(at_berlin(21, 12, 0));
         upload_as(&app, "hill", study(in_berlin, at_berlin(21, 11, 30), 30)).await;
         let climbed = phone_rank(&app, "hill", &["cerro", "hill"]).await;
         assert_eq!(climbed.order, vec!["hill", "cerro"]);
@@ -916,7 +916,6 @@ mod tests {
                 .title,
             "👑 Hill took the crown"
         );
-        crate::app::fix_now_ms(None);
         cleanup(app, path);
     }
 

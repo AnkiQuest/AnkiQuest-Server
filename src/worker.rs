@@ -674,8 +674,7 @@ mod tests {
     #[test]
     fn a_tick_turns_moments_into_wins_and_sends_automatic_ones_as_one_digest() {
         // Keep the fixture's last ten minutes within one study day.
-        let study_time = 1_793_183_400_000;
-        crate::app::fix_now_ms(Some(study_time));
+        let _clock = FixedClock::at(STUDY_TIME);
 
         let (app, path) = fixture();
         with_reviews(&app, "hill", 1);
@@ -741,14 +740,12 @@ mod tests {
         );
         drop(store);
         cleanup(app, path);
-        crate::app::fix_now_ms(None);
     }
 
     #[test]
     fn one_players_failure_does_not_stop_the_others_or_delivery() {
         // Keep the fixture's last ten minutes within one study day.
-        let study_time = 1_793_183_400_000;
-        crate::app::fix_now_ms(Some(study_time));
+        let _clock = FixedClock::at(STUDY_TIME);
 
         let (mut app, path) = fixture();
         let (base, server) = local_push(200);
@@ -783,7 +780,6 @@ mod tests {
         };
         assert!(seen("cerro") > 0 && seen("friend") > 0);
         cleanup(app, path);
-        crate::app::fix_now_ms(None);
     }
 
     async fn health_of(app: &Arc<App>) -> (StatusCode, serde_json::Value) {
@@ -800,7 +796,7 @@ mod tests {
     // so the ages it reports don't drift with however long the steps take.
     #[tokio::test(flavor = "current_thread")]
     async fn health_needs_a_recent_tick_and_a_usable_store() {
-        crate::app::fix_now_ms(Some(1_750_000_000_000));
+        let _clock = FixedClock::at(1_750_000_000_000);
         let (app, path) = fixture();
         app.heartbeat.beat(now_ms() - 30_000);
         assert_eq!(
@@ -825,7 +821,6 @@ mod tests {
         let (status, body) = health_of(&app).await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(body, serde_json::json!({"ok": false, "worker_age_s": 0}));
-        crate::app::fix_now_ms(None);
         cleanup(app, path);
     }
 

@@ -14,6 +14,42 @@ pub(crate) use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 pub(crate) use std::sync::{Arc, Mutex, RwLock};
 
+/// Wednesday 28 October 2026, 10:30 UTC: a time of day far from midnight, so a test's
+/// reviews from the last hours fall on one study day.
+pub(crate) const STUDY_TIME: i64 = 1_793_183_400_000;
+
+/// Pins [`now_ms`] on the calling thread until dropped. Dropping also runs when a test
+/// panics, so a failed test never leaves the clock pinned for the next one on its thread.
+pub(crate) struct FixedClock;
+
+impl FixedClock {
+    pub(crate) fn at(now: i64) -> Self {
+        crate::app::fix_now_ms(Some(now));
+        Self
+    }
+
+    /// Moves the pinned clock to `now`.
+    pub(crate) fn set(&self, now: i64) {
+        crate::app::fix_now_ms(Some(now));
+    }
+}
+
+impl Drop for FixedClock {
+    fn drop(&mut self) {
+        crate::app::fix_now_ms(None);
+    }
+}
+
+#[test]
+fn fixed_clock_resets_when_a_test_panics() {
+    let failed = std::panic::catch_unwind(|| {
+        let _clock = FixedClock::at(STUDY_TIME);
+        panic!("a failing test");
+    });
+    assert!(failed.is_err());
+    assert_ne!(now_ms(), STUDY_TIME);
+}
+
 /// A store in a new temporary directory; [`cleanup`] removes it.
 pub(crate) fn temporary_store() -> (Store, PathBuf) {
     static NEXT: AtomicU64 = AtomicU64::new(0);
