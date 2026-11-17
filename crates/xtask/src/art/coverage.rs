@@ -4,9 +4,9 @@
 //!
 //! A pose's master is `static/<folder>/<pose>.png`, or the older name
 //! [`RENAMES`] gives when that file is absent. A missing extension shows
-//! the first pose its fallback chain reaches that exists. It counts named
-//! masters only, not art the apps map from other files (such as Anki-tan's
-//! pack). Read-only.
+//! the first pose its fallback chain reaches that exists. Anki-tan's chibi
+//! masters stay below the same character's licensed folder. Runtime
+//! mappings are not inferred. Read-only.
 
 use std::fs;
 use std::path::Path;
@@ -25,7 +25,7 @@ const COMPANIONS: &[(&str, &str)] = &[
     ("ankilope", "ankilope"),
     ("cow", "cow"),
     ("anki_tan", "anki-tan"),
-    ("anki_tan_chibi", "anki-tan-chibi"),
+    ("anki_tan_chibi", "anki-tan/chibi"),
     ("leech_tan", "leech-tan"),
 ];
 
@@ -130,8 +130,7 @@ fn old_name(kind: &str) -> Option<&str> {
         .map(|(_, file)| *file)
 }
 
-/// Whether `folder` has a master for `kind`: under its own name first,
-/// then under its older name.
+/// Whether `folder` has a named master for `kind`.
 fn has(folder: &Path, kind: &str) -> bool {
     let png = |name: &str| folder.join(format!("{name}.png")).is_file();
     png(kind) || old_name(kind).is_some_and(png)
@@ -162,7 +161,7 @@ fn report(root: &Path, poses: &Poses) -> String {
         .map(|(_, folder)| root.join("static").join(folder))
         .collect();
     let mut out = String::from(
-        "Named masters in static/<folder>/ only. yes: master exists; (pose): missing, \
+        "Named masters. yes: master exists; (pose): missing, \
          the clients show that pose; **no**: missing\n\n",
     );
     out += "| image | kind |";
@@ -303,5 +302,40 @@ mod tests {
             let id = companion["companion"].as_str().unwrap();
             assert!(COMPANIONS.iter().any(|(known, _)| *known == id), "{id}");
         }
+    }
+
+    #[test]
+    fn bluma_has_the_complete_core() {
+        let poses = fixture();
+        let (_, folder) = COMPANIONS.iter().find(|(id, _)| *id == "cow").unwrap();
+        let folder = root().join("static").join(folder);
+        for pose in &poses.core {
+            assert_eq!(Status::Present, status(&folder, &poses, pose), "{pose}");
+        }
+    }
+
+    #[test]
+    fn counts_named_anki_tan_art() {
+        let poses = fixture();
+        let full = root().join("static/anki-tan");
+        for pose in ["asleep", "sad", "neglected", "frozen"] {
+            assert_eq!(Status::Present, status(&full, &poses, pose), "{pose}");
+        }
+
+        // Chibi's generated master stays under the same character licence.
+        let chibi = root().join("static/anki-tan/chibi");
+        assert_eq!(Status::Present, status(&chibi, &poses, "frozen"));
+        assert_eq!(
+            Status::Fallback("frozen".into()),
+            status(&chibi, &poses, "frozen_3")
+        );
+    }
+
+    #[test]
+    fn missing_masters_do_not_count() {
+        let checkout = tempfile::tempdir().unwrap();
+        let folder = checkout.path().join("static/anki-tan");
+        assert!(!has(&folder, "asleep"));
+        assert!(!has(&folder, "frozen"));
     }
 }

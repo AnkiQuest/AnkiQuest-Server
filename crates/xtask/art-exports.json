@@ -53,6 +53,22 @@
     {
       "file": "docs/branding/core-poses-2026-11/ankilope-core-review.png",
       "why": "Review sheet for Ankilope's core poses (#310); a record in the docs, not a copy anything shows."
+    },
+    {
+      "file": "static/anki-tan/archive/addon/anki_tan_sleeping.png",
+      "why": "Earlier name for the canonical anki_tan_asleep export. Preserved unchanged outside the app package. Unreferenced."
+    },
+    {
+      "file": "static/cow/archive/addon/bluma_sleeping.png",
+      "why": "Earlier name for the canonical bluma_asleep export. Preserved unchanged outside the app package. Unreferenced."
+    },
+    {
+      "file": "static/cow/archive/addon/bluma_celebrate.png",
+      "why": "Earlier name for the canonical bluma_happy export. Preserved unchanged outside the app package. Unreferenced."
+    },
+    {
+      "file": "static/anki-tan/archive/addon/anki_tan_neglected-three-blue-stars.png",
+      "why": "Earlier addon/art/anki_tan_neglected.png, replaced when export-addon-art wrote a new export of static/anki-tan/neglected.png. Unreferenced."
     }
   ]
 }
