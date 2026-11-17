@@ -30,6 +30,8 @@ these additions preserve bearer authentication and the existing notification arr
 | `settings_sync` | player preferences kept the same on every device, `/api/settings/{user}` (below) |
 | `share_cards` | server-drawn cards and public pages under `/w/` |
 | `share_moments` | `POST /api/share/{user}` `{ "moment", "to", "note" }` to chosen friends and groups, and `DELETE /api/share/{user}/{win}` (see [sharing.md](sharing.md)) |
+| `share_notification` | older owned celebrations and recaps without a saved win can use the moment recipient picker |
+| `share_deck_moment` | an explicitly shared deck completion can use the moment recipient picker and be saved as a win |
 | `share_undo_send` | `DELETE /api/share/{user}/{win}?until={undo_until}` takes back the one send that answered that `undo_until` (see [sharing.md](sharing.md)). Older servers ignore `until` and take back every send of that win from the last day |
 | `upload_first` | other players' study waits for the caller's first uploaded review; locked answers carry `X-Ankiquest-Locked` (below, seeing other players) |
 | `wins` | wins, sharing policies and `{ "win", "to" }` shares (see [sharing.md](sharing.md)) |
@@ -225,6 +227,23 @@ and per-send Undo. The rank must still match the circle's board and have positiv
 otherwise; `400` outside 1–3). The first explicit share keeps a daily snapshot, without
 automatic sending. Legacy `{ "place": 1 }` requests share that delivery path and retain their
 response shape; existing legacy deliveries still prevent duplicates. Example: `share_place.json`.
+
+With `share_notification`, `moment: { "notification": id }` also saves older owned celebration,
+challenge-completion and weekly-recap rows that have no win. Their original date, day, topic and
+words are retained. Other people's rows, messages and push-only rows remain `404`.
+Its saved win has kind `moment` and policy `private`. The legacy `{ "notification": id }`
+request still shares a private quote without creating a public link; the explicit picker keeps
+the normal non-deck win link behavior.
+
+With `share_deck_moment`, `moment: { "deck": { "id": "7", "name": "My Japanese" } }` saves an
+explicit completion once per deck and Anki day with the chosen name. It changes no automatic
+deck setting. Its win has kind `deck`, policy `private` and `link: null`; deck names never get a
+public card page. Direct `to: "link"` requests for deck wins return `404`. Both references support chosen friends/groups, private notes, authenticated owner pictures and per-send
+Undo, and recognize legacy deliveries to prevent duplicates. Deck-alert opt-outs still apply.
+Both manual kinds stay out of `/api/sharing` and cannot be set to automatic sharing. The legacy
+deck endpoint keeps its response and notification kind, but now reuses the first chosen name
+for that Anki day and respects sender mutes, as well as deck-alert opt-outs.
+Examples: `share_notification.json` and `share_deck_moment.json`.
 
 friends receive a `share` row from the player, with the title and body quoted in the player's own words ("I reached level 4 with 900 XP." rather than "You reached…") and the same `topic` (`place:N` for a place), so it shows the same art and can be replied to.
 

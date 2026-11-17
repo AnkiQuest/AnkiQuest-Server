@@ -60,9 +60,16 @@ pub fn initialize(conn: &Connection) -> Result<(), Error> {
              notification integer not null,
              day integer not null,
              automatic integer not null,
+             send_until integer,
              primary key (win, recipient)
          ) without rowid;
          create index if not exists win_deliveries_recipient on win_deliveries (recipient, day);
+         create table if not exists win_receipts (
+             win integer not null references wins(id) on delete cascade,
+             until integer not null,
+             created_at integer not null,
+             primary key (win, until)
+         ) without rowid;
          create table if not exists win_auto_queue (win integer primary key);
          create table if not exists sharing_settings (
              user text primary key,
@@ -94,6 +101,8 @@ pub(crate) fn kind_of(key: &str) -> Option<&'static str> {
         "place" => "place",
         "challenge" => "challenge",
         "companion" => "companion_unlocked",
+        "notification" => "moment",
+        "deck" => "deck",
         _ => return None,
     })
 }
@@ -311,6 +320,9 @@ pub(crate) struct Win {
 impl Win {
     /// The topic a notification about this win carries, so clients show the same art.
     pub(crate) fn topic(&self) -> String {
+        if self.kind == "moment" {
+            return self.stats["topic"].as_str().unwrap_or("moment").into();
+        }
         match (self.kind.as_str(), self.stats["place"].as_u64()) {
             ("place", Some(place)) => format!("place:{place}"),
             _ => self
@@ -375,7 +387,7 @@ pub(crate) fn by_token(conn: &Connection, token: &str) -> Option<(String, Win)> 
     .map(|win| (win.user.clone(), win))
 }
 
-/// The link token of `user`'s win `id`, made once; `None` when the win is not theirs.
+/// The link token of `user`'s win `id`, made once; `None` for decks or another player's win.
 pub(crate) fn ensure_link(
     conn: &Connection,
     user: &str,
@@ -384,6 +396,10 @@ pub(crate) fn ensure_link(
     let Some(win) = find(conn, user, id)? else {
         return Ok(None);
     };
+    // A deck's chosen name belongs only to its player and chosen recipients.
+    if win.kind == "deck" {
+        return Ok(None);
+    }
     if let Some(token) = win.link_token {
         return Ok(Some(token));
     }
@@ -687,7 +703,10 @@ async fn get_wins(
             Ok(Listed {
                 share_title: share(&share_title),
                 share_body: share(&share_body),
-                policy: policies.get(&win.kind).cloned().unwrap_or_default(),
+                policy: policies
+                    .get(&win.kind)
+                    .cloned()
+                    .unwrap_or_else(|| "private".into()),
                 link: win.link_token.as_deref().map(|token| link(&base, token)),
                 id: win.id,
                 created_at: win.created_at / 1000,

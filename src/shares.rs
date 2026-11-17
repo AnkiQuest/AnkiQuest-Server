@@ -83,6 +83,7 @@ enum MomentRef {
     Notification(i64),
     Conquest(i64),
     Place(usize),
+    Deck(crate::decks::Completion),
 }
 
 /// What a moment reference names.
@@ -90,7 +91,9 @@ enum Found {
     Win(i64),
     /// Nothing of the player's.
     Missing,
-    /// Something not ready to share: an older row, an unannounced conquest, or a place the
+    /// A malformed reference, such as a blank deck name.
+    Invalid,
+    /// Something not ready to share: an unannounced conquest, or a place the
     /// player no longer holds.
     Unkept,
 }
@@ -100,7 +103,8 @@ enum Found {
 struct MomentShared {
     /// Recipients who got it now; those who already had it or muted the player are left out.
     recipients: usize,
-    link: wins::Link,
+    /// Deck names stay private; only other kinds have public card links.
+    link: Option<wins::Link>,
     /// The win that was sent, to take it back with `DELETE /api/share/{user}/{win}`.
     win: i64,
     /// Until when (ms) it can be taken back, when it reached anyone; as `until`, it names this
@@ -114,8 +118,8 @@ struct MomentShared {
 enum Sends {
     /// Every send within [`UNDO_MS`].
     All,
-    /// The one send at this time (ms).
-    At(i64),
+    /// The one send with this durable receipt and deadline (ms).
+    Until(i64),
 }
 
 /// `DELETE /api/share/{user}/{win}?until=…`: the `undo_until` a send answered, to take back
@@ -138,6 +142,15 @@ pub(crate) enum Sending<'a> {
     Automatic,
     /// By hand, with the player's note when they wrote one.
     ByHand(Option<&'a str>),
+    /// A released client's explicit deck share, with its original completion wording.
+    Deck,
+}
+
+/// The committed delivery and, for one hand-sent win, its Undo receipt.
+#[derive(Default)]
+pub(crate) struct Delivery {
+    pub(crate) recipients: usize,
+    undo_until: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -153,23 +166,41 @@ struct Linked {
     text: String,
 }
 
-struct Win {
-    what: String,
+struct OldMoment {
+    title: String,
+    body: String,
     topic: Option<String>,
     key: String,
+    day: i64,
+    created_at: i64,
+}
+
+impl OldMoment {
+    fn keep(&self, conn: &Connection, user: &str) -> rusqlite::Result<Option<i64>> {
+        wins::keep(
+            conn,
+            user,
+            &self.key,
+            self.day,
+            self.created_at,
+            &self.title,
+            &self.body,
+            &json!({"topic": self.topic}),
+        )
+    }
 }
 
 /// One of the player's shareable notifications: the win it is about, or a quote of it.
 enum Notice {
     Win(i64),
-    Quote(Win),
+    Quote(OldMoment),
 }
 
 fn notification_win(store: &Store, user: &str, id: i64) -> Result<Option<Notice>, Error> {
     Ok(store
         .conn
         .query_row(
-            "select title, body, kind, topic, win_id from notifications
+            "select title, body, kind, topic, win_id, day, created_at from notifications
              where id = ?1 and recipient = ?2 and push_only = 0",
             params![id, user],
             |r| {
@@ -179,14 +210,13 @@ fn notification_win(store: &Store, user: &str, id: i64) -> Result<Option<Notice>
                 }
                 Ok(Some(match r.get(4)? {
                     Some(win) => Notice::Win(win),
-                    None => Notice::Quote(Win {
-                        what: {
-                            let (title, body) =
-                                wins::own_words(&r.get::<_, String>(0)?, &r.get::<_, String>(1)?);
-                            format!("{title}: “{body}”")
-                        },
+                    None => Notice::Quote(OldMoment {
+                        title: r.get(0)?,
+                        body: r.get(1)?,
                         topic: r.get(3)?,
                         key: format!("notification:{id}"),
+                        day: r.get(5)?,
+                        created_at: r.get(6)?,
                     }),
                 }))
             },
@@ -217,42 +247,28 @@ fn send(
     sender: &str,
     display: &str,
     friends: &[String],
-    win: &Win,
+    win: &OldMoment,
     now: i64,
 ) -> Result<usize, Error> {
-    let day = store.clock(sender)?.day(now);
-    let title = crate::i18n::english("🎉 {0} shared a win", &[display]);
-    let mut sent = 0;
-    for friend in friends {
-        if muted(&store.conn, friend, sender)? {
-            continue;
-        }
-        let key = format!("share:{sender}:{}", win.key);
-        if store.is_seen(friend, &key)? {
-            continue;
-        }
-        store.send_once_about(
-            &Outgoing {
-                to: friend,
-                from: sender,
-                title: &title,
-                body: &win.what,
-                kind: "share",
-            },
-            win.topic.as_deref(),
-            &key,
-            day,
-            now,
-            false,
-        )?;
-        sent += 1;
-    }
-    Ok(sent)
+    let id = win
+        .keep(&store.conn, sender)?
+        .ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+    let win = wins::win(&store.conn, sender, id).ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+    send_wins(
+        store,
+        sender,
+        display,
+        friends,
+        &[win],
+        Sending::ByHand(None),
+        now,
+    )
+    .map(|delivery| delivery.recipients)
 }
 
 /// Sends `wins` to each friend who has not had them, as one `share` row per friend: the win
 /// itself, or a digest of several. Automatic rows stop at the sender's daily cap per friend.
-/// Returns how many friends got a row.
+/// Returns how many friends got a row and its Undo receipt, when it has one.
 pub(crate) fn send_wins(
     store: &mut Store,
     sender: &str,
@@ -261,25 +277,40 @@ pub(crate) fn send_wins(
     wins: &[Moment],
     sending: Sending,
     now: i64,
-) -> Result<usize, Error> {
+) -> Result<Delivery, Error> {
     if wins.is_empty() {
-        return Ok(0);
+        return Ok(Delivery::default());
     }
     let (automatic, note) = match sending {
         Sending::Automatic => (true, None),
         Sending::ByHand(note) => (false, note),
+        Sending::Deck => (false, None),
     };
     let day = store.clock(sender)?.day(now);
     let cap = wins::sharing(&store.conn, sender)?.daily_cap;
     let tx = store.conn.transaction()?;
     let mut sent = 0;
+    let mut undo_until = None;
     for friend in friends {
         if muted(&tx, friend, sender)? {
             continue;
         }
         let mut fresh = Vec::new();
         for win in wins {
-            // Legacy sends may predate the saved win. Keep their read/cheer and Undo rules.
+            // Deck alerts stay optional even when the sender uses the common picker.
+            if win.kind == "deck"
+                && !tx.query_row(
+                    &format!(
+                        "select {}",
+                        crate::decks::completion_allowed_sql("?1", "?2")
+                    ),
+                    params![friend, sender],
+                    |r| r.get::<_, bool>(0),
+                )?
+            {
+                continue;
+            }
+            // Legacy sends may predate the saved win. Keep their read, cheer, reply and Undo rules.
             let told = legacy_key(sender, &win.key);
             if !tx.query_row(
                 "select exists (select 1 from win_deliveries where win = ?1 and recipient = ?2)
@@ -305,7 +336,19 @@ pub(crate) fn send_wins(
                 continue;
             }
         }
-        let (title, body) = if let [win] = fresh.as_slice() {
+        // Allocate only for a send that reaches someone, in the delivery transaction.
+        if !automatic && wins.len() == 1 && undo_until.is_none() {
+            undo_until = Some(receipt(&tx, first.id, now)?);
+        }
+        let (title, body) = if matches!(sending, Sending::Deck) {
+            (
+                "Deck complete".into(),
+                format!(
+                    "{display} has finished their {} studies for today.",
+                    first.stats["deck"].as_str().unwrap_or_default()
+                ),
+            )
+        } else if let [win] = fresh.as_slice() {
             let (title, body) = wins::shared_words(&tx, win)?;
             (
                 crate::i18n::english("🎉 {0} shared a win", &[display]),
@@ -328,7 +371,11 @@ pub(crate) fn send_wins(
                 from: sender,
                 title: &title,
                 body: &body,
-                kind: "share",
+                kind: if matches!(sending, Sending::Deck) {
+                    "completion"
+                } else {
+                    "share"
+                },
             },
             day,
             now,
@@ -340,9 +387,9 @@ pub(crate) fn send_wins(
         )?;
         for win in &fresh {
             tx.execute(
-                "insert into win_deliveries (win, recipient, notification, day, automatic)
-                 values (?1, ?2, ?3, ?4, ?5)",
-                params![win.id, friend, id, day, automatic],
+                "insert into win_deliveries (win, recipient, notification, day, automatic, send_until)
+                 values (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![win.id, friend, id, day, automatic, undo_until],
             )?;
             tx.execute(
                 "update wins set shared_friends = shared_friends + 1 where id = ?1",
@@ -352,13 +399,42 @@ pub(crate) fn send_wins(
         sent += 1;
     }
     tx.commit()?;
-    Ok(sent)
+    Ok(Delivery {
+        recipients: sent,
+        undo_until,
+    })
+}
+
+/// Reserve a receipt forever for this win, even after its deliveries are undone. Moving a
+/// collision earlier by one millisecond keeps the released deadline field within one day.
+fn receipt(conn: &Connection, win: i64, now: i64) -> Result<i64, Error> {
+    let mut until = now.checked_add(UNDO_MS).ok_or("invalid share time")?;
+    loop {
+        let inserted = conn.execute(
+            "insert or ignore into win_receipts (win, until, created_at) values (?1, ?2, ?3)",
+            params![win, until, now],
+        )?;
+        if inserted > 0 {
+            return Ok(until);
+        }
+        until = until.checked_sub(1).ok_or("no Undo receipt available")?;
+        if until <= now {
+            return Err("no Undo receipt available".into());
+        }
+    }
 }
 
 /// The pre-upgrade delivery marker for a moment whose legacy route used a separate ledger.
 fn legacy_key(sender: &str, key: &str) -> Option<String> {
     if let Some(at) = key.strip_prefix("conquered:") {
         return Some(format!("conquest:{sender}:{at}"));
+    }
+    if key.starts_with("notification:") {
+        return Some(format!("share:{sender}:{key}"));
+    }
+    if let Some(deck) = key.strip_prefix("deck:") {
+        let (day, id) = deck.split_once(':')?;
+        return Some(format!("deck-share:{sender}:{id}:{day}"));
     }
     let (day, place) = key.strip_prefix("place:current:")?.split_once(':')?;
     Some(format!("share:{sender}:place:{place}:{day}"))
@@ -461,6 +537,7 @@ pub(crate) fn share_automatically(
         Sending::Automatic,
         now,
     )
+    .map(|delivery| delivery.recipients)
 }
 
 /// The text a player pastes along with a win's link.
@@ -492,28 +569,29 @@ fn share_win(
         return Err(StatusCode::BAD_REQUEST);
     }
     let store = app.store.lock().unwrap();
+    if to == "friends" {
+        let friends = friends(app, &store.conn, user).map_err(store_error)?;
+        drop(store);
+        let (delivery, link) = deliver(app, user, id, &friends, None, headers, now_ms())?;
+        return Ok(json!({ "recipients": delivery.recipients, "link": link }));
+    }
+
     let token = wins::ensure_link(&store.conn, user, id)
         .map_err(store_error)?
         .ok_or(StatusCode::NOT_FOUND)?;
     let win = wins::win(&store.conn, user, id).ok_or(StatusCode::NOT_FOUND)?;
     let link = wins::link(&base_url(app, headers), &token);
-    if to == "link" {
-        let language = crate::i18n::owned(headers, &store, user).map_err(store_error)?;
-        let text = invitation(&store.conn, &win, &link.url, &language).map_err(store_error)?;
-        return Ok(json!(Linked {
-            url: link.url,
-            image: link.image,
-            text,
-        }));
-    }
-    let friends = friends(app, &store.conn, user).map_err(store_error)?;
-    drop(store);
-    let (recipients, link) = deliver(app, user, id, &friends, None, headers, now_ms())?;
-    Ok(json!({ "recipients": recipients, "link": link }))
+    let language = crate::i18n::owned(headers, &store, user).map_err(store_error)?;
+    let text = invitation(&store.conn, &win, &link.url, &language).map_err(store_error)?;
+    Ok(json!(Linked {
+        url: link.url,
+        image: link.image,
+        text,
+    }))
 }
 
 /// Sends `user`'s win `id` by hand to `friends`, with `note`. Answers how many got it now, and
-/// its link, which friends see the card through.
+/// its link, which friends see the card through. Deck names never get a public link.
 fn deliver(
     app: &App,
     user: &str,
@@ -522,13 +600,11 @@ fn deliver(
     note: Option<&str>,
     headers: &HeaderMap,
     now: i64,
-) -> Result<(usize, wins::Link), StatusCode> {
+) -> Result<(Delivery, Option<wins::Link>), StatusCode> {
     let mut store = app.store.lock().unwrap();
-    let token = wins::ensure_link(&store.conn, user, id)
-        .map_err(store_error)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let token = wins::ensure_link(&store.conn, user, id).map_err(store_error)?;
     let win = wins::win(&store.conn, user, id).ok_or(StatusCode::NOT_FOUND)?;
-    let link = wins::link(&base_url(app, headers), &token);
+    let link = token.map(|token| wins::link(&base_url(app, headers), &token));
     let display = app.display(user);
     let sent = send_wins(
         &mut store,
@@ -544,7 +620,7 @@ fn deliver(
 }
 
 /// The win `moment` names among `user`'s own.
-fn resolve(app: &App, user: &str, moment: &MomentRef) -> Result<Found, Error> {
+fn resolve(app: &App, user: &str, moment: &MomentRef, now: i64) -> Result<Found, Error> {
     let found = |id: Option<i64>| id.map_or(Found::Missing, Found::Win);
     let store = app.store.lock().unwrap();
     Ok(match moment {
@@ -552,7 +628,7 @@ fn resolve(app: &App, user: &str, moment: &MomentRef) -> Result<Found, Error> {
         MomentRef::Key(key) => found(wins::id_of(&store.conn, user, key)?),
         MomentRef::Notification(id) => match notification_win(&store, user, *id)? {
             Some(Notice::Win(win)) => Found::Win(win),
-            Some(Notice::Quote(_)) => Found::Unkept,
+            Some(Notice::Quote(win)) => found(win.keep(&store.conn, user)?),
             None => Found::Missing,
         },
         MomentRef::Conquest(at) => {
@@ -566,8 +642,11 @@ fn resolve(app: &App, user: &str, moment: &MomentRef) -> Result<Found, Error> {
         }
         MomentRef::Place(place) => {
             drop(store);
-            place_win(app, user, *place, now_ms())?.map_or(Found::Unkept, Found::Win)
+            place_win(app, user, *place, now)?.map_or(Found::Unkept, Found::Win)
         }
+        MomentRef::Deck(deck) => deck
+            .keep(&store, user, now)?
+            .map_or(Found::Invalid, Found::Win),
     })
 }
 
@@ -663,19 +742,21 @@ fn share_moment(
     let recipients = recipients(app, &app.store.lock().unwrap().conn, user, to)
         .map_err(store_error)?
         .ok_or(StatusCode::BAD_REQUEST)?;
-    let win = match resolve(app, user, moment).map_err(store_error)? {
+    // Use one instant for the saved Anki day, delivery and its Undo deadline.
+    let now = now_ms();
+    let win = match resolve(app, user, moment, now).map_err(store_error)? {
         Found::Win(id) => id,
         Found::Missing => return Err(StatusCode::NOT_FOUND),
+        Found::Invalid => return Err(StatusCode::BAD_REQUEST),
         Found::Unkept => return Err(StatusCode::CONFLICT),
     };
 
-    let now = now_ms();
     let (sent, link) = deliver(app, user, win, &recipients, note.as_deref(), headers, now)?;
     Ok(json!(MomentShared {
-        recipients: sent,
+        recipients: sent.recipients,
         link,
         win,
-        undo_until: (sent > 0).then_some(now + UNDO_MS),
+        undo_until: sent.undo_until,
     }))
 }
 
@@ -730,7 +811,8 @@ async fn share(
                 .ok_or(StatusCode::CONFLICT)?;
             let friends =
                 friends(&app, &app.store.lock().unwrap().conn, &user).map_err(store_error)?;
-            let (recipients, _) = deliver(&app, &user, id, &friends, None, &headers, now)?;
+            let (delivery, _) = deliver(&app, &user, id, &friends, None, &headers, now)?;
+            let recipients = delivery.recipients;
             return Ok(Json(json!(Shared { recipients })));
         }
         _ => return Err(StatusCode::BAD_REQUEST),
@@ -754,6 +836,7 @@ struct SentRow {
     recipient: String,
     /// Ms.
     sent_at: i64,
+    until: i64,
     /// Unread, not cheered or answered, and about this win alone.
     untouched: bool,
 }
@@ -763,15 +846,20 @@ fn sent_rows(conn: &Connection, win: i64) -> rusqlite::Result<Vec<SentRow>> {
         "select d.notification, d.recipient, n.created_at,
                 n.read_at is null and n.replied = 0
                 and not exists (select 1 from reactions r where r.notification = n.id)
-                and (select count(*) from win_deliveries o where o.notification = n.id) = 1
+                and (select count(*) from win_deliveries o where o.notification = n.id) = 1,
+                d.send_until
          from win_deliveries d join notifications n on n.id = d.notification
          where d.win = ?1 and d.automatic = 0",
     )?
     .query_map([win], |r| {
+        let sent_at: i64 = r.get(2)?;
         Ok(SentRow {
             notification: r.get(0)?,
             recipient: r.get(1)?,
-            sent_at: r.get(2)?,
+            sent_at,
+            until: r
+                .get::<_, Option<i64>>(4)?
+                .unwrap_or(sent_at.saturating_add(UNDO_MS)),
             untouched: r.get(3)?,
         })
     })?
@@ -789,10 +877,13 @@ fn retract(
 ) -> Result<Option<usize>, Error> {
     let tx = conn.transaction()?;
     let mut rows = sent_rows(&tx, win)?;
-    if let Sends::At(at) = sends {
-        rows.retain(|row| row.sent_at == at);
+    if let Sends::Until(until) = sends {
+        rows.retain(|row| row.until == until);
     }
-    let recent: Vec<&SentRow> = rows.iter().filter(|r| now < r.sent_at + UNDO_MS).collect();
+    let recent: Vec<&SentRow> = rows
+        .iter()
+        .filter(|r| now < r.until && now < r.sent_at.saturating_add(UNDO_MS))
+        .collect();
     if recent.is_empty() && !rows.is_empty() {
         return Ok(None);
     }
@@ -829,7 +920,10 @@ async fn unshare(
     require_owner(&app, &user, &headers)?;
     let sends = match query.until {
         None => Sends::All,
-        Some(until) => Sends::At(until.checked_sub(UNDO_MS).ok_or(StatusCode::BAD_REQUEST)?),
+        Some(until) => {
+            until.checked_sub(UNDO_MS).ok_or(StatusCode::BAD_REQUEST)?;
+            Sends::Until(until)
+        }
     };
     let mut store = app.store.lock().unwrap();
     wins::win(&store.conn, &user, win).ok_or(StatusCode::NOT_FOUND)?;
@@ -954,7 +1048,7 @@ mod tests {
         store.notifications(user, 2_000).unwrap()[0].id
     }
 
-    fn quote(store: &Store, user: &str, id: i64) -> Option<Win> {
+    fn quote(store: &Store, user: &str, id: i64) -> Option<OldMoment> {
         match notification_win(store, user, id).unwrap()? {
             Notice::Quote(win) => Some(win),
             Notice::Win(_) => None,
@@ -1038,6 +1132,7 @@ mod tests {
                 3_000,
             )
             .unwrap()
+            .recipients
         };
         assert_eq!(share(&mut store), 1);
         assert_eq!(share(&mut store), 0, "each win reaches each friend once");
@@ -1091,7 +1186,8 @@ mod tests {
                 Sending::Automatic,
                 3_000
             )
-            .unwrap(),
+            .unwrap()
+            .recipients,
             1
         );
         let got = store.notifications("cerro", 3_000).unwrap();
@@ -1111,7 +1207,8 @@ mod tests {
                 Sending::Automatic,
                 4_000
             )
-            .unwrap(),
+            .unwrap()
+            .recipients,
             0,
             "the cap counts rows, and one was sent today"
         );
@@ -1125,7 +1222,8 @@ mod tests {
                 Sending::ByHand(None),
                 4_000
             )
-            .unwrap(),
+            .unwrap()
+            .recipients,
             1,
             "a win over the cap can still be shared by hand"
         );
@@ -1514,11 +1612,7 @@ mod tests {
             0
         );
 
-        // Move the first send back to distinguish receipts without a timing dependency.
-        sql(
-            &app,
-            "update notifications set created_at = created_at - 1000 where recipient = 'cerro'",
-        );
+        // The actual second receipt identifies its send without rewriting timestamps.
         let undo = format!("/api/share/hill/{id}?until={}", again["undo_until"]);
         assert_eq!(
             call(&app, "DELETE", &undo, "hill-secret", Value::Null).await,
@@ -1603,15 +1697,22 @@ mod tests {
             let mut store = app.store.lock().unwrap();
             let now = now_ms();
             let day = store.clock("hill").unwrap().day(now);
-            let old = Win {
-                what: "#1 on this week's leaderboard".into(),
-                topic: Some("place:1".into()),
-                key: format!("place:1:{day}"),
-            };
-            assert_eq!(
-                send(&mut store, "hill", "Hill", &strings(&["cerro"]), &old, now).unwrap(),
-                1
-            );
+            store
+                .send_once_about(
+                    &Outgoing {
+                        to: "cerro",
+                        from: "hill",
+                        title: "Hill shared a win",
+                        body: "#1 on this week's leaderboard",
+                        kind: "share",
+                    },
+                    Some("place:1"),
+                    &format!("share:hill:place:1:{day}"),
+                    day,
+                    now,
+                    false,
+                )
+                .unwrap();
         }
         let (status, sent) = share_as_hill(&app, place_to(1, json!("circle"))).await;
         assert_eq!(status, StatusCode::OK);
@@ -1731,7 +1832,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_row_names_its_win_and_an_older_row_has_none_to_send() {
+    async fn a_row_names_its_win() {
         let (app, path) = moments_app();
         let row = win_for(&mut app.store.lock().unwrap(), "hill");
         let win = app
@@ -1746,8 +1847,455 @@ mod tests {
         let (status, sent) = share_as_hill(&app, body.clone()).await;
         assert_eq!((status, sent["win"].as_i64()), (StatusCode::OK, Some(win)));
         assert_eq!(inbox(&app, "friend")[0].win, Some(win));
-        sql(&app, "update notifications set win_id = null");
-        assert_eq!(share_as_hill(&app, body).await.0, StatusCode::CONFLICT);
+        cleanup(app, path);
+    }
+
+    fn old_notice(app: &App, kind: &str) -> i64 {
+        let store = app.store.lock().unwrap();
+        let at = now_ms() - 10 * crate::game::DAY_MS;
+        let day = store.clock("hill").unwrap().day(at);
+        let id = insert_notification(
+            &store.conn,
+            &Outgoing {
+                to: "hill",
+                from: "",
+                title: "Your weekly study recap",
+                body: "You have studied 30 days in a row.",
+                kind,
+            },
+            day,
+            at,
+            false,
+        )
+        .unwrap();
+        store
+            .conn
+            .execute(
+                "update notifications set topic = 'streak' where id = ?1",
+                [id],
+            )
+            .unwrap();
+        id
+    }
+
+    #[tokio::test]
+    async fn old_moments_keep_words_and_undo() {
+        let (app, path) = moments_app();
+        for kind in SHAREABLE {
+            let row = old_notice(&app, kind);
+            let body = json!({"moment": {"notification": row}, "to": {"friends": ["cerro"]}, "note": "Still proud of this"});
+            let (status, sent) = share_as_hill(&app, body.clone()).await;
+            assert_eq!(status, StatusCode::OK, "{kind}: {sent}");
+            let id = sent["win"].as_i64().unwrap();
+            {
+                let store = app.store.lock().unwrap();
+                let win = wins::win(&store.conn, "hill", id).unwrap();
+                let (at, day): (i64, i64) = store
+                    .conn
+                    .query_row(
+                        "select created_at, day from notifications where id = ?1",
+                        [row],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .unwrap();
+                assert_eq!((win.created_at, win.day), (at, day));
+                assert_eq!(
+                    wins::shared_words(&store.conn, &win).unwrap(),
+                    (
+                        "My weekly study recap".into(),
+                        "I have studied 30 days in a row.".into()
+                    )
+                );
+                assert_eq!(win.topic(), "streak");
+                assert!(!win.stats.to_string().contains("Still proud"));
+                assert!(
+                    wins::take_automatic(&store.conn, "hill")
+                        .unwrap()
+                        .is_empty()
+                );
+            }
+            assert_eq!(share_as_hill(&app, body).await.1["recipients"], 0);
+            assert!(inbox(&app, "friend").is_empty());
+            assert_eq!(
+                inbox(&app, "cerro")[0].note.as_deref(),
+                Some("Still proud of this")
+            );
+            let undo = format!("/api/share/hill/{id}?until={}", sent["undo_until"]);
+            assert_eq!(
+                call(&app, "DELETE", &undo, "hill-secret", Value::Null).await,
+                (StatusCode::OK, json!({"retracted": 1}))
+            );
+            assert!(inbox(&app, "cerro").is_empty());
+        }
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn old_moments_require_ownership() {
+        let (app, path) = moments_app();
+        let row = old_notice(&app, "celebration");
+        let body = json!({"moment": {"notification": row}, "to": "circle"});
+        assert_eq!(
+            call(
+                &app,
+                "POST",
+                "/api/share/cerro",
+                "cerro-secret",
+                body.clone()
+            )
+            .await
+            .0,
+            StatusCode::NOT_FOUND
+        );
+        for kind in ["message", "reply", "nudge", "share", "completion"] {
+            let row = old_notice(&app, kind);
+            assert_eq!(
+                share_as_hill(
+                    &app,
+                    json!({"moment": {"notification": row}, "to": "circle"})
+                )
+                .await
+                .0,
+                StatusCode::NOT_FOUND
+            );
+        }
+        sql(&app, "update notifications set push_only = 1");
+        assert_eq!(share_as_hill(&app, body).await.0, StatusCode::NOT_FOUND);
+        let count: i64 = app
+            .store
+            .lock()
+            .unwrap()
+            .conn
+            .query_row("select count(*) from wins", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn old_notice_routes_share_delivery() {
+        let (app, path) = moments_app();
+        let row = old_notice(&app, "reminder_weekly_recap");
+        let body = json!({"moment": {"notification": row}, "to": {"friends": ["cerro"]}});
+        assert_eq!(share_as_hill(&app, body.clone()).await.1["recipients"], 1);
+        assert_eq!(
+            share_as_hill(&app, json!({"notification": row})).await.1["recipients"],
+            1
+        );
+        assert_eq!(share_as_hill(&app, body).await.1["recipients"], 0);
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert_eq!(inbox(&app, "friend").len(), 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn old_markers_keep_their_rows() {
+        for kind in ["notification", "deck"] {
+            let (app, path) = moments_app();
+            let row = old_notice(&app, "celebration");
+            let day = app
+                .store
+                .lock()
+                .unwrap()
+                .clock("hill")
+                .unwrap()
+                .day(now_ms());
+            let (reference, key) = if kind == "notification" {
+                (
+                    json!({"notification": row}),
+                    format!("share:hill:notification:{row}"),
+                )
+            } else {
+                (
+                    deck_to(json!("circle"))["moment"].clone(),
+                    format!("deck-share:hill:7:{day}"),
+                )
+            };
+            // This row predates the shared delivery ledger and belongs to its old action.
+            app.store
+                .lock()
+                .unwrap()
+                .send_once(
+                    &Outgoing {
+                        to: "cerro",
+                        from: "hill",
+                        title: "An older share",
+                        body: "Keep this message",
+                        kind: "share",
+                    },
+                    &key,
+                    day,
+                    now_ms() - 1000,
+                    false,
+                )
+                .unwrap();
+            let (status, sent) =
+                share_as_hill(&app, json!({"moment": reference, "to": "circle"})).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(sent["recipients"], 1, "{kind}");
+            assert_eq!(inbox(&app, "cerro").len(), 1);
+            let undo = format!(
+                "/api/share/hill/{}?until={}",
+                sent["win"], sent["undo_until"]
+            );
+            assert_eq!(
+                call(&app, "DELETE", &undo, "hill-secret", Value::Null)
+                    .await
+                    .1["retracted"],
+                1
+            );
+            assert!(inbox(&app, "friend").is_empty());
+            assert_eq!(inbox(&app, "cerro")[0].body, "Keep this message");
+            cleanup(app, path);
+        }
+    }
+
+    #[tokio::test]
+    async fn extra_moments_have_pictures() {
+        let (app, path) = moments_app();
+        let row = old_notice(&app, "reminder_weekly_recap");
+        for reference in [
+            json!({"notification": row}),
+            deck_to(json!("circle"))["moment"].clone(),
+        ] {
+            let (_, sent) = share_as_hill(&app, json!({"moment": reference, "to": "circle"})).await;
+            let picture = format!("/api/wins/hill/{}/card.png", sent["win"]);
+            assert_eq!(
+                call(&app, "GET", &picture, "hill-secret", Value::Null)
+                    .await
+                    .0,
+                StatusCode::OK
+            );
+        }
+        cleanup(app, path);
+    }
+
+    fn deck_to(to: Value) -> Value {
+        json!({"moment": {"deck": {"id": "7", "name": "My Japanese"}}, "to": to})
+    }
+
+    #[tokio::test]
+    async fn legacy_quotes_stay_private() {
+        let (app, path) = moments_app();
+        for kind in SHAREABLE {
+            let row = old_notice(&app, kind);
+            let (status, sent) = share_as_hill(&app, json!({"notification": row})).await;
+            assert_eq!((status, sent), (StatusCode::OK, json!({"recipients": 2})));
+            let store = app.store.lock().unwrap();
+            let id = wins::id_of(&store.conn, "hill", &format!("notification:{row}"))
+                .unwrap()
+                .unwrap();
+            let win = wins::win(&store.conn, "hill", id).unwrap();
+            assert!(
+                win.link_token.is_none(),
+                "the released button only sends to friends"
+            );
+        }
+        assert!(inbox(&app, "cerro").iter().all(|row| row.image.is_none()));
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn deck_friends_stay_private() {
+        let (app, path) = moments_app();
+        let (status, sent) = share_as_hill(&app, deck_to(json!({"friends": ["cerro"]}))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(sent["recipients"], 1);
+        assert_eq!(sent["link"], Value::Null, "a deck name has no public page");
+        {
+            let store = app.store.lock().unwrap();
+            let win = wins::win(&store.conn, "hill", sent["win"].as_i64().unwrap()).unwrap();
+            assert!(win.link_token.is_none());
+            assert_eq!(win.stats["deck"], "My Japanese");
+        }
+        let row = inbox(&app, "cerro").remove(0);
+        assert!(row.body.contains("My Japanese"));
+        assert!(row.image.is_none());
+        assert!(inbox(&app, "friend").is_empty());
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn deck_links_are_rejected() {
+        let (app, path) = moments_app();
+        crate::test_support::used_app(&app, &["hill", "cerro", "friend"]);
+        let legacy = json!({"id": "7", "name": "Private studies", "recipients": ["cerro"]});
+        assert_eq!(
+            call(&app, "POST", "/api/decks/hill/share", "hill-secret", legacy)
+                .await
+                .0,
+            StatusCode::OK
+        );
+        let id = inbox(&app, "cerro")[0].win.unwrap();
+        assert_eq!(
+            share_as_hill(&app, json!({"win": id, "to": "link"}))
+                .await
+                .0,
+            StatusCode::NOT_FOUND,
+            "saving an explicitly shared completion does not publish its name"
+        );
+        let (status, sent) = share_as_hill(&app, json!({"win": id, "to": "friends"})).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(sent["recipients"], 1);
+        assert_eq!(sent["link"], Value::Null);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn manual_kinds_use_private_policy() {
+        let (app, path) = moments_app();
+        let row = old_notice(&app, "celebration");
+        assert_eq!(
+            share_as_hill(&app, json!({"notification": row})).await.0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            share_as_hill(&app, deck_to(json!("circle"))).await.0,
+            StatusCode::OK
+        );
+        let (status, listed) =
+            call(&app, "GET", "/api/wins/hill", "hill-secret", Value::Null).await;
+        assert_eq!(status, StatusCode::OK);
+        let rows = listed["wins"].as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+        for kind in ["moment", "deck"] {
+            let win = rows.iter().find(|win| win["kind"] == kind).unwrap();
+            assert_eq!(win["policy"], "private", "{kind} is shared only by hand");
+            assert!(win["shared_with_friends"].as_bool().unwrap());
+        }
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn deck_moment_keeps_chosen_name() {
+        let (app, path) = moments_app();
+        let mut body = deck_to(json!({"friends": ["cerro"]}));
+        body["note"] = "Finished before lunch".into();
+        let (status, sent) = share_as_hill(&app, body.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{sent}");
+        assert_eq!(sent["recipients"], 1);
+        let id = sent["win"].as_i64().unwrap();
+        {
+            let store = app.store.lock().unwrap();
+            let win = wins::win(&store.conn, "hill", id).unwrap();
+            assert_eq!(win.kind, "deck");
+            assert_eq!(win.stats["deck"], "My Japanese");
+            assert!(win.body.contains("My Japanese"));
+            assert!(!win.stats.to_string().contains("before lunch"));
+            assert!(store.decks("hill").unwrap().is_empty());
+            assert!(
+                wins::take_automatic(&store.conn, "hill")
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+        assert_eq!(inbox(&app, "cerro")[0].win, Some(id));
+        assert_eq!(
+            inbox(&app, "cerro")[0].note.as_deref(),
+            Some("Finished before lunch")
+        );
+        assert!(inbox(&app, "friend").is_empty());
+        assert_eq!(share_as_hill(&app, body).await.1["recipients"], 0);
+        let undo = format!("/api/share/hill/{id}?until={}", sent["undo_until"]);
+        assert_eq!(
+            call(&app, "DELETE", &undo, "hill-secret", Value::Null).await,
+            (StatusCode::OK, json!({"retracted": 1}))
+        );
+        assert!(inbox(&app, "cerro").is_empty());
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn deck_routes_share_delivery() {
+        let (app, path) = moments_app();
+        crate::test_support::used_app(&app, &["hill", "cerro", "friend"]);
+        let legacy = json!({"id": "7", "name": "My Japanese", "recipients": ["cerro"]});
+        assert_eq!(
+            call(&app, "POST", "/api/decks/hill/share", "hill-secret", legacy).await,
+            (StatusCode::OK, json!({"recipients": 1}))
+        );
+        let (status, sent) = share_as_hill(&app, deck_to(json!("circle"))).await;
+        assert_eq!(status, StatusCode::OK, "{sent}");
+        assert_eq!(sent["recipients"], 1);
+        let id = sent["win"].as_i64().unwrap();
+        assert_eq!(inbox(&app, "cerro")[0].win, Some(id));
+        assert_eq!(inbox(&app, "cerro")[0].kind, "completion");
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert_eq!(inbox(&app, "friend").len(), 1);
+        sql(
+            &app,
+            "update notifications set created_at = created_at - 1000 where recipient = 'cerro'",
+        );
+        let undo = format!("/api/share/hill/{id}?until={}", sent["undo_until"]);
+        assert_eq!(
+            call(&app, "DELETE", &undo, "hill-secret", Value::Null)
+                .await
+                .1,
+            json!({"retracted": 1})
+        );
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn new_deck_share_prevents_repeat() {
+        let (app, path) = moments_app();
+        crate::test_support::used_app(&app, &["hill", "cerro", "friend"]);
+        let (_, sent) = share_as_hill(&app, deck_to(json!({"friends": ["cerro"]}))).await;
+        let legacy =
+            json!({"id": "7", "name": "A changed name", "recipients": ["cerro", "friend"]});
+        assert_eq!(
+            call(&app, "POST", "/api/decks/hill/share", "hill-secret", legacy).await,
+            (StatusCode::OK, json!({"recipients": 1})),
+        );
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        let got = inbox(&app, "friend").remove(0);
+        assert_eq!(got.win, sent["win"].as_i64());
+        assert_eq!(got.kind, "completion");
+        assert!(
+            got.body.contains("My Japanese"),
+            "the first chosen name is retained"
+        );
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn deck_moment_checks_input_and_mutes() {
+        let (app, path) = moments_app();
+        for (id, name) in [
+            ("".into(), "name".into()),
+            ("7".into(), " ".into()),
+            ("x".repeat(129), "name".into()),
+            ("7".into(), "x".repeat(513)),
+            ("7".into(), "one\ntwo".into()),
+        ] {
+            let body = json!({"moment": {"deck": {"id": id, "name": name}}, "to": "circle"});
+            assert_eq!(share_as_hill(&app, body).await.0, StatusCode::BAD_REQUEST);
+        }
+        assert_eq!(
+            share_as_hill(&app, deck_to(json!({"friends": ["stranger"]})))
+                .await
+                .0,
+            StatusCode::BAD_REQUEST
+        );
+        let count: i64 = app
+            .store
+            .lock()
+            .unwrap()
+            .conn
+            .query_row("select count(*) from wins", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        sql(
+            &app,
+            "insert into incoming_settings (user, enabled) values ('cerro', 0); insert into sender_unsubscriptions (recipient, sender) values ('friend', 'hill');",
+        );
+        let (status, sent) = share_as_hill(&app, deck_to(json!("circle"))).await;
+        assert_eq!(status, StatusCode::OK, "{sent}");
+        assert_eq!(sent["recipients"], 0);
+        assert!(sent.get("undo_until").is_none());
+        assert!(inbox(&app, "cerro").is_empty());
+        assert!(inbox(&app, "friend").is_empty());
         cleanup(app, path);
     }
 
@@ -1886,8 +2434,233 @@ mod tests {
         assert_eq!(store.notifications("cerro", 4_000).unwrap().len(), 1);
     }
 
+    struct FixedClock;
+
+    impl FixedClock {
+        fn at(now: i64) -> Self {
+            crate::app::fix_now_ms(Some(now));
+            Self
+        }
+    }
+
+    impl Drop for FixedClock {
+        fn drop(&mut self) {
+            crate::app::fix_now_ms(None);
+        }
+    }
+
+    async fn send_to(app: &Arc<App>, win: i64, friend: &str) -> Value {
+        let (status, sent) = share_as_hill(
+            app,
+            json!({"moment": {"win": win}, "to": {"friends": [friend]}}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(sent["recipients"], 1);
+        sent
+    }
+
+    async fn undo_send(app: &Arc<App>, receipt: &Value) -> (StatusCode, Value) {
+        let path = format!(
+            "/api/share/hill/{}?until={}",
+            receipt["win"], receipt["undo_until"]
+        );
+        call(app, "DELETE", &path, "hill-secret", Value::Null).await
+    }
+
+    #[tokio::test]
+    async fn same_tick_undo_is_one_send() {
+        let _clock = FixedClock::at(1_800_000_000_000);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        let second = send_to(&app, win, "friend").await;
+
+        let (status, undone) = undo_send(&app, &second).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(undone["retracted"], 1);
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert!(inbox(&app, "friend").is_empty());
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn old_undo_cannot_take_resend() {
+        let _clock = FixedClock::at(1_800_000_000_000);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+        let second = send_to(&app, win, "cerro").await;
+
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 0);
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert_eq!(undo_send(&app, &second).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn clock_return_keeps_old_undo() {
+        let at = 1_800_000_000_000;
+        let _clock = FixedClock::at(at);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+
+        // A clock adjustment must not make a removed receipt reusable later.
+        crate::app::fix_now_ms(Some(at - 1_000));
+        let second = send_to(&app, win, "friend").await;
+        crate::app::fix_now_ms(Some(at));
+        let third = send_to(&app, win, "cerro").await;
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 0);
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert_eq!(inbox(&app, "friend").len(), 1);
+        assert_eq!(undo_send(&app, &second).await.1["retracted"], 1);
+        assert_eq!(undo_send(&app, &third).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn backwards_clock_keeps_expiry() {
+        let at = 1_800_000_000_000;
+        let _clock = FixedClock::at(at);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        let earlier = at - 1_000;
+        crate::app::fix_now_ms(Some(earlier));
+        let second = send_to(&app, win, "friend").await;
+        assert!(second["undo_until"].as_i64().unwrap() <= earlier + UNDO_MS);
+
+        crate::app::fix_now_ms(Some(earlier + UNDO_MS));
+        assert_eq!(undo_send(&app, &second).await.0, StatusCode::CONFLICT);
+        assert_eq!(inbox(&app, "friend").len(), 1);
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn collision_keeps_its_deadline() {
+        let at = 1_800_000_000_000;
+        let _clock = FixedClock::at(at);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        let second = send_to(&app, win, "friend").await;
+        let until = second["undo_until"].as_i64().unwrap();
+        assert!(until < first["undo_until"].as_i64().unwrap());
+
+        crate::app::fix_now_ms(Some(until));
+        assert_eq!(undo_send(&app, &second).await.0, StatusCode::CONFLICT);
+        assert_eq!(inbox(&app, "friend").len(), 1);
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    #[test]
+    fn receipts_survive_restart() {
+        let (mut store, path) = crate::test_support::temporary_store();
+        let id = moment(&store, "hill", "level:7");
+        let win = wins::win(&store.conn, "hill", id).unwrap();
+        let send = |store: &mut Store| {
+            send_wins(
+                store,
+                "hill",
+                "Hill",
+                &strings(&["cerro"]),
+                std::slice::from_ref(&win),
+                Sending::ByHand(None),
+                3_000,
+            )
+            .unwrap()
+            .undo_until
+            .unwrap()
+        };
+        let first = send(&mut store);
+        assert_eq!(
+            retract(&mut store.conn, id, Sends::Until(first), 3_000).unwrap(),
+            Some(1)
+        );
+        drop(store);
+
+        let mut store = Store::open(&path).unwrap();
+        let second = send(&mut store);
+        assert_ne!(first, second);
+        assert_eq!(
+            retract(&mut store.conn, id, Sends::Until(first), 3_000).unwrap(),
+            Some(0)
+        );
+        assert_eq!(store.notifications("cerro", 3_000).unwrap().len(), 1);
+        assert_eq!(
+            retract(&mut store.conn, id, Sends::Until(second), 3_000).unwrap(),
+            Some(1)
+        );
+
+        // Receipts remain private to the sender, and leave with the account.
+        let own = crate::privacy::export(&store.conn, "hill").unwrap();
+        assert_eq!(own["win_receipts"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            crate::privacy::export(&store.conn, "cerro").unwrap()["win_receipts"],
+            json!([])
+        );
+        crate::privacy::forget(&store.conn, "hill").unwrap();
+        let kept: i64 = store
+            .conn
+            .query_row("select count(*) from win_receipts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(kept, 0);
+        cleanup(store, path);
+    }
+
+    #[test]
+    fn failed_send_keeps_no_receipt() {
+        let (mut store, path) = crate::test_support::temporary_store();
+        let id = moment(&store, "hill", "level:7");
+        let win = wins::win(&store.conn, "hill", id).unwrap();
+        store
+            .conn
+            .execute_batch(
+                "create trigger refuse_share before insert on notifications
+             when new.recipient = 'cerro' begin select raise(abort, 'test failure'); end;",
+            )
+            .unwrap();
+        let send = |store: &mut Store| {
+            send_wins(
+                store,
+                "hill",
+                "Hill",
+                &strings(&["cerro"]),
+                std::slice::from_ref(&win),
+                Sending::ByHand(None),
+                3_000,
+            )
+        };
+        assert!(send(&mut store).is_err());
+        assert!(store.notifications("cerro", 3_000).unwrap().is_empty());
+        assert_eq!(
+            wins::win(&store.conn, "hill", id).unwrap().shared_friends,
+            0
+        );
+        let kept: i64 = store
+            .conn
+            .query_row("select count(*) from win_receipts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(kept, 0);
+
+        store
+            .conn
+            .execute_batch("drop trigger refuse_share;")
+            .unwrap();
+        assert_eq!(send(&mut store).unwrap().undo_until, Some(3_000 + UNDO_MS));
+        cleanup(store, path);
+    }
+
     #[tokio::test]
     async fn a_moment_is_taken_back_one_send_at_a_time() {
+        let at = 1_800_000_000_000;
+        let _clock = FixedClock::at(at);
         let (app, path) = moments_app();
         let id = moment(&app.store.lock().unwrap(), "hill", "level:7");
         let send_to = |friend: &str| json!({"moment": {"win": id}, "to": {"friends": [friend]}});
@@ -1899,15 +2672,9 @@ mod tests {
 
         // Two sends of one win; Cerro's an hour before Friend's.
         let (_, first) = share_as_hill(&app, send_to("cerro")).await;
+        crate::app::fix_now_ms(Some(at + 60 * 60 * 1000));
         let (_, second) = share_as_hill(&app, send_to("friend")).await;
-        let hour = 60 * 60 * 1000;
-        sql(
-            &app,
-            &format!(
-                "update notifications set created_at = created_at - {hour} where recipient = 'cerro'"
-            ),
-        );
-        let first = first["undo_until"].as_i64().unwrap() - hour;
+        let first = first["undo_until"].as_i64().unwrap();
         let second = second["undo_until"].as_i64().unwrap();
 
         // Undoing the second send leaves the first.
@@ -1927,13 +2694,8 @@ mod tests {
 
         // A send more than a day ago is too late, and `until` must be a time.
         let (_, late) = share_as_hill(&app, send_to("cerro")).await;
-        sql(
-            &app,
-            &format!(
-                "update notifications set created_at = created_at - {UNDO_MS} where recipient = 'cerro'"
-            ),
-        );
-        let late = late["undo_until"].as_i64().unwrap() - UNDO_MS;
+        let late = late["undo_until"].as_i64().unwrap();
+        crate::app::fix_now_ms(Some(late));
         assert_eq!(undo(late).await.0, StatusCode::CONFLICT);
         assert_eq!(inbox(&app, "cerro").len(), 1);
         let malformed = format!("/api/share/hill/{id}?until=soon");
