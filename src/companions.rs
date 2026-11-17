@@ -179,15 +179,19 @@ impl Drawable {
     }
 
     /// SQL that is true for the notifications in `table` such a client may list: everything
-    /// but the player's own unlock moments about companions it cannot draw.
+    /// but the player's own unlock moments about companions it cannot draw. A batch of
+    /// unlocks ("4 new unlocks") has no win naming them, so it shows only to a client that
+    /// draws every unlock.
     pub(crate) fn sql(self, table: &str) -> String {
         let keys: Vec<String> = Unlock::ALL
             .into_iter()
             .filter(|unlock| self.contains(*unlock))
             .map(|unlock| format!("'{MOMENT_PREFIX}{}'", unlock.id()))
             .collect();
+        let batch = i32::from(self == Self::all());
         format!(
             "({table}.kind != 'celebration' or {table}.topic is not '{TOPIC}'
+              or ({table}.win_id is null and {batch})
               or (select w.key from wins w where w.id = {table}.win_id) in ({}))",
             keys.join(",")
         )
@@ -900,7 +904,14 @@ mod tests {
         let activity = "/api/activity/hill";
         let (_, released) = call(&app, "GET", activity, "hill-secret", Value::Null).await;
         let through = json!({"through": released["latest_id"]});
-        let read = call(&app, "POST", "/api/activity/hill/read", "hill-secret", through).await;
+        let read = call(
+            &app,
+            "POST",
+            "/api/activity/hill/read",
+            "hill-secret",
+            through,
+        )
+        .await;
         assert_eq!(read.0, StatusCode::NO_CONTENT);
 
         // After an update that draws Bluma, her moment is still unread.
@@ -926,8 +937,8 @@ mod tests {
             body: "Ankilope joined you!, Bluma joined you!",
             kind: "celebration",
         };
-        let id = crate::notifications::insert_notification(&store.conn, &batch, 1, now, false)
-            .unwrap();
+        let id =
+            crate::notifications::insert_notification(&store.conn, &batch, 1, now, false).unwrap();
         store
             .conn
             .execute(

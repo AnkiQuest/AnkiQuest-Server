@@ -466,16 +466,21 @@ impl Store {
     }
 
     /// Marks everything up to `through` read, so items that arrived after the
-    /// reader's last refresh stay unread.
+    /// reader's last refresh stay unread. Moments the reader cannot draw were never
+    /// listed, so they stay unread too.
     pub fn read_all_activity(
         &mut self,
         user: &str,
         through: i64,
         now_ms: i64,
+        drawable: Drawable,
     ) -> Result<(), Error> {
         self.conn.execute(
-            "update notifications set read_at=?3 where recipient=?1 and id<=?2
-            and push_only=0 and read_at is null and created_at>=?4",
+            &format!(
+                "update notifications set read_at=?3 where recipient=?1 and id<=?2
+                and push_only=0 and read_at is null and created_at>=?4 and {}",
+                drawable.sql("notifications")
+            ),
             params![user, through, now_ms, now_ms - ACTIVITY_AGE_MS],
         )?;
         Ok(())
@@ -1070,7 +1075,9 @@ mod tests {
         let seen = send("hill");
         send("friend");
         let later = send("hill");
-        store.read_all_activity("hill", seen, NOW).unwrap();
+        store
+            .read_all_activity("hill", seen, NOW, Drawable::all())
+            .unwrap();
         let activity = store.activity("hill", NOW, 90, None, 100).unwrap();
         assert_eq!(activity.unread_count, 1);
         assert!(
@@ -1089,7 +1096,9 @@ mod tests {
                 .unread_count,
             1
         );
-        store.read_all_activity("hill", i64::MAX, NOW).unwrap();
+        store
+            .read_all_activity("hill", i64::MAX, NOW, Drawable::all())
+            .unwrap();
         assert_eq!(
             store
                 .activity("hill", NOW, 90, None, 100)

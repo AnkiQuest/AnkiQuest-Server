@@ -160,7 +160,7 @@ async fn read_activity(
     }
     let mut store = app.store.lock().unwrap();
     match request.through {
-        Some(through) => store.read_all_activity(&user, through, now_ms()),
+        Some(through) => store.read_all_activity(&user, through, now_ms(), Drawable::of(&headers)),
         None => store.read_activity(&user, &request.ids, now_ms()),
     }
     .map_err(store_error)?;
