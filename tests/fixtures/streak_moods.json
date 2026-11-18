@@ -1,5 +1,5 @@
 {
-  "_about": "Aki's streak mood for today, and its pose. `today.state` is the day verdict: studied (today counts, or will once unsent reviews arrive), protected, short (reviews short of the minimum), pending (no reviews) or unknown. `frozen_days` counts the heatmap's frozen days in a row ending yesterday (frozen_run). A counted day or a reached goal is fire, by heat: 1-6 aki_streak, 7-29 aki_streak_hot, 30-99 aki_streak_blazing, 100+ aki_streak_legend. Poses are Aki's; other companions map them to their own art. The desktop add-on (addon/moods.py, tests/test_streak_moods.py) checks it; the Android app keeps a copy for AnkiquestMood. `flames` is the flame beside the streak number for each mood (AnkiquestMood.flame): lit once today counts, unlit (grey) for a streak today has not counted for yet, icy (blue) when a freeze kept the days before today, none without a streak or when nothing is known about today.",
+  "_about": "Today's streak mood, and the companion pose it shows. `today.state` is the day verdict: studied (today counts, or will once unsent reviews arrive), protected, short (reviews short of the minimum), pending (no reviews) or unknown. `frozen_days` counts the heatmap's frozen days in a row ending yesterday (frozen_run). A counted day or a reached goal is fire, by heat: 1-6 streak, 7-29 streak_hot, 30-99 streak_blazing, 100+ streak_legend. `pose` names a pose from companion_poses.json, not a picture: each companion draws it with its own art, and shows the pose's fallback where it has none (Aki has no frozen_2 or frozen_3 art, so all three frozen moods show her frozen pose). The desktop add-on (addon/moods.py, tests/test_streak_moods.py) checks it; the Android app keeps a copy for AnkiquestMood. `pictures` are the streak share pictures, drawn with Aki's art. `flames` is the flame beside the streak number for each mood (AnkiquestMood.flame): lit once today counts, unlit (grey) for a streak today has not counted for yet, icy (blue) when a freeze kept the days before today, none without a streak or when nothing is known about today.",
   "moods": [
     {
       "name": "nothing is known about today",
@@ -12,7 +12,7 @@
       },
       "expected": {
         "mood": "unknown",
-        "pose": "aki_face"
+        "pose": "face"
       }
     },
     {
@@ -26,7 +26,7 @@
       },
       "expected": {
         "mood": "asleep",
-        "pose": "aki_sleeping"
+        "pose": "asleep"
       }
     },
     {
@@ -40,7 +40,7 @@
       },
       "expected": {
         "mood": "sad",
-        "pose": "aki_at_risk"
+        "pose": "sad"
       }
     },
     {
@@ -54,7 +54,7 @@
       },
       "expected": {
         "mood": "sad",
-        "pose": "aki_at_risk"
+        "pose": "sad"
       }
     },
     {
@@ -68,7 +68,7 @@
       },
       "expected": {
         "mood": "sad",
-        "pose": "aki_at_risk"
+        "pose": "sad"
       }
     },
     {
@@ -82,7 +82,7 @@
       },
       "expected": {
         "mood": "hopeful",
-        "pose": "aki_welcome"
+        "pose": "hopeful"
       }
     },
     {
@@ -96,7 +96,7 @@
       },
       "expected": {
         "mood": "hopeful",
-        "pose": "aki_welcome"
+        "pose": "hopeful"
       }
     },
     {
@@ -110,7 +110,7 @@
       },
       "expected": {
         "mood": "fire",
-        "pose": "aki_streak"
+        "pose": "streak"
       }
     },
     {
@@ -124,7 +124,7 @@
       },
       "expected": {
         "mood": "fire",
-        "pose": "aki_streak"
+        "pose": "streak"
       }
     },
     {
@@ -138,7 +138,7 @@
       },
       "expected": {
         "mood": "fire",
-        "pose": "aki_streak"
+        "pose": "streak"
       }
     },
     {
@@ -152,7 +152,7 @@
       },
       "expected": {
         "mood": "fire",
-        "pose": "aki_streak_hot"
+        "pose": "streak_hot"
       }
     },
     {
@@ -166,7 +166,7 @@
       },
       "expected": {
         "mood": "fire",
-        "pose": "aki_streak_hot"
+        "pose": "streak_hot"
       }
     },
     {
@@ -180,7 +180,7 @@
       },
       "expected": {
         "mood": "fire",
-        "pose": "aki_streak_blazing"
+        "pose": "streak_blazing"
       }
     },
     {
@@ -194,7 +194,7 @@
       },
       "expected": {
         "mood": "fire",
-        "pose": "aki_streak_blazing"
+        "pose": "streak_blazing"
       }
     },
     {
@@ -208,7 +208,7 @@
       },
       "expected": {
         "mood": "fire",
-        "pose": "aki_streak_legend"
+        "pose": "streak_legend"
       }
     },
     {
@@ -222,7 +222,7 @@
       },
       "expected": {
         "mood": "fire",
-        "pose": "aki_streak_legend"
+        "pose": "streak_legend"
       }
     },
     {
@@ -236,7 +236,7 @@
       },
       "expected": {
         "mood": "fire",
-        "pose": "aki_streak_blazing"
+        "pose": "streak_blazing"
       }
     },
     {
@@ -250,7 +250,7 @@
       },
       "expected": {
         "mood": "fire",
-        "pose": "aki_streak_blazing"
+        "pose": "streak_blazing"
       }
     },
     {
@@ -264,7 +264,7 @@
       },
       "expected": {
         "mood": "fire",
-        "pose": "aki_streak_hot"
+        "pose": "streak_hot"
       }
     },
     {
@@ -278,7 +278,7 @@
       },
       "expected": {
         "mood": "frozen_1",
-        "pose": "aki_freeze_used"
+        "pose": "frozen"
       }
     },
     {
@@ -292,7 +292,7 @@
       },
       "expected": {
         "mood": "frozen_1",
-        "pose": "aki_freeze_used"
+        "pose": "frozen"
       }
     },
     {
@@ -306,7 +306,7 @@
       },
       "expected": {
         "mood": "frozen_2",
-        "pose": "aki_freeze"
+        "pose": "frozen_2"
       }
     },
     {
@@ -320,7 +320,7 @@
       },
       "expected": {
         "mood": "frozen_3",
-        "pose": "aki_freeze_used"
+        "pose": "frozen_3"
       }
     },
     {
@@ -334,7 +334,7 @@
       },
       "expected": {
         "mood": "frozen_3",
-        "pose": "aki_freeze_used"
+        "pose": "frozen_3"
       }
     },
     {
@@ -348,7 +348,7 @@
       },
       "expected": {
         "mood": "frozen_2",
-        "pose": "aki_freeze"
+        "pose": "frozen_2"
       }
     },
     {
@@ -362,7 +362,7 @@
       },
       "expected": {
         "mood": "frozen_1",
-        "pose": "aki_freeze_used"
+        "pose": "frozen"
       }
     },
     {
@@ -376,7 +376,7 @@
       },
       "expected": {
         "mood": "hopeful",
-        "pose": "aki_welcome"
+        "pose": "hopeful"
       }
     },
     {
@@ -390,7 +390,7 @@
       },
       "expected": {
         "mood": "fire",
-        "pose": "aki_streak_hot"
+        "pose": "streak_hot"
       }
     }
   ],
