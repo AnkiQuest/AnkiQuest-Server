@@ -353,19 +353,26 @@ pub(crate) enum SignIn {
     TokenOnly,
 }
 
+/// Whether a player has an account, and whether that account has a password.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AccountKind {
+    /// No account: a player from the server configuration.
+    None,
+    /// An account without a password.
+    NoPassword,
+    /// An account with a password.
+    Password,
+}
+
 impl SignIn {
     /// `providers` counts the linked providers the server offers.
-    pub(crate) fn of(account: bool, password: bool, providers: usize) -> Self {
-        if !account {
-            return Self::TokenOnly;
+    pub(crate) fn of(account: AccountKind, providers: usize) -> Self {
+        match account {
+            AccountKind::None => Self::TokenOnly,
+            AccountKind::Password => Self::Password,
+            AccountKind::NoPassword if providers > 0 => Self::Provider,
+            AccountKind::NoPassword => Self::TokenOnly,
         }
-        if password {
-            return Self::Password;
-        }
-        if providers > 0 {
-            return Self::Provider;
-        }
-        Self::TokenOnly
     }
 }
 
@@ -880,6 +887,15 @@ mod tests {
     use axum::http::header;
     use std::path::PathBuf;
     use tower::ServiceExt;
+
+    #[test]
+    fn sign_in_follows_the_account() {
+        assert_eq!(SignIn::of(AccountKind::None, 1), SignIn::TokenOnly);
+        assert_eq!(SignIn::of(AccountKind::Password, 0), SignIn::Password);
+        assert_eq!(SignIn::of(AccountKind::Password, 1), SignIn::Password);
+        assert_eq!(SignIn::of(AccountKind::NoPassword, 1), SignIn::Provider);
+        assert_eq!(SignIn::of(AccountKind::NoPassword, 0), SignIn::TokenOnly);
+    }
 
     fn fixture(registration: bool) -> (Arc<App>, PathBuf) {
         crate::test_support::app_with(serde_json::json!({

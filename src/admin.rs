@@ -734,7 +734,7 @@ pub fn sign_ins(
     configured: &[String],
     offered: &[crate::oauth::Provider],
 ) -> Result<String, Error> {
-    use crate::accounts::SignIn;
+    use crate::accounts::{AccountKind, SignIn};
 
     // Who has an account and a password, and which offered providers each linked.
     let store = Store::open(state_dir)?;
@@ -752,9 +752,13 @@ pub fn sign_ins(
         .filter(|(_, key)| crate::oauth::Provider::parse(key).is_some_and(|p| offered.contains(&p)))
         .map(|(user, _)| user)
         .collect();
-    let sign_in = |user: &str| match passwords.get(user) {
-        Some(password) => SignIn::of(true, *password, links.iter().filter(|u| *u == user).count()),
-        None => SignIn::TokenOnly,
+    let sign_in = |user: &str| {
+        let account = match passwords.get(user) {
+            Some(true) => AccountKind::Password,
+            Some(false) => AccountKind::NoPassword,
+            None => AccountKind::None,
+        };
+        SignIn::of(account, links.iter().filter(|u| *u == user).count())
     };
     let words = |sign_in: SignIn| match sign_in {
         SignIn::Password => "password",

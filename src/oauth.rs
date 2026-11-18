@@ -2,7 +2,7 @@
 //! Each provider's stable user id is linked to one player. A first sign-in creates an account
 //! once the person has picked a username; later ones sign into the linked player.
 
-use crate::accounts::{SignIn, clean_device, clean_display, valid_username};
+use crate::accounts::{AccountKind, SignIn, clean_device, clean_display, valid_username};
 use crate::web_util::escape;
 use crate::web_util::{base64url, hex, hex_cookie, normalize_user, random_bytes, set_cookie};
 use crate::web_util::{refuse, reply};
@@ -1358,13 +1358,18 @@ async fn create(
 /// How `user` can sign in on a new device.
 fn sign_in_of(app: &App, user: &str) -> Result<SignIn, Error> {
     let store = app.store.lock().unwrap();
-    let account = app.accounts.contains(user);
-    let password = account && crate::accounts::has_password(&store.conn, user)?;
+    let account = if !app.accounts.contains(user) {
+        AccountKind::None
+    } else if crate::accounts::has_password(&store.conn, user)? {
+        AccountKind::Password
+    } else {
+        AccountKind::NoPassword
+    };
     let offered = linked_providers(&store.conn, user)?
         .into_iter()
         .filter(|provider| app.config.oauth.client(*provider).is_some())
         .count();
-    Ok(SignIn::of(account, password, offered))
+    Ok(SignIn::of(account, offered))
 }
 
 fn methods_of(app: &App, user: &str) -> Result<serde_json::Value, Error> {
