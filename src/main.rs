@@ -35,6 +35,7 @@ mod game;
 mod goals;
 mod i18n;
 mod inbox;
+mod messages;
 mod migrations;
 mod notifications;
 mod oauth;
@@ -263,6 +264,7 @@ fn router(app: Arc<App>) -> Router {
         .merge(deck_copies::routes())
         .merge(freezes::routes())
         .merge(inbox::routes())
+        .merge(messages::routes())
         .merge(study::routes())
         .merge(boards::routes())
         .merge(cards::routes())

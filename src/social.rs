@@ -19,6 +19,9 @@ pub const MAX_MEMBERS: i64 = 200;
 pub const MAX_PENDING: i64 = 50;
 pub const MAX_MUTED: i64 = 500;
 const MAX_GROUP_NAME: usize = 40;
+/// How long an invitation to a group waits for an answer: as long as the inbox keeps its row.
+pub(crate) const INVITATION_AGE_MS: i64 =
+    crate::notifications::ACTIVITY_DAYS as i64 * crate::game::DAY_MS;
 
 pub fn initialize(conn: &Connection) -> Result<(), Error> {
     conn.execute_batch(
@@ -1445,6 +1448,331 @@ mod tests {
         assert_eq!(inbox["friends"][0]["user"], "bobby");
         let (_, records) = call(&app, "GET", "/api/records", &ana, serde_json::Value::Null).await;
         assert!(!records.to_string().contains("alice"));
+        cleanup(app, path);
+    }
+
+    /// Ana owns "Spanish club"; Bobby and Cyril have accounts and have studied.
+    async fn club() -> (Arc<App>, PathBuf, String, String, String, i64) {
+        let (app, path) = fixture();
+        let ana = sign_up(&app, "ana").await;
+        let bo = sign_up(&app, "bobby").await;
+        let cy = sign_up(&app, "cyril").await;
+        for user in ["ana", "bobby", "cyril"] {
+            with_reviews(&app, user, 1);
+        }
+        let (_, created) = call(
+            &app,
+            "POST",
+            "/api/social/ana",
+            &ana,
+            serde_json::json!({"action": "create_group", "name": "Spanish club"}),
+        )
+        .await;
+        let group = created["groups"][0]["id"].as_i64().unwrap();
+        (app, path, ana, bo, cy, group)
+    }
+
+    async fn act(
+        app: &Arc<App>,
+        user: &str,
+        token: &str,
+        body: serde_json::Value,
+    ) -> (StatusCode, serde_json::Value) {
+        call(app, "POST", &format!("/api/social/{user}"), token, body).await
+    }
+
+    async fn invite_rows(app: &Arc<App>, user: &str, token: &str) -> Vec<serde_json::Value> {
+        let (_, activity) = call(
+            app,
+            "GET",
+            &format!("/api/activity/{user}"),
+            token,
+            serde_json::Value::Null,
+        )
+        .await;
+        activity["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["kind"] == "group_invite")
+            .cloned()
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn an_owner_invites_a_player_who_accepts_in_the_app() {
+        let (app, path, ana, bo, cy, group) = club().await;
+
+        // The invitation shows for the owner, for the invitee and in the invitee's inbox.
+        let (status, overview) = act(
+            &app,
+            "ana",
+            &ana,
+            serde_json::json!({"action": "invite", "group": group, "user": "bobby"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{overview}");
+        assert_eq!(overview["groups"][0]["invited"][0]["user"], "bobby");
+        let (_, mine) = call(
+            &app,
+            "GET",
+            "/api/social/bobby",
+            &bo,
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(
+            mine["invitations"],
+            serde_json::json!([{
+                "group": group,
+                "name": "Spanish club",
+                "members": 1,
+                "from": {"user": "ana", "display": "ana"}
+            }])
+        );
+        assert!(mine["groups"].as_array().unwrap().is_empty());
+        let rows = invite_rows(&app, "bobby", &bo).await;
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            (
+                &rows[0]["sender"],
+                &rows[0]["group"],
+                &rows[0]["action_required"]
+            ),
+            (
+                &serde_json::json!("ana"),
+                &serde_json::json!(group),
+                &serde_json::json!(true)
+            )
+        );
+
+        // Inviting again changes nothing and notifies nobody twice.
+        let (status, _) = act(
+            &app,
+            "ana",
+            &ana,
+            serde_json::json!({"action": "invite", "group": group, "user": "bobby"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(invite_rows(&app, "bobby", &bo).await.len(), 1);
+
+        // Only the owner invites, as only the owner holds the invite link.
+        let (status, _) = act(
+            &app,
+            "bobby",
+            &bo,
+            serde_json::json!({"action": "invite", "group": group, "user": "cyril"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        for (who, expected) in [
+            ("nobody", StatusCode::NOT_FOUND),
+            ("ana", StatusCode::CONFLICT),
+        ] {
+            let (status, _) = act(
+                &app,
+                "ana",
+                &ana,
+                serde_json::json!({"action": "invite", "group": group, "user": who}),
+            )
+            .await;
+            assert_eq!(status, expected, "{who}");
+        }
+
+        // Accepting joins the group, answers the inbox row and cannot happen twice.
+        let (status, joined) = act(
+            &app,
+            "bobby",
+            &bo,
+            serde_json::json!({"action": "accept_invite", "group": group}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{joined}");
+        assert_eq!(joined["groups"][0]["id"], group);
+        assert!(joined.get("invitations").is_none());
+        let rows = invite_rows(&app, "bobby", &bo).await;
+        assert_eq!(rows[0]["action_required"], false);
+        assert!(rows[0]["read_at"].is_number());
+        assert_eq!(circle(&app, "bobby"), ["ana", "bobby"]);
+        let (status, _) = act(
+            &app,
+            "bobby",
+            &bo,
+            serde_json::json!({"action": "accept_invite", "group": group}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (status, _) = act(
+            &app,
+            "ana",
+            &ana,
+            serde_json::json!({"action": "invite", "group": group, "user": "bobby"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "Bobby is a member now");
+        let _ = cy;
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn a_declined_expired_or_deleted_invitation_joins_nothing() {
+        let (app, path, ana, bo, cy, group) = club().await;
+        let invite = |who: &'static str| {
+            let (app, ana) = (app.clone(), ana.clone());
+            async move {
+                act(
+                    &app,
+                    "ana",
+                    &ana,
+                    serde_json::json!({"action": "invite", "group": group, "user": who}),
+                )
+                .await
+                .0
+            }
+        };
+
+        // Declining removes it for both sides; declining again is fine.
+        assert_eq!(invite("bobby").await, StatusCode::OK);
+        for _ in 0..2 {
+            let (status, overview) = act(
+                &app,
+                "bobby",
+                &bo,
+                serde_json::json!({"action": "decline_invite", "group": group}),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            assert!(overview.get("invitations").is_none());
+        }
+        assert_eq!(
+            invite_rows(&app, "bobby", &bo).await[0]["action_required"],
+            false
+        );
+        let (_, owner) = call(
+            &app,
+            "GET",
+            "/api/social/ana",
+            &ana,
+            serde_json::Value::Null,
+        )
+        .await;
+        assert!(owner["groups"][0].get("invited").is_none());
+
+        // An invitation lasts as long as the inbox keeps its row.
+        assert_eq!(invite("cyril").await, StatusCode::OK);
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .execute(
+                "update group_invitations set created_at = created_at - ?1",
+                [INVITATION_AGE_MS + 1],
+            )
+            .unwrap();
+        let (_, mine) = call(
+            &app,
+            "GET",
+            "/api/social/cyril",
+            &cy,
+            serde_json::Value::Null,
+        )
+        .await;
+        assert!(mine.get("invitations").is_none());
+        let (status, _) = act(
+            &app,
+            "cyril",
+            &cy,
+            serde_json::json!({"action": "accept_invite", "group": group}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        // A deleted group takes its invitations with it.
+        assert_eq!(invite("cyril").await, StatusCode::OK);
+        act(
+            &app,
+            "ana",
+            &ana,
+            serde_json::json!({"action": "leave", "group": group}),
+        )
+        .await;
+        let (_, mine) = call(
+            &app,
+            "GET",
+            "/api/social/cyril",
+            &cy,
+            serde_json::Value::Null,
+        )
+        .await;
+        assert!(mine.get("invitations").is_none());
+        assert_eq!(
+            invite_rows(&app, "cyril", &cy).await[0]["action_required"],
+            false
+        );
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn a_muted_owner_s_invitation_is_not_delivered() {
+        let (app, path, ana, bo, _, group) = club().await;
+        act(
+            &app,
+            "bobby",
+            &bo,
+            serde_json::json!({"action": "mute", "user": "ana"}),
+        )
+        .await;
+        let (status, overview) = act(
+            &app,
+            "ana",
+            &ana,
+            serde_json::json!({"action": "invite", "group": group, "user": "bobby"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            overview["groups"][0]["invited"][0]["user"], "bobby",
+            "Ana cannot tell she was muted"
+        );
+        let (_, mine) = call(
+            &app,
+            "GET",
+            "/api/social/bobby",
+            &bo,
+            serde_json::Value::Null,
+        )
+        .await;
+        assert!(mine.get("invitations").is_none());
+        assert!(invite_rows(&app, "bobby", &bo).await.is_empty());
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn an_invite_link_still_joins_and_answers_an_invitation() {
+        let (app, path, ana, bo, _, group) = club().await;
+        let (_, overview) = act(
+            &app,
+            "ana",
+            &ana,
+            serde_json::json!({"action": "invite", "group": group, "user": "bobby"}),
+        )
+        .await;
+        let code = overview["groups"][0]["invite"].clone();
+        let (status, joined) = act(
+            &app,
+            "bobby",
+            &bo,
+            serde_json::json!({"action": "join", "invite": code}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(joined["groups"][0]["id"], group);
+        assert!(joined.get("invitations").is_none());
+        assert_eq!(
+            invite_rows(&app, "bobby", &bo).await[0]["action_required"],
+            false
+        );
         cleanup(app, path);
     }
 
