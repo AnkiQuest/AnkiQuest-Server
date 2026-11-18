@@ -1,0 +1,35 @@
+{
+  "_about": "How crash report text is redacted. `tokens`: the credential rule the server applies to every stored string and the Android app to the report before it is saved; both test against these. A credential is the word after \"Bearer\" (any case, after spaces only) or a run of at least 32 letters, digits, `-` and `_` with both letters and digits; it becomes `[removed]`. `device`: Android only, because they need what the device knows: `hosts`, the server hosts it redacts (the default server and the ones the player set), and `token`, the stored device token. Each whole host, with an IP address Java prints after it (`host/203.0.113.7`), becomes `[server]`; a longer host name containing it is kept. The stored token becomes `[removed]` wherever it appears. The token rule applies after both.",
+  "version": 1,
+  "tokens": [
+    {"name": "bearer_value", "text": "I/Sync: Authorization: Bearer hill-secret", "expected": "I/Sync: Authorization: Bearer [removed]"},
+    {"name": "bearer_any_case_and_spaces", "text": "BEARER  x and bearer y", "expected": "BEARER  [removed] and bearer [removed]"},
+    {"name": "bearer_needs_spaces", "text": "Bearer: abc, Bearer\tdef, Bearer=ghi", "expected": "Bearer: abc, Bearer\tdef, Bearer=ghi"},
+    {"name": "bearer_at_the_end", "text": "token type bearer", "expected": "token type bearer"},
+    {"name": "long_hex_token", "text": "D/Quest: sent 0f3c9a7b1e2d4c6f8a0b2c4d6e8f0a1b3c5d7e9f1a2b3c4d5e6f7a8b9c0d1e2f", "expected": "D/Quest: sent [removed]"},
+    {"name": "token_of_exactly_32", "text": "token=0123456789abcdef0123456789abcdef&deck=7", "expected": "token=[removed]&deck=7"},
+    {"name": "base64url_token", "text": "key \"Zm9vYmFy_YmF6-cXV4Zm9vYmFyYmF6cXV4\" refused", "expected": "key \"[removed]\" refused"},
+    {"name": "uuid_counts_as_a_token", "text": "report 5c1d4b1e-8a5f-4b8e-9b0e-2f8b5d0a6c11 saved", "expected": "report [removed] saved"},
+    {"name": "token_beside_non_ascii", "text": "Déck→0123456789abcdef0123456789abcdef←", "expected": "Déck→[removed]←"},
+    {"name": "short_run_kept", "text": "hash 0123456789abcdef0123456789abcde", "expected": "hash 0123456789abcdef0123456789abcde"},
+    {"name": "letters_only_kept", "text": "at com.ichi2.anki.AnkiDroidCrashReportDialogFragment_onCreateView(Dialog.kt:42)", "expected": "at com.ichi2.anki.AnkiDroidCrashReportDialogFragment_onCreateView(Dialog.kt:42)"},
+    {"name": "digits_only_kept", "text": "card 12345678901234567890123456789012345 due 1763380800000", "expected": "card 12345678901234567890123456789012345 due 1763380800000"},
+    {"name": "each_line", "text": "D/Quest: Bearer a\nD/Quest: ok\nD/Quest: 0123456789abcdef0123456789abcdef", "expected": "D/Quest: Bearer [removed]\nD/Quest: ok\nD/Quest: [removed]"},
+    {"name": "empty", "text": "", "expected": ""}
+  ],
+  "device": [
+    {"name": "default_host", "hosts": ["ankiquest.rationality-munich.com"], "text": "Unable to resolve host \"ankiquest.rationality-munich.com\": No address associated with hostname", "expected": "Unable to resolve host \"[server]\": No address associated with hostname"},
+    {"name": "host_any_case_in_url", "hosts": ["quest.example.net"], "text": "GET https://Quest.Example.NET/api/profile/hill failed", "expected": "GET https://[server]/api/profile/hill failed"},
+    {"name": "host_with_port", "hosts": ["quest.example.net"], "text": "connect quest.example.net:8443", "expected": "connect [server]:8443"},
+    {"name": "host_at_sentence_end", "hosts": ["quest.example.net"], "text": "Cannot reach quest.example.net.", "expected": "Cannot reach [server]."},
+    {"name": "subdomain_kept", "hosts": ["quest.example.net"], "text": "sub.quest.example.net and my-quest.example.net", "expected": "sub.quest.example.net and my-quest.example.net"},
+    {"name": "longer_name_kept", "hosts": ["quest.example.net"], "text": "quest.example.network and quest.example.net-backup", "expected": "quest.example.network and quest.example.net-backup"},
+    {"name": "host_with_ipv4", "hosts": ["quest.example.net"], "text": "Failed to connect to quest.example.net/203.0.113.7:443", "expected": "Failed to connect to [server]:443"},
+    {"name": "host_with_ipv6", "hosts": ["quest.example.net"], "text": "Failed to connect to quest.example.net/2001:db8::7", "expected": "Failed to connect to [server]"},
+    {"name": "path_after_host_kept", "hosts": ["quest.example.net"], "text": "quest.example.net/api/reviews", "expected": "[server]/api/reviews"},
+    {"name": "two_hosts", "hosts": ["ankiquest.rationality-munich.com", "quest.example.net"], "text": "moved from ankiquest.rationality-munich.com to quest.example.net", "expected": "moved from [server] to [server]"},
+    {"name": "stored_token", "hosts": [], "token": "hill-device-token", "text": "X-Token: hill-device-token;", "expected": "X-Token: [removed];"},
+    {"name": "short_stored_token_kept", "hosts": [], "token": "abc123", "text": "abc123 xyz", "expected": "abc123 xyz"},
+    {"name": "host_token_and_bearer", "hosts": ["quest.example.net"], "token": "hill-device-token", "text": "POST quest.example.net/203.0.113.7 Bearer hill-device-token", "expected": "POST [server] Bearer [removed]"}
+  ]
+}

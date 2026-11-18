@@ -769,6 +769,42 @@ mod tests {
         );
     }
 
+    /// `tests/fixtures/crash_redaction.json`. The app redacts with the same token rule before
+    /// it sends; the `device` cases need the device's hosts and token, so only the app reads them.
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Redaction {
+        #[serde(rename = "_about")]
+        _about: String,
+        version: u32,
+        tokens: Vec<TokenCase>,
+        #[serde(rename = "device")]
+        _device: Vec<Value>,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct TokenCase {
+        name: String,
+        text: String,
+        expected: String,
+    }
+
+    #[test]
+    fn tokens_match_the_shared_cases() {
+        let text = include_str!("../tests/fixtures/crash_redaction.json");
+        let fixture: Redaction = serde_json::from_str(text).unwrap();
+        assert_eq!(fixture.version, 1);
+        assert!(!fixture.tokens.is_empty());
+
+        // Every string in a report goes through `scrub`; these cases hold no email addresses.
+        for case in fixture.tokens {
+            let mut value = Value::String(case.text);
+            scrub(&mut value);
+            assert_eq!(value, Value::String(case.expected), "{}", case.name);
+        }
+    }
+
     /// `docs/api/examples/crash_report.json` is a report as ACRA sends it, and
     /// `crash_report_stored.json` what the server keeps of it. Regenerate the second with
     /// `UPDATE_API_EXAMPLES=1`.
