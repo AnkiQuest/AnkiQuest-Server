@@ -761,15 +761,16 @@ mod tests {
     #[test]
     fn every_chibi_names_its_unlocked_base() {
         let rules: Value = serde_json::from_str(RULES).unwrap();
-        let chibi = milestone(Unlock::AnkiTanChibi);
-        assert_eq!(
-            chibi.counts,
-            Counts::Taps {
-                on: Unlock::AnkiTan
-            }
-        );
-        assert_eq!(chibi.goal, rules["taps"].as_u64().unwrap());
-        assert_eq!(chibi.visibility, Visibility::Secret);
+        let chibis = [
+            (Unlock::AnkiTanChibi, Unlock::AnkiTan),
+            (Unlock::QuestChanChibi, Unlock::QuestChan),
+        ];
+        for (unlock, base) in chibis {
+            let chibi = milestone(unlock);
+            assert_eq!(chibi.counts, Counts::Taps { on: base }, "{unlock:?}");
+            assert_eq!(chibi.goal, rules["taps"].as_u64().unwrap(), "{unlock:?}");
+            assert_eq!(chibi.visibility, Visibility::Secret, "{unlock:?}");
+        }
     }
 
     #[test]
@@ -833,7 +834,7 @@ mod tests {
         );
 
         // A planned unlock stored anyway stays out of the answer and the moments.
-        store.add_unlock("hill", Unlock::LeechTan, 2).unwrap();
+        store.add_unlock("hill", Unlock::LeechKun, 2).unwrap();
         assert_eq!(
             store.grant("hill", everything, 3).unwrap(),
             [Unlock::Ankilope, Unlock::Cow]
@@ -851,7 +852,7 @@ mod tests {
         assert_eq!(earn(only(Measure::LeechesTamed, 2), 3), [Unlock::AnkiTan]);
         assert_eq!(
             earn(only(Measure::LeechesTamed, 3), 4),
-            [Unlock::AnkiTan, Unlock::LeechTan]
+            [Unlock::AnkiTan, Unlock::LeechKun]
         );
 
         // A lost streak takes nothing back, and no measure brings the chibi: she is tapped.
@@ -867,7 +868,25 @@ mod tests {
     }
 
     #[test]
-    fn once_live_only_anki_tan_shows_progress() {
+    fn once_live_level_50_brings_quest_chan_but_not_her_chibi() {
+        let (store, path) = crate::test_support::temporary_store();
+        let live = all_live();
+        let earn = |measured, at| store.earn("hill", &live, measured, at).unwrap();
+
+        // Level 30 brings Ankilope; Quest-chan waits for level 50.
+        assert_eq!(earn(only(Measure::Level, 49), 1), [Unlock::Ankilope]);
+        assert_eq!(
+            earn(only(Measure::Level, 50), 2),
+            [Unlock::Ankilope, Unlock::QuestChan]
+        );
+
+        // Her chibi is tapped, never measured.
+        assert!(!earn(only(Measure::Level, 99), 3).contains(&Unlock::QuestChanChibi));
+        cleanup(store, path);
+    }
+
+    #[test]
+    fn once_live_anki_tan_and_quest_chan_show_progress() {
         let live = all_live();
         let measured = Measures {
             level: 3,
@@ -881,7 +900,8 @@ mod tests {
             json!({
                 "ankilope": {"kind": "level", "value": 3, "goal": 30},
                 "cow": {"kind": "study_hours", "value": 6, "goal": 10},
-                "anki_tan": {"kind": "streak", "value": 12, "goal": 66}
+                "anki_tan": {"kind": "streak", "value": 12, "goal": 66},
+                "quest_chan": {"kind": "level", "value": 3, "goal": 50}
             })
         );
     }
@@ -897,6 +917,12 @@ mod tests {
         assert_eq!(judge(&chibi, &[Unlock::AnkiTan]), Verdict::Grant);
         let both = [Unlock::AnkiTan, Unlock::AnkiTanChibi];
         assert_eq!(judge(&chibi, &both), Verdict::Kept);
+
+        // Quest-chan's chibi needs Quest-chan, not Anki-tan.
+        let quest = find(&live, Unlock::QuestChanChibi);
+        assert_eq!(judge(&quest, &[Unlock::AnkiTan]), Verdict::Locked);
+        assert_eq!(judge(&quest, &[Unlock::QuestChan]), Verdict::Grant);
+        assert_eq!(judge(&chibi, &[Unlock::QuestChan]), Verdict::Locked);
 
         // Measured unlocks are granted by the server; asking only answers.
         let cow = find(&live, Unlock::Cow);
@@ -987,13 +1013,25 @@ mod tests {
             ),
             (
                 Unlock::AnkiTanChibi,
-                "Chibi Anki-tan joined you!",
-                "You found Chibi Anki-tan.",
-                "I found Chibi Anki-tan.",
+                "Anki-tan chibi joined you!",
+                "You found Anki-tan chibi.",
+                "I found Anki-tan chibi.",
             ),
             (
-                Unlock::LeechTan,
-                "Leech-tan joined you!",
+                Unlock::QuestChan,
+                "Quest-chan joined you!",
+                "You reached level 50.",
+                "I reached level 50.",
+            ),
+            (
+                Unlock::QuestChanChibi,
+                "Quest-chan chibi joined you!",
+                "You found Quest-chan chibi.",
+                "I found Quest-chan chibi.",
+            ),
+            (
+                Unlock::LeechKun,
+                "Leech-kun joined you!",
                 "You tamed 3 leeches.",
                 "I tamed 3 leeches.",
             ),
@@ -1136,7 +1174,9 @@ mod tests {
         assert_eq!(granted.1["unlocks"], json!(["ankilope"]));
         let cow = call(&app, "POST", unlocks, "hill-secret", ask("cow")).await;
         assert_eq!(cow.0, StatusCode::CONFLICT);
-        for unknown in ["horse", "anki_tan", "leech_tan", "anki_tan_chibi"] {
+        // Planned companions are refused like unknown ids, as is Leech-kun's old id.
+        let planned = ["anki_tan", "anki_tan_chibi", "quest_chan", "quest_chan_chibi"];
+        for unknown in ["horse", "leech_tan", "leech_kun"].into_iter().chain(planned) {
             let bad = call(&app, "POST", unlocks, "hill-secret", ask(unknown)).await;
             assert_eq!(bad.0, StatusCode::BAD_REQUEST, "{unknown}");
         }

@@ -627,11 +627,53 @@ mod tests {
         assert_eq!(version(&store.conn), STEPS.len());
         assert_eq!(store.companion("hill").unwrap(), "cow");
         assert_eq!(store.companion("ana").unwrap(), "none");
-        for companion in ["anki_tan", "anki_tan_chibi", "leech_tan"] {
+        for companion in ["anki_tan", "anki_tan_chibi", "leech_kun"] {
             store.set_companion("bo", companion).unwrap();
             assert_eq!(store.companion("bo").unwrap(), companion);
         }
         assert!(store.set_companion("bo", "horse").is_err());
+        cleanup(store, dir);
+    }
+
+    #[test]
+    fn leech_tan_becomes_leech_kun_and_quest_chan_can_be_stored() {
+        let dir = temp_dir("quest-companions");
+        drop(Store::open(&dir).unwrap());
+        {
+            // A version 10 database that knows Leech-kun by his old id.
+            let conn = Connection::open(dir.join("ankiquest.db")).unwrap();
+            conn.execute_batch(
+                "drop table companion_preferences;
+                 create table companion_preferences (
+                     user text primary key,
+                     companion text not null check (companion in
+                         ('aki', 'ankilope', 'cow', 'none', 'anki_tan', 'anki_tan_chibi', 'leech_tan'))
+                 ) without rowid;
+                 insert into companion_preferences values ('hill', 'leech_tan'), ('ana', 'cow');
+                 insert into companion_unlocks values ('hill', 'leech_tan', 5), ('ana', 'cow', 6);
+                 insert into seen (user, key) values ('hill', 'companion:leech_tan');
+                 pragma user_version = 10;",
+            )
+            .unwrap();
+        }
+        let store = Store::open(&dir).unwrap();
+        assert_eq!(version(&store.conn), STEPS.len());
+
+        // Stored ids, choices and announced moments follow the rename.
+        use crate::companions::Unlock;
+        assert_eq!(store.companion("hill").unwrap(), "leech_kun");
+        assert_eq!(store.companion("ana").unwrap(), "cow");
+        assert_eq!(store.unlocks("hill").unwrap(), [Unlock::LeechKun]);
+        assert_eq!(store.unlocks("ana").unwrap(), [Unlock::Cow]);
+        assert!(store.is_seen("hill", "companion:leech_kun").unwrap());
+        assert!(!store.is_seen("hill", "companion:leech_tan").unwrap());
+
+        // Quest-chan and her chibi can be stored; the old id cannot.
+        for companion in ["quest_chan", "quest_chan_chibi"] {
+            store.set_companion("bo", companion).unwrap();
+            assert_eq!(store.companion("bo").unwrap(), companion);
+        }
+        assert!(store.set_companion("bo", "leech_tan").is_err());
         cleanup(store, dir);
     }
 
