@@ -1023,7 +1023,7 @@ pub fn dashboard(
     metadata["month"] = json!(month);
     metadata["grace_hours"] = json!(24);
     metadata["scoring_note"] = json!(
-        "Each full Anki day's XP counts toward the shared competition date containing that Anki day's start, matching the weekly leaderboard. Results accept syncs for 24 hours after the common cutoff, then remain fixed. Later syncs still count on the live leaderboard. Reconstructed results use the review history available when archived; coverage begins with the earliest retained history and may predate this server."
+        "Each full Anki day's XP counts toward that day's date on the player's own clock, matching the weekly leaderboard. Results accept syncs for 24 hours after the common cutoff, then remain fixed. Later syncs still count on the live leaderboard. Reconstructed results use the review history available when archived; coverage begins with the earliest retained history and may predate this server."
     );
     Ok(json!({
         "meta":metadata,"players":summaries,
