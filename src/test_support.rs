@@ -50,6 +50,16 @@ fn fixed_clock_resets_when_a_test_panics() {
     assert_ne!(now_ms(), STUDY_TIME);
 }
 
+#[test]
+fn a_nested_clock_restores_the_outer_one() {
+    let _outer = FixedClock::at(STUDY_TIME);
+    {
+        let _inner = FixedClock::at(STUDY_TIME + 1);
+        assert_eq!(now_ms(), STUDY_TIME + 1);
+    }
+    assert_eq!(now_ms(), STUDY_TIME);
+}
+
 /// A store in a new temporary directory; [`cleanup`] removes it.
 pub(crate) fn temporary_store() -> (Store, PathBuf) {
     static NEXT: AtomicU64 = AtomicU64::new(0);
