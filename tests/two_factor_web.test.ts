@@ -82,3 +82,65 @@ test('a player turns on two-factor in Settings and then signs in with a recovery
     fs.rmSync(run, {recursive: true, force: true});
   }
 });
+
+test('a two-factor answer that arrives after the account changed is not shown', async () => {
+  const run = fs.mkdtempSync(path.join(os.tmpdir(), 'ankiquest-two-factor-switch-'));
+  const server = await startServer(run, {registration: true});
+  const browser = await launch();
+  try {
+    const {base} = server;
+    const json = {method: 'POST', headers: {'Content-Type': 'application/json'}};
+    for (const user of ['ana', 'bob']) {
+      const signedUp = await fetch(base + '/api/accounts', {...json, body: JSON.stringify({user, password: PASSWORD})});
+      assert.equal(signedUp.status, 201);
+    }
+    const issued = await fetch(base + '/api/accounts/tokens', {...json, body: JSON.stringify({user: 'bob', password: PASSWORD})});
+    assert.equal(issued.status, 200, await issued.clone().text());
+    const {token} = await issued.json() as {token: string};
+
+    // Ana opens Settings with her password.
+    const context = await browser.newContext({locale: 'en-US', viewport: {width: 390, height: 844}});
+    const page = await context.newPage(), errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(base + '/login?next=%2Fsettings');
+    await page.locator('#signin-user').fill('ana');
+    await page.locator('#signin-password').fill(PASSWORD);
+    await page.locator('#signin-form button[type=submit]').click();
+    await page.waitForURL('**/settings');
+    await page.locator('#two-factor-begin').waitFor();
+
+    // Hold the body of Ana's set-up answer after its headers arrive.
+    await page.evaluate(() => {
+      const held = window as unknown as {release: () => void; waiting: boolean};
+      const gate = new Promise<void>(resolve => { held.release = resolve; });
+      const json = Response.prototype.json;
+      Response.prototype.json = async function (this: Response) {
+        if (this.url.includes('/api/two-factor/ana')) { held.waiting = true; await gate; }
+        return json.call(this);
+      };
+    });
+    await page.locator('#two-factor-begin').click();
+    await page.waitForFunction(() => (window as unknown as {waiting?: boolean}).waiting === true);
+
+    // Meanwhile Ana disconnects and Bob connects with his device token.
+    await page.locator('#personal-disconnect').click();
+    await page.locator('#personal-gate:visible').waitFor();
+    await page.locator('#personal-connect [name=user]').fill('bob');
+    await page.locator('#personal-connect [name=token]').fill(token);
+    await page.locator('#personal-connect button').click();
+    await page.locator('.personal-lead h2').filter({hasText: 'bob'}).waitFor();
+    await page.locator('#two-factor-begin').waitFor();
+
+    // Ana's key arrives late and is dropped: Bob's page still offers to set up his own.
+    await page.evaluate(() => (window as unknown as {release: () => void}).release());
+    await page.waitForTimeout(500);
+    assert.equal(await page.locator('#two-factor .device-token').count(), 0);
+    assert.equal(await page.locator('#two-factor-begin').count(), 1);
+    assert.deepEqual(errors, []);
+    await context.close();
+  } finally {
+    await browser.close();
+    await server.stop();
+    fs.rmSync(run, {recursive: true, force: true});
+  }
+});

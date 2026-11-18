@@ -1093,6 +1093,85 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_failed_change_keeps_the_codes_and_the_enrolment() {
+        let (app, path) = app();
+        let token = sign_up(&app, "ana").await;
+        let (secret, recovery) = turn_on(&app, &token).await;
+        let change = |action: &str, code: &str| json!({"action": action, "password": PASSWORD, "code": code});
+        let sql = |statement: &str| {
+            app.store
+                .lock()
+                .unwrap()
+                .conn
+                .execute_batch(statement)
+                .unwrap();
+        };
+        let left = || {
+            usize::try_from(recovery_left(&app.store.lock().unwrap().conn, "ana").unwrap()).unwrap()
+        };
+
+        // Writing the new recovery codes fails after the old ones were deleted.
+        sql(
+            "create temp trigger fail before insert on two_factor_recovery
+             begin select raise(abort, 'disk full'); end",
+        );
+        let (status, _) = call(
+            &app,
+            "POST",
+            "/api/two-factor/ana",
+            &token,
+            change("recovery_codes", &recovery[0]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        sql("drop trigger fail");
+        assert_eq!(
+            left(),
+            RECOVERY_CODES,
+            "the old codes and the one sent survive"
+        );
+
+        // Turning off fails after the enrolment was deleted.
+        sql(
+            "create temp trigger fail before delete on two_factor_recovery
+             begin select raise(abort, 'disk full'); end",
+        );
+        let code = code_now(&secret);
+        let (status, _) = call(
+            &app,
+            "POST",
+            "/api/two-factor/ana",
+            &token,
+            change("disable", &code),
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        sql("drop trigger fail");
+        assert!(enabled(&app.store.lock().unwrap().conn, "ana").unwrap());
+
+        // Nothing was spent: the same codes still work.
+        let (status, renewed) = call(
+            &app,
+            "POST",
+            "/api/two-factor/ana",
+            &token,
+            change("recovery_codes", &recovery[0]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{renewed}");
+        let (status, off) = call(
+            &app,
+            "POST",
+            "/api/two-factor/ana",
+            &token,
+            change("disable", &code),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{off}");
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
     async fn players_without_a_password_cannot_turn_it_on() {
         let (app, path) = app();
         let (status, configured) = call(
