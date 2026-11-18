@@ -41,3 +41,16 @@ Extensions, both versions unless noted:
 | idle and wave animations | `sprite/idle`, `sprite/hello` |
 
 Both versions lack only `frozen`.
+
+## Generated additions
+
+The canonical generated masters are `asleep.png`, `sad.png`,
+`neglected.png`, `frozen.png` and `chibi/frozen.png`. Their earlier names
+under `generated/` remain unchanged for preservation. No imported
+Shigeyuki file was replaced. The other contributor owns activation;
+the table above records the imported pack's original mapping.
+
+These derivatives were generated with OpenAI `image_gen` (model identifier
+not exposed) and are CC BY-SA 4.0 under [LICENSE](LICENSE).
+Credit: Anki-tan by Shigeyuki (https://www.patreon.com/Shigeyuki).
+See [provenance and approval](../../docs/branding/ankitan-full-2026-11/README.md).
