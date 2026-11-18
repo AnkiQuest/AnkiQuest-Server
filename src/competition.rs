@@ -1614,6 +1614,136 @@ mod tests {
         assert_eq!(recap.days_studied, 1);
     }
 
+    /// The players of `testdata/competition_utc_archive.json`: east of UTC, whose Monday Anki
+    /// day began on Sunday in UTC, and one on UTC.
+    fn legacy_players() -> Vec<Participant> {
+        let mut eastern = player("east", reviews("2026-09-14", 2));
+        eastern.clock_history = ClockHistory::single(Clock {
+            offset_west_min: -600,
+            rollover_hour: 4,
+        });
+        let mut both = reviews("2026-09-13", 1);
+        both.extend(reviews("2026-09-14", 1));
+        vec![eastern, player("utc", both)]
+    }
+
+    /// Each player's reviews over the archive's periods of `kind`.
+    fn archived_reviews(db: &Store, kind: &str) -> BTreeMap<String, u64> {
+        let mut totals = BTreeMap::new();
+        for period in read_periods(&db.conn).unwrap() {
+            if period.kind != kind {
+                continue;
+            }
+            for standing in period.standings {
+                *totals.entry(standing.user).or_default() += standing.reviews;
+            }
+        }
+        totals
+    }
+
+    #[test]
+    fn an_archive_from_before_own_dates_keeps_its_finalized_rows() {
+        let mut db = Database::new();
+
+        // Load the archive the previous version wrote: Sunday is final and holds east's
+        // Monday, which began on Sunday in UTC; Monday is still provisional.
+        let legacy: Value =
+            serde_json::from_str(include_str!("testdata/competition_utc_archive.json")).unwrap();
+        let conn = &db.get().conn;
+        conn.execute(
+            "insert into competition_meta (id, payload) values (1, ?1)",
+            [legacy["meta"].as_str().unwrap()],
+        )
+        .unwrap();
+        let mut frozen = BTreeMap::new();
+        for row in legacy["periods"].as_array().unwrap() {
+            let field = |name: &str| row[name].as_str().unwrap().to_string();
+            conn.execute(
+                "insert into competition_periods (kind, key, finalized, payload)
+                 values (?1, ?2, ?3, ?4)",
+                params![
+                    field("kind"),
+                    field("key"),
+                    row["finalized"].as_i64(),
+                    field("payload")
+                ],
+            )
+            .unwrap();
+            if row["finalized"] == 1 {
+                frozen.insert((field("kind"), field("key")), field("payload"));
+            }
+        }
+        assert!(frozen.contains_key(&("day".into(), "2026-09-13".into())));
+
+        // This version refreshes while Monday is provisional, and again once it is final.
+        let players = legacy_players();
+        let expected = BTreeMap::from([("east".to_string(), 2), ("utc".to_string(), 2)]);
+        for now in [at("2026-09-15", 6), at("2026-09-17", 6)] {
+            refresh(db.get(), &players, &Week::default(), now, None).unwrap();
+
+            // Finalized rows stay byte for byte, and each review counts once.
+            for ((kind, key), payload) in &frozen {
+                let stored: String = db
+                    .get()
+                    .conn
+                    .query_row(
+                        "select payload from competition_periods where kind = ?1 and key = ?2",
+                        [kind, key],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(&stored, payload, "{kind} {key}");
+            }
+            assert_eq!(archived_reviews(db.get(), "day"), expected);
+            assert_eq!(archived_reviews(db.get(), "week"), expected);
+            assert_eq!(archived_reviews(db.get(), "month"), expected);
+        }
+    }
+
+    #[test]
+    fn a_new_archive_dates_month_ends_on_the_players_clock() {
+        let mut db = Database::new();
+
+        // East of UTC, 30 September 20:00 UTC is 1 October on their clock, as is
+        // 31 December 20:00 UTC for 1 January.
+        let review = |id: i64| game::Review {
+            id,
+            cid: id,
+            last_ivl: 10,
+            ivl: None,
+            time_ms: 10_000,
+            kind: 1,
+        };
+        let mut eastern = player(
+            "east",
+            vec![review(at("2026-09-30", 20)), review(at("2026-12-31", 20))],
+        );
+        eastern.clock_history = ClockHistory::single(Clock {
+            offset_west_min: -600,
+            rollover_hour: 4,
+        });
+        let players = vec![eastern, player("utc", reviews("2026-09-29", 1))];
+        refresh(
+            db.get(),
+            &players,
+            &Week::default(),
+            at("2027-01-05", 6),
+            None,
+        )
+        .unwrap();
+        let mut reviews_in = |key: &str| {
+            period(db.get(), "month", key)
+                .standings
+                .iter()
+                .find(|s| s.user == "east")
+                .map_or(0, |s| s.reviews)
+        };
+        assert_eq!(reviews_in("2026-09"), 0);
+        assert_eq!(reviews_in("2026-10"), 1);
+        assert_eq!(reviews_in("2026-12"), 0);
+        assert_eq!(reviews_in("2027-01"), 1);
+    }
+
     #[test]
     fn different_player_clocks_match_existing_weekly_allocation() {
         let mut db = Database::new();
