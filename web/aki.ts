@@ -33,15 +33,16 @@ import {escape} from "./common";
     if (profile?.streak_state === "studied" && (profile?.today?.reviews ?? 0) > 0) return "streak";
     return "review";
   }
-  const messages: Record<Mood, string> = {
-    review: "A small step starts with one card.",
+  // While cards are due Aki shows only the pose, as on Android and Desktop.
+  const messages: Record<Exclude<Mood, "review">, string> = {
     celebrate: "Your daily quests are complete. Look at you go!",
     streak: "You showed up today. That is progress worth keeping.",
     freeze: "Your streak is protected by a freeze. A fresh start is waiting.",
   };
   function profile(value: CompanionProfile | null | undefined) {
     const pose = mood(value);
-    return `<aside class="aki-companion" data-aki-companion="${pose}">${image(pose)}<p>${escape(AnkiQuestI18n.t(messages[pose]))}</p></aside>`;
+    const line = pose === "review" ? "" : `<p>${escape(AnkiQuestI18n.t(messages[pose]))}</p>`;
+    return `<aside class="aki-companion" data-aki-companion="${pose}">${image(pose)}${line}</aside>`;
   }
   function decorate(root: ParentNode & Partial<Pick<Element, "matches">> = document) {
     const select = <E extends Element = HTMLElement>(selector: string): E[] => [ ...(root.matches?.(selector) ? [root as E] : []), ...root.querySelectorAll?.<E>(selector) || [] ];
