@@ -682,8 +682,12 @@ import {failure, refused, request as call, send} from "./http";
       if (state.session !== session) return;
       if (!response.ok && response.status === 403 && !field("current")) { state.account = state.account && {...state.account, confirmed_until: null}; renderSettings(); return; }
       if (!response.ok) throw Error(response.status === 403 ? tr("That password is not right.") : response.status === 429 ? tr("Too many attempts. Try again in one minute.") : response.status === 400 && body.password.length < 10 ? tr("Passwords need at least 10 characters.") : (await failure(response)).message);
-      state.signIn = await response.json();
-      if (others) state.devices = (await owner<{devices: Device[]}>("/api/devices",undefined,session).catch(() => null))?.devices ?? state.devices;
+      // Bodies and later calls can finish after the account changed; check again before showing them.
+      const signIn = await response.json() as SignIn;
+      const devices = others ? (await owner<{devices: Device[]}>("/api/devices",undefined,session).catch(() => null))?.devices : undefined;
+      if (state.session !== session) return;
+      state.signIn = signIn;
+      state.devices = devices ?? state.devices;
       renderSettings();
       $("password-form").querySelector(".status")!.textContent = others ? tr("Password changed. Your other devices were signed out.") : tr("Password changed.");
     } catch (cause) {
@@ -719,8 +723,9 @@ import {failure, refused, request as call, send} from "./http";
     const image = document.getElementById("two-factor-qr") as HTMLImageElement | null;
     if (!image) return;
     const response = await send(`/api/two-factor/${encodeURIComponent(session.user)}/qr.svg`, {session}).catch(() => null);
-    if (!response?.ok || state.session !== session) return;
-    image.src = URL.createObjectURL(await response.blob());
+    const svg = response?.ok ? await response.blob() : null;
+    if (!svg || state.session !== session) return;
+    image.src = URL.createObjectURL(svg);
   }
   async function twoFactorChange(button: HTMLButtonElement, body: {action: string; password?: string; code?: string}, status: HTMLElement) {
     const session = state.session;
@@ -734,7 +739,10 @@ import {failure, refused, request as call, send} from "./http";
         const refusal = await failure(response);
         throw Error(refusal.detail === "That code is not right." ? tr("That code is not right.") : response.status === 403 ? tr("That password is not right.") : response.status === 429 ? (refusal.detail.includes("15") ? tr("Too many wrong codes. Try again in 15 minutes.") : tr("Too many attempts. Try again in one minute.")) : refusal.message);
       }
-      state.twoFactor = await response.json();
+      // The body can arrive after the account changed: a secret or recovery codes belong to `session` only.
+      const answer = await response.json() as TwoFactor;
+      if (state.session !== session) return;
+      state.twoFactor = answer;
       renderSettings();
       $("two-factor-status").textContent = body.action === "disable" ? tr("Two-factor authentication is off.") : body.action === "enable" ? tr("Two-factor authentication is on.") : "";
       if (body.action === "begin") await showQr(session);

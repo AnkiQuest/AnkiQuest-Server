@@ -618,21 +618,23 @@ fn with_code(
     code: &str,
     now: i64,
 ) -> Result<Option<serde_json::Value>, Error> {
+    // Spending the code and the change are one transaction: if a write fails, the code sent,
+    // the old recovery codes and the enrolment all stay, so nobody is locked out.
     let store = app.store.lock().unwrap();
-    if check_code(&store.conn, user, code, now)? == Checked::Refused {
+    let transaction = store.conn.unchecked_transaction()?;
+    if check_code(&transaction, user, code, now)? == Checked::Refused {
         return Ok(None);
     }
-    if action == Action::RecoveryCodes {
-        let codes = new_recovery_codes(&store.conn, user)?;
-        return Ok(Some(serde_json::json!({"recovery_codes": codes})));
-    }
-    store
-        .conn
-        .execute("delete from two_factor where user = ?1", [user])?;
-    store
-        .conn
-        .execute("delete from two_factor_recovery where user = ?1", [user])?;
-    Ok(Some(serde_json::json!({})))
+    let answer = if action == Action::RecoveryCodes {
+        let codes = new_recovery_codes(&transaction, user)?;
+        serde_json::json!({"recovery_codes": codes})
+    } else {
+        transaction.execute("delete from two_factor where user = ?1", [user])?;
+        transaction.execute("delete from two_factor_recovery where user = ?1", [user])?;
+        serde_json::json!({})
+    };
+    transaction.commit()?;
+    Ok(Some(answer))
 }
 
 /// The pending secret as a QR code, for the settings page to show while setting up.
