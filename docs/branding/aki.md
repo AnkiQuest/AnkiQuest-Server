@@ -21,7 +21,7 @@ branding works offline.
 
 the Android app ships WebP copies of the Aki and Ankilope art in `drawable-nodpi`. after changing a PNG in `static/`, run `cargo run -p ankiquest-xtask -- export-android-art <android-checkout>` to rewrite them, and `--check` to confirm every drawable exists at its size.
 
-the desktop add-on ships 256 px palette PNGs of the poses it shows in `addon/art` of AnkiQuest-Desktop. `cargo run -p ankiquest-xtask -- export-addon-art <desktop-checkout>` writes the missing ones, `--replace` rewrites them all, and `--check` fails while one is missing or has the wrong size. Which pose shows for today's streak is one rule for both clients, pinned by `tests/fixtures/streak_moods.json`.
+the desktop add-on ships 256 px palette PNGs of the poses it shows in `addon/art` of AnkiQuest-Desktop. `cargo run -p ankiquest-xtask -- export-addon-art <desktop-checkout>` writes the missing ones, `--replace` rewrites them all, and `--check` fails while one is missing or has the wrong size. Which pose shows for today's streak is one rule for both clients, pinned by `tests/fixtures/streak_moods.json`; it names poses from `tests/fixtures/companion_poses.json`, and each client draws them with the chosen companion's art.
 
 the duo also leads the README banner (`docs/graphics/banner_readme.png`) and the repository's social preview (`docs/graphics/social_preview.png`). `npm run screenshots:web` renders the website pages into `docs/screenshots/web/`, `cargo run -p ankiquest-xtask -- banner` draws the banner from the duo and those screenshots, `banner --social` the preview; `cargo test -p ankiquest-xtask` fails while either is stale. Android's README banner shows the duo too, and its social preview comes from `banner --social --out <android-checkout>/docs/graphics/logos/social_preview.png`.
 
@@ -68,6 +68,10 @@ yet: they are not embedded in the server binary and are not public paths.
 | `deck_conquered.png` | `aki_deck_conquered` | A deck conquered |
 | `leech.png` | `aki_leech` | A leech tamed |
 | `at_risk.png` | `aki_at_risk` | Still time to secure the streak |
+| `sad.png` | `aki_sad` | Streak mood: a streak and no study yet today |
+| `hopeful.png` | `aki_hopeful` | Streak mood: some study today, short of the minimum |
+| `frozen.png` | `aki_frozen` | Streak mood: a freeze kept the days before today (1, 2 or 3+ days) |
+| `neglected.png` | `aki_neglected` | Core pose for a long absence; no streak mood shows it yet |
 | `backlog.png` | `aki_backlog` | Calmly sorting overdue flashcards, one small step at a time |
 | `place_1.png` | `aki_place_1` | Weekly first place, gold medal and a friendly wave |
 | `place_2.png` | `aki_place_2` | Weekly second place, proudly holding a silver medal |
