@@ -3,7 +3,7 @@
 //! - `android-contract --android-resources <dir> [--server-examples <dir>]`
 //! - `export-android-art [--check] <android-checkout>`
 //! - `export-addon-art [--check] <desktop-checkout>`
-//! - `art-coverage`
+//! - `art-coverage [--missing | --since <companion_poses.json>]`
 //! - `banner [--social] [--out <file>]`
 
 mod art;
@@ -15,7 +15,7 @@ use std::process::ExitCode;
 
 const USAGE: &str = "usage: xtask android-contract --android-resources <dir> \
 [--server-examples <dir>]\n       xtask export-android-art [--check] <android-checkout>\n       \
-xtask export-addon-art [--check] <desktop-checkout>\n       xtask art-coverage\n       \
+xtask export-addon-art [--check] <desktop-checkout>\n       xtask art-coverage [--missing | --since <companion_poses.json>]\n       \
 xtask banner [--social] [--out <file>]";
 
 fn main() -> ExitCode {

@@ -7,9 +7,14 @@
 //! the first pose its fallback chain reaches that exists. Anki-tan's chibi
 //! masters stay below the same character's licensed folder. Runtime
 //! mappings are not inferred. Read-only.
+//!
+//! `--missing` lists, per companion, the poses without a master: the art
+//! backlog (AGENTS.md, Companion art). `--since <fixture>` fails when a
+//! pose the given older copy of the fixture lacks has no master for some
+//! live companion, so a PR that adds a pose draws it for all of them.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use serde_json::Value;
@@ -18,6 +23,15 @@ use super::root;
 
 /// The pose list both clients use.
 const FIXTURE: &str = "tests/fixtures/companion_poses.json";
+
+/// How players earn each companion but the starter, and which are live.
+const UNLOCKS: &str = "tests/fixtures/companion_unlock.json";
+
+/// The companion every player starts with; it is not in [`UNLOCKS`].
+const STARTER: &str = "aki";
+
+/// The `status` [`UNLOCKS`] gives a companion players can have.
+const LIVE: &str = "live";
 
 /// Every companion and its master folder under `static/`, in picker order.
 const COMPANIONS: &[(&str, &str)] = &[
@@ -82,21 +96,87 @@ struct Poses {
     extensions: Vec<(String, String)>,
 }
 
-/// Runs the report; it takes no arguments.
-pub fn run(args: &[String]) -> ExitCode {
-    if !args.is_empty() {
-        eprintln!("usage: xtask art-coverage");
-        return ExitCode::FAILURE;
+impl Poses {
+    /// Every pose, core first.
+    fn names(&self) -> impl Iterator<Item = &str> {
+        let core = self.core.iter().map(String::as_str);
+        core.chain(self.extensions.iter().map(|(pose, _)| pose.as_str()))
     }
+}
+
+/// What the command prints or checks.
+enum Mode {
+    /// The full table.
+    Table,
+    /// The poses each companion has no master for.
+    Missing,
+    /// Fails when a pose this older fixture lacks is undrawn.
+    Since(PathBuf),
+}
+
+/// Whether players can have a companion yet.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Stage {
+    Live,
+    Planned,
+}
+
+/// A companion, its master folder under `static/` and its stage.
+struct Companion {
+    id: &'static str,
+    folder: &'static str,
+    stage: Stage,
+}
+
+/// The command's arguments.
+const USAGE: &str = "usage: xtask art-coverage [--missing | --since <companion_poses.json>]";
+
+/// Runs the report or the check.
+pub fn run(args: &[String]) -> ExitCode {
+    let Some(mode) = mode(args) else {
+        eprintln!("{USAGE}");
+        return ExitCode::FAILURE;
+    };
     let root = root();
-    match poses(&root.join(FIXTURE)) {
-        Ok(poses) => {
-            print!("{}", report(&root, &poses));
+    match execute(&root, mode) {
+        Ok(out) => {
+            print!("{out}");
             ExitCode::SUCCESS
         }
         Err(error) => {
             eprintln!("{error}");
             ExitCode::FAILURE
+        }
+    }
+}
+
+/// The mode the arguments ask for.
+fn mode(args: &[String]) -> Option<Mode> {
+    match args {
+        [] => Some(Mode::Table),
+        [flag] if flag == "--missing" => Some(Mode::Missing),
+        [flag, base] if flag == "--since" => Some(Mode::Since(PathBuf::from(base))),
+        _ => None,
+    }
+}
+
+/// The output for `mode`, or why the check failed.
+fn execute(root: &Path, mode: Mode) -> Result<String, String> {
+    let list = poses(&root.join(FIXTURE))?;
+    match mode {
+        Mode::Table => Ok(report(root, &list)),
+        Mode::Missing => Ok(backlog(root, &companions(root)?, &list)),
+        Mode::Since(base) => {
+            let base = poses(&base)?;
+            let undrawn = undrawn(root, &companions(root)?, &base, &list);
+            if undrawn.is_empty() {
+                return Ok("Every added pose has a master for every live companion.\n".into());
+            }
+            Err(format!(
+                "Added poses need a master for every live companion \
+                 (AGENTS.md, Companion art):\n{}",
+                undrawn.join("\n")
+            ))
         }
     }
 }
@@ -119,6 +199,89 @@ fn poses(path: &Path) -> Result<Poses, String> {
         .filter_map(|(pose, to)| Some((pose.clone(), to.as_str()?.to_string())))
         .collect();
     Ok(Poses { core, extensions })
+}
+
+/// The companions [`COMPANIONS`] lists, with their stage: the starter
+/// is live, the others as [`UNLOCKS`] says. One it does not list is left
+/// out.
+fn companions(root: &Path) -> Result<Vec<Companion>, String> {
+    let path = root.join(UNLOCKS);
+    let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let json: Value =
+        serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    let unlocks = json["companions"]
+        .as_array()
+        .ok_or("companions is not a list")?;
+
+    // The starter, then each companion as the unlock fixture lists it.
+    let stage = |id: &str| {
+        if id == STARTER {
+            return Some(Stage::Live);
+        }
+        let entry = unlocks.iter().find(|entry| entry["companion"] == id)?;
+        Some(if entry["status"] == LIVE {
+            Stage::Live
+        } else {
+            Stage::Planned
+        })
+    };
+    Ok(COMPANIONS
+        .iter()
+        .filter_map(|&(id, folder)| {
+            let stage = stage(id)?;
+            Some(Companion { id, folder, stage })
+        })
+        .collect())
+}
+
+/// The poses `folder` has no master for, core first.
+fn missing<'a>(folder: &Path, poses: &'a Poses) -> Vec<&'a str> {
+    poses.names().filter(|pose| !has(folder, pose)).collect()
+}
+
+/// The art backlog: per companion, the poses without a master.
+fn backlog(root: &Path, companions: &[Companion], poses: &Poses) -> String {
+    let mut out = String::from("Poses without a master (AGENTS.md, Companion art)\n\n");
+    for companion in companions {
+        let folder = root.join("static").join(companion.folder);
+        let missing = missing(&folder, poses);
+        let list = if missing.is_empty() {
+            "none".to_string()
+        } else {
+            missing.join(", ")
+        };
+        let stage = match companion.stage {
+            Stage::Live => "",
+            Stage::Planned => " (planned)",
+        };
+        out += &format!(
+            "- {}{stage}: {} missing: {list}\n",
+            companion.id,
+            missing.len()
+        );
+    }
+    out
+}
+
+/// Each pose in `poses` but not in `base` that a live companion has no
+/// master for, as `pose: companion`.
+fn undrawn(root: &Path, companions: &[Companion], base: &Poses, poses: &Poses) -> Vec<String> {
+    let added = poses
+        .names()
+        .filter(|pose| !base.names().any(|old| old == *pose));
+    let live: Vec<_> = companions
+        .iter()
+        .filter(|companion| companion.stage == Stage::Live)
+        .collect();
+    let mut undrawn = Vec::new();
+    for pose in added {
+        for companion in &live {
+            if !has(&root.join("static").join(companion.folder), pose) {
+                undrawn.push(format!("{pose}: {}", companion.id));
+            }
+        }
+    }
+    undrawn
 }
 
 /// The older file name a pose's master may still have.
@@ -338,6 +501,107 @@ mod tests {
             Status::Fallback("frozen".into()),
             status(&chibi, &poses, "frozen_3")
         );
+    }
+
+    /// A checkout in a temporary folder with the given masters, an unlock
+    /// fixture making `cow` live and `anki_tan` planned.
+    fn checkout(masters: &[&str]) -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        for master in masters {
+            let path = root.path().join("static").join(master);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"").unwrap();
+        }
+        let unlocks = r#"{"companions": [
+            {"companion": "cow", "status": "live"},
+            {"companion": "anki_tan", "status": "planned"}
+        ]}"#;
+        fs::create_dir_all(root.path().join("tests/fixtures")).unwrap();
+        fs::write(root.path().join(UNLOCKS), unlocks).unwrap();
+        root
+    }
+
+    fn list(core: &[&str], extensions: &[(&str, &str)]) -> Poses {
+        Poses {
+            core: core.iter().map(|pose| pose.to_string()).collect(),
+            extensions: extensions
+                .iter()
+                .map(|(pose, to)| (pose.to_string(), to.to_string()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn reads_the_stage_of_each_companion() {
+        let root = checkout(&[]);
+        let companions = companions(root.path()).unwrap();
+        let stages: Vec<_> = companions.iter().map(|c| (c.id, c.stage)).collect();
+        assert_eq!(
+            stages,
+            [
+                ("aki", Stage::Live),
+                ("cow", Stage::Live),
+                ("anki_tan", Stage::Planned)
+            ]
+        );
+    }
+
+    #[test]
+    fn added_pose_needs_every_live_master() {
+        let base = list(&["happy"], &[]);
+        let poses = list(&["happy"], &[("winner", "happy")]);
+
+        // Only Aki has it: Bluma's is missing, Anki-tan is planned.
+        let root = checkout(&["aki/winner.png", "anki-tan/happy.png"]);
+        let cast = companions(root.path()).unwrap();
+        let missing = undrawn(root.path(), &cast, &base, &poses);
+        assert_eq!(missing, ["winner: cow"]);
+
+        // Every live companion has it.
+        let root = checkout(&["aki/winner.png", "cow/winner.png"]);
+        let cast = companions(root.path()).unwrap();
+        assert!(undrawn(root.path(), &cast, &base, &poses).is_empty());
+    }
+
+    #[test]
+    fn existing_gaps_do_not_fail() {
+        // Neither companion has `happy`, but master's list already had it.
+        let poses = list(&["happy"], &[("winner", "happy")]);
+        let root = checkout(&[]);
+        let companions = companions(root.path()).unwrap();
+        assert!(undrawn(root.path(), &companions, &poses, &poses).is_empty());
+    }
+
+    #[test]
+    fn backlog_lists_missing_poses() {
+        let poses = list(&["happy", "sad"], &[("winner", "happy")]);
+        let root = checkout(&[
+            "aki/celebrate.png",
+            "aki/sad.png",
+            "aki/winner.png",
+            "cow/sad.png",
+        ]);
+        let companions = companions(root.path()).unwrap();
+        assert_eq!(
+            backlog(root.path(), &companions, &poses),
+            "Poses without a master (AGENTS.md, Companion art)\n\n\
+             - aki: 0 missing: none\n\
+             - cow: 2 missing: happy, winner\n\
+             - anki_tan (planned): 3 missing: happy, sad, winner\n"
+        );
+    }
+
+    #[test]
+    fn parses_the_modes() {
+        let args = |list: &[&str]| list.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+        assert!(matches!(mode(&args(&[])), Some(Mode::Table)));
+        assert!(matches!(mode(&args(&["--missing"])), Some(Mode::Missing)));
+        assert!(matches!(
+            mode(&args(&["--since", "base.json"])),
+            Some(Mode::Since(path)) if path == Path::new("base.json")
+        ));
+        assert!(mode(&args(&["--since"])).is_none());
+        assert!(mode(&args(&["--other"])).is_none());
     }
 
     #[test]
