@@ -271,12 +271,18 @@ fn drawable(name: &str) -> String {
 /// The icons for every companion with a master of an icon pose, named
 /// `<companion>_<pose>`. A companion without one shows the fallback.
 fn icons() -> Result<Vec<Art>, String> {
+    icons_in(&root().join("static"))
+}
+
+/// [`icons`] for the masters in `masters`, so tests can use a folder of their own.
+fn icons_in(masters: &Path) -> Result<Vec<Art>, String> {
     let mut icons = Vec::new();
     for pose in ICON_POSES {
-        for companion in companions_with(&root().join("static"), pose)? {
+        for companion in companions_with(masters, pose)? {
+            let source = masters.join(&companion).join(format!("{pose}.png"));
             icons.push(Art {
                 name: Cow::Owned(format!("{}_{pose}", companion.replace('-', "_"))),
-                source: Cow::Owned(format!("static/{companion}/{pose}.png")),
+                source: Cow::Owned(source.to_string_lossy().into_owned()),
                 size: ICON,
                 quality: QUALITY,
                 look: Look::Colour,
@@ -293,9 +299,14 @@ fn drawables() -> Result<Vec<Art>, String> {
 
 /// Writes every drawable into the checkout.
 fn export(android: &Path) -> Result<ExitCode, String> {
+    write_all(&drawables()?, android)
+}
+
+/// Writes `arts` into the checkout. A relative source is in this repository.
+fn write_all(arts: &[Art], android: &Path) -> Result<ExitCode, String> {
     let folder = android.join(DRAWABLES);
     fs::create_dir_all(&folder).map_err(|e| format!("{}: {e}", folder.display()))?;
-    for art in drawables()? {
+    for art in arts {
         let master = look(load(&root().join(&*art.source))?, art.look);
         let (width, height) = target(master.width(), master.height(), art.size);
         if (width, height) != (art.size, art.size) {
@@ -321,9 +332,13 @@ fn export(android: &Path) -> Result<ExitCode, String> {
 
 /// Compares every drawable's pixel size with what export would write.
 fn check(android: &Path) -> Result<ExitCode, String> {
+    compare(&drawables()?, android)
+}
+
+/// Compares the pixel size of each of `arts` in the checkout with what export would write.
+fn compare(arts: &[Art], android: &Path) -> Result<ExitCode, String> {
     let mut failed = false;
-    let drawables = drawables()?;
-    for art in &drawables {
+    for art in arts {
         let (width, height) = png_size(&root().join(&*art.source))?;
         let expected = target(width, height, art.size);
         let name = drawable(&art.name);
@@ -342,7 +357,7 @@ fn check(android: &Path) -> Result<ExitCode, String> {
     if failed {
         return Ok(ExitCode::FAILURE);
     }
-    println!("all {} drawables match", drawables.len());
+    println!("all {} drawables match", arts.len());
     Ok(ExitCode::SUCCESS)
 }
 
@@ -477,6 +492,34 @@ mod tests {
             assert!(root().join(&*icon.source).is_file(), "{}", icon.source);
             assert!(icon.name.ends_with("_icon_fire"), "{}", icon.name);
         }
+    }
+
+    #[test]
+    fn icons_export_and_check_from_their_masters() {
+        // A folder of masters where only Aki has icon_fire, so the test does not
+        // depend on which icons this repository has drawn yet.
+        let dir = std::env::temp_dir().join(format!("ankiquest-icons-{}", std::process::id()));
+        let (masters, android) = (dir.join("static"), dir.join("android"));
+        for folder in ["aki", "cow"] {
+            fs::create_dir_all(masters.join(folder)).unwrap();
+        }
+        let master = RgbaImage::from_pixel(400, 400, image::Rgba([200, 80, 20, 255]));
+        master.save(masters.join("aki/icon_fire.png")).unwrap();
+        master.save(masters.join("cow/face.png")).unwrap();
+
+        // Only Aki gets an icon, and it is exported at the icon size.
+        let icons = icons_in(&masters).unwrap();
+        let names: Vec<_> = icons.iter().map(|icon| &*icon.name).collect();
+        assert_eq!(names, ["aki_icon_fire"]);
+        assert_eq!(write_all(&icons, &android).unwrap(), ExitCode::SUCCESS);
+        let path = android.join(drawable("aki_icon_fire"));
+        assert_eq!(webp_size(&path).unwrap(), Some((ICON, ICON)));
+        assert_eq!(compare(&icons, &android).unwrap(), ExitCode::SUCCESS);
+
+        // Check fails once the drawable is gone.
+        fs::remove_file(&path).unwrap();
+        assert_eq!(compare(&icons, &android).unwrap(), ExitCode::FAILURE);
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
