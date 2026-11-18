@@ -1,5 +1,5 @@
 {
-  "_about": "How a player earns each companion but Aki. The server decides from what it already knows and keeps the unlock for good; clients only show the condition and the progress `GET /api/unlocks/{user}` answers. `kind` is what counts: `level` (the player's level), `study_hours` (whole hours studied in total), `streak` (days in a row), `taps` (taps in a row on the companion `requires` names, in the companion picker, once that one is unlocked: the client reports it with `POST /api/unlocks/{user}`; `goal` equals `taps`), `leeches_tamed` (cards with at least 8 lapses that later reached a 21-day interval). `goal` is the value that unlocks. A `secret` companion stays hidden until earned; the others show as a locked card with their condition. `status` is `live` when the companion can be earned, `planned` while it has no art yet: servers and clients ignore planned ones. Each check is a measured value and whether it unlocks; the server (src/companions.rs) tests against them. The tap rule: `taps` taps on the `requires` companion in a row, each at most `max_gap_ms` after the one before; a tap on another choice, or a longer gap, starts the count again (a late tap counts as the first of a new run). Each case lists the taps as [choice, milliseconds] and whether the last one unlocks.",
+  "_about": "How a player earns each companion but Aki. The server decides from what it already knows and keeps the unlock for good; clients only show the condition and the progress `GET /api/unlocks/{user}` answers. `kind` is what counts: `level` (the player's level), `study_hours` (whole hours studied in total), `streak` (days in a row), `taps` (a chibi: an Easter egg found by tapping the picture of the companion `requires` names, its base, wherever the client shows the base; `goal` equals `taps`), `leeches_tamed` (cards with at least 8 lapses that later reached a 21-day interval, each card counted once). `goal` is the value that unlocks. A `secret` companion stays hidden until earned; the others show as a locked card with their condition. `status` is `live` when the companion can be earned, `planned` while it has no art yet: servers and clients ignore planned ones. Each check is a measured value of the companion's `kind` and whether it unlocks; the server (src/companions.rs) tests against them, planned companions included. Every `taps` entry names its base in `requires`, and a chibi stays locked until its base is unlocked: clients count taps only on a base that is unlocked and has a chibi, and the server refuses the chibi with 409 until the base is unlocked. The client counts the taps; on the run's last tap the chibi appears and the client sends `POST /api/unlocks/{user}` `{\"unlock\": \"<chibi>\"}` with no proof, which the server grants when the base is unlocked. The tap rule: `taps` taps on the base in a row, each not earlier than the one before and at most `max_gap_ms` after it (a tap at the same time continues the run); a tap on another choice, a longer gap, or a time before the one before starts the count again (that tap counts as the first of a new run). Times are 64-bit signed milliseconds; compute the gap without overflow. Each case lists the taps as [choice, milliseconds] and whether the last one unlocks; the base is unlocked in `cases`. From the `hint_from`th tap of a run until the one before the last, the client shows `hint` with {0} the taps still needed (`one` for 1, `other` otherwise); the last tap shows no hint, the chibi appears instead. `hints` gives the text after each tap count. Each `chibi_taps` case lists the unlocked companions, the taps, the hint after each tap (null for none) and whether the last tap unlocks. Each `requests` case is a `POST /api/unlocks/{user}` for the chibi from a player with `unlocked`, and the answer's `status`; `taps`, sent by apps released before this rule, is ignored.",
   "companions": [
     {"companion": "ankilope", "kind": "level", "goal": 30, "secret": false, "status": "live"},
     {"companion": "cow", "kind": "study_hours", "goal": 10, "secret": false, "status": "live"},
@@ -12,10 +12,41 @@
     {"name": "level 30 unlocks Ankilope", "companion": "ankilope", "value": 30, "unlocks": true},
     {"name": "a later level still unlocks", "companion": "ankilope", "value": 31, "unlocks": true},
     {"name": "9 whole hours are not enough", "companion": "cow", "value": 9, "unlocks": false},
-    {"name": "10 hours unlock Bluma", "companion": "cow", "value": 10, "unlocks": true}
+    {"name": "10 hours unlock Bluma", "companion": "cow", "value": 10, "unlocks": true},
+    {"name": "a 65-day streak is not enough", "companion": "anki_tan", "value": 65, "unlocks": false},
+    {"name": "a 66-day streak unlocks Anki-tan", "companion": "anki_tan", "value": 66, "unlocks": true},
+    {"name": "a longer streak still unlocks", "companion": "anki_tan", "value": 100, "unlocks": true},
+    {"name": "2 tamed leeches are not enough", "companion": "leech_tan", "value": 2, "unlocks": false},
+    {"name": "3 tamed leeches unlock Leech-tan", "companion": "leech_tan", "value": 3, "unlocks": true}
   ],
   "taps": 9,
   "max_gap_ms": 2000,
+  "hint_from": 4,
+  "hint": {"one": "You are {0} tap away from chibi", "other": "You are {0} taps away from chibi"},
+  "hints": [
+    {"taps": 1, "hint": null},
+    {"taps": 2, "hint": null},
+    {"taps": 3, "hint": null},
+    {"taps": 4, "hint": "You are 5 taps away from chibi"},
+    {"taps": 5, "hint": "You are 4 taps away from chibi"},
+    {"taps": 6, "hint": "You are 3 taps away from chibi"},
+    {"taps": 7, "hint": "You are 2 taps away from chibi"},
+    {"taps": 8, "hint": "You are 1 tap away from chibi"},
+    {"taps": 9, "hint": null}
+  ],
+  "chibi_taps": [
+    {"name": "taps on a locked base show no hint and never unlock", "unlocked": [], "sequence": [["anki_tan", 0], ["anki_tan", 300], ["anki_tan", 600], ["anki_tan", 900], ["anki_tan", 1200], ["anki_tan", 1500], ["anki_tan", 1800], ["anki_tan", 2100], ["anki_tan", 2400]], "hints": [null, null, null, null, null, null, null, null, null], "unlocks": false},
+    {"name": "taps on an unlocked base hint from tap 4 and unlock on tap 9", "unlocked": ["anki_tan"], "sequence": [["anki_tan", 0], ["anki_tan", 300], ["anki_tan", 600], ["anki_tan", 900], ["anki_tan", 1200], ["anki_tan", 1500], ["anki_tan", 1800], ["anki_tan", 2100], ["anki_tan", 2400]], "hints": [null, null, null, "You are 5 taps away from chibi", "You are 4 taps away from chibi", "You are 3 taps away from chibi", "You are 2 taps away from chibi", "You are 1 tap away from chibi", null], "unlocks": true},
+    {"name": "a longer gap starts the hints again", "unlocked": ["anki_tan"], "sequence": [["anki_tan", 0], ["anki_tan", 300], ["anki_tan", 600], ["anki_tan", 900], ["anki_tan", 5000], ["anki_tan", 5300], ["anki_tan", 5600], ["anki_tan", 5900]], "hints": [null, null, null, "You are 5 taps away from chibi", null, null, null, "You are 5 taps away from chibi"], "unlocks": false},
+    {"name": "taps on a companion without a chibi count nothing", "unlocked": ["anki_tan", "cow"], "sequence": [["cow", 0], ["cow", 300], ["cow", 600], ["cow", 900], ["cow", 1200], ["cow", 1500], ["cow", 1800], ["cow", 2100], ["cow", 2400]], "hints": [null, null, null, null, null, null, null, null, null], "unlocks": false}
+  ],
+  "requests": [
+    {"name": "the chibi is refused while her base is locked", "unlock": "anki_tan_chibi", "unlocked": [], "status": 409},
+    {"name": "the chibi joins once her base is unlocked", "unlock": "anki_tan_chibi", "unlocked": ["anki_tan"], "status": 200},
+    {"name": "asking again once she joined answers the list", "unlock": "anki_tan_chibi", "unlocked": ["anki_tan", "anki_tan_chibi"], "status": 200},
+    {"name": "a tap run from a released app is ignored", "unlock": "anki_tan_chibi", "unlocked": ["anki_tan"], "taps": [["anki_tan", 0], ["anki_tan", 300], ["anki_tan", 600], ["anki_tan", 900], ["anki_tan", 1200], ["anki_tan", 1500], ["anki_tan", 1800], ["anki_tan", 2100], ["anki_tan", 2400]], "status": 200},
+    {"name": "a tap run does not help while her base is locked", "unlock": "anki_tan_chibi", "unlocked": [], "taps": [["anki_tan", 0], ["anki_tan", 300], ["anki_tan", 600], ["anki_tan", 900], ["anki_tan", 1200], ["anki_tan", 1500], ["anki_tan", 1800], ["anki_tan", 2100], ["anki_tan", 2400]], "status": 409}
+  ],
   "cases": [
     {
       "name": "nine quick taps unlock",
@@ -45,6 +76,26 @@
     {
       "name": "a tap on another choice starts again",
       "sequence": [["anki_tan", 0], ["anki_tan", 100], ["anki_tan", 200], ["anki_tan", 300], ["aki", 400], ["anki_tan", 500], ["anki_tan", 600], ["anki_tan", 700], ["anki_tan", 800]],
+      "unlocks": false
+    },
+    {
+      "name": "an earlier tap starts again",
+      "sequence": [["anki_tan", 9000], ["anki_tan", 8000], ["anki_tan", 7000], ["anki_tan", 6000], ["anki_tan", 5000], ["anki_tan", 4000], ["anki_tan", 3000], ["anki_tan", 2000], ["anki_tan", 1000]],
+      "unlocks": false
+    },
+    {
+      "name": "taps at the same time continue the run",
+      "sequence": [["anki_tan", 1000], ["anki_tan", 1000], ["anki_tan", 1000], ["anki_tan", 1000], ["anki_tan", 1000], ["anki_tan", 1000], ["anki_tan", 1000], ["anki_tan", 1000], ["anki_tan", 1000]],
+      "unlocks": true
+    },
+    {
+      "name": "a gap too wide for 64 bits starts again",
+      "sequence": [["anki_tan", -9223372036854775808], ["anki_tan", -9223372036854775508], ["anki_tan", -9223372036854775208], ["anki_tan", -9223372036854774908], ["anki_tan", -9223372036854774608], ["anki_tan", -9223372036854774308], ["anki_tan", -9223372036854774008], ["anki_tan", -9223372036854773708], ["anki_tan", 9223372036854775807]],
+      "unlocks": false
+    },
+    {
+      "name": "a tap that wraps around to the earliest time starts again",
+      "sequence": [["anki_tan", 9223372036854773707], ["anki_tan", 9223372036854774007], ["anki_tan", 9223372036854774307], ["anki_tan", 9223372036854774607], ["anki_tan", 9223372036854774907], ["anki_tan", 9223372036854775207], ["anki_tan", 9223372036854775507], ["anki_tan", 9223372036854775807], ["anki_tan", -9223372036854775808]],
       "unlocks": false
     },
     {
