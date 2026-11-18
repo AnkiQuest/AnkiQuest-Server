@@ -44,7 +44,7 @@ pub(crate) async fn get_notifications(
             {
                 continue;
             }
-            notice.body = reminders::current_body(&notice, profile, clock, &app.week, now);
+            notice.body = reminders::current_body(&notice, profile, clock, now);
         }
         shares::share_words(&store.conn, &user, &mut notice, &language).map_err(store_error)?;
         let sender_display = app.display(&notice.sender);

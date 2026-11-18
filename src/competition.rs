@@ -1,7 +1,6 @@
-//! Persistent competition history. Anki-day XP is credited to the shared date
-//! containing that Anki day's start, matching game::Periods. The live leaderboard
-//! keeps its existing scoring; this archive freezes each result after a late-sync
-//! grace period and never rewrites a finalized winner.
+//! Persistent competition history. Anki-day XP is credited to the date of that Anki
+//! day on the player's own clock, as on the live board. This archive freezes each
+//! result after a late-sync grace period and never rewrites a finalized winner.
 
 use crate::app::{App, now_ms};
 use crate::game::{self, ClockHistory, DAY_MS, FreezePolicy, Week};
@@ -137,6 +136,11 @@ fn date(value: &str) -> Result<NaiveDate, Error> {
 }
 
 /// The Monday starting the week that contains `day`.
+/// The date of a player's Anki day on their own clock, the date its XP counts toward.
+fn own_date(day: &game::HistoryDay) -> NaiveDate {
+    NaiveDate::parse_from_str(&day.date, "%Y-%m-%d").unwrap_or_default()
+}
+
 pub(crate) fn monday(day: NaiveDate) -> NaiveDate {
     day - Duration::days(i64::from(day.weekday().num_days_from_monday()))
 }
@@ -268,10 +272,10 @@ pub fn refresh(
                 .history
                 .iter()
                 .find(|day| day.reviews > 0)
-                .map_or(today, |day| archive_week.competition_date(day.at)),
+                .map_or(today, own_date),
         );
         for day in profile.history {
-            let common_day = archive_week.competition_date(day.at);
+            let common_day = own_date(&day);
             if common_day > today {
                 continue;
             }
@@ -292,8 +296,7 @@ pub fn refresh(
             standing.reviews += day.reviews;
             standing.time_ms += day.time_ms;
             standing.new_cards += day.new_cards;
-            // At DST transitions two fixed-offset Anki-day starts can map to the
-            // same competition date. Consistency still counts that date once.
+            // A date counts once for consistency, however many reviews it has.
             standing.days_active = u64::from(standing.reviews > 0);
             standing.best_streak = standing.best_streak.max(day.streak);
             standing.freezes_used += u64::from(day.frozen);
@@ -1623,9 +1626,10 @@ mod tests {
         let players = vec![eastern, player("utc", reviews("2026-09-14", 1))];
         let now = at("2026-09-14", 14);
         refresh(db.get(), &players, &week, now, None).unwrap();
-        let sunday = period(db.get(), "day", "2026-09-13");
+        // East of UTC their Monday began on Sunday in UTC, and counts for Monday.
+        let monday = period(db.get(), "day", "2026-09-14");
         assert_eq!(
-            sunday
+            monday
                 .standings
                 .iter()
                 .find(|s| s.user == "east")
@@ -1656,7 +1660,7 @@ mod tests {
     }
 
     #[test]
-    fn repeated_hour_can_combine_anki_days_but_counts_one_competition_day() {
+    fn repeated_hour_keeps_anki_days_on_their_own_dates() {
         let mut db = Database::new();
         let week = Week {
             tz: chrono_tz::Europe::Berlin,
@@ -1669,9 +1673,12 @@ mod tests {
         clock.rollover_hour = 2;
         participant.clock_history = ClockHistory::single(clock);
         refresh(db.get(), &[participant], &week, at("2026-10-27", 12), None).unwrap();
-        let repeated = period(db.get(), "day", "2026-10-24");
-        assert_eq!(repeated.standings[0].reviews, 2);
-        assert_eq!(repeated.standings[0].days_active, 1);
+        // The archive's fall-back hour no longer merges two Anki days into one date.
+        for date in ["2026-10-24", "2026-10-25"] {
+            let day = period(db.get(), "day", date);
+            assert_eq!(day.standings[0].reviews, 1, "{date}");
+            assert_eq!(day.standings[0].days_active, 1, "{date}");
+        }
     }
 
     #[test]

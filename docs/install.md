@@ -123,7 +123,7 @@ optional; their defaults come from [the module](../flake.nix) and
 | `domain` | `public_url` | Unset; public HTTPS address. Required for OAuth. |
 | `streakMinutes` | `streak_minutes` | `0`; any review counts. Set a minimum number of review minutes if wanted. |
 | `weekTimezone` | `week_timezone` | `"UTC"`; shared leaderboard week timezone. |
-| `weekRolloverHour` | `week_rollover_hour` | `4`; local Monday hour when the leaderboard week changes. |
+| `weekRolloverHour` | `week_rollover_hour` | `12`; local Monday hour when the leaderboard switches weeks (12:00 UTC is Monday 00:00 in UTC-12). |
 | `ntfy` | `ntfy` | Unset; optional public push server URL. |
 | `privacy` | `privacy` | Operator, contact and hosting details displayed on the privacy page. |
 | `devs` | `devs` | Empty; accounts allowed to use the dev console. Create each account before listing it. |
