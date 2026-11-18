@@ -9,11 +9,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use image::imageops::{self, FilterType};
-use image::{Rgba32FImage, RgbaImage};
+use ankiquest_art::{load, png_size, shrink, target};
+use image::RgbaImage;
+
+use crate::root;
 
 mod addon;
 mod banner;
+mod coverage;
+mod exports;
+#[cfg(test)]
+mod guard;
 
 /// Drawable folder inside an AnkiQuest-Android checkout.
 const DRAWABLES: &str = "AnkiDroid/src/main/res/drawable-nodpi";
@@ -118,6 +124,19 @@ const ART: &[Art] = &[
     widget("aki_frozen", "static/aki/frozen.png"),
     widget("aki_neglected", "static/aki/neglected.png"),
     widget("ankilope_face", "static/ankilope/face.png"),
+    widget("ankilope_sad", "static/ankilope/sad.png"),
+    widget("ankilope_hopeful", "static/ankilope/hopeful.png"),
+    widget("ankilope_frozen", "static/ankilope/frozen.png"),
+    widget("ankilope_sleeping", "static/ankilope/sleeping.png"),
+    widget("ankilope_neglected", "static/ankilope/neglected.png"),
+    widget("bluma_face", "static/cow/face.png"),
+    widget("bluma_asleep", "static/cow/asleep.png"),
+    widget("bluma_happy", "static/cow/happy.png"),
+    widget("bluma_streak", "static/cow/streak.png"),
+    widget("bluma_sad", "static/cow/sad.png"),
+    widget("bluma_hopeful", "static/cow/hopeful.png"),
+    widget("bluma_frozen", "static/cow/frozen.png"),
+    widget("bluma_neglected", "static/cow/neglected.png"),
     widget("aki_celebrate", "static/aki/celebrate.png"),
     widget("aki_streak", "static/aki/streak.png"),
     widget("ankilope_celebrate", "static/ankilope/celebrate.png"),
@@ -171,14 +190,11 @@ const ART: &[Art] = &[
         336,
     ),
     art("duo_friends", "static/duo/friends.png", 336),
-    widget(
-        "anki_tan_frozen",
-        "static/anki-tan/generated/frozen-full.png",
-    ),
-    widget(
-        "anki_tan_chibi_frozen",
-        "static/anki-tan/generated/frozen-chibi.png",
-    ),
+    widget("anki_tan_frozen", "static/anki-tan/frozen.png"),
+    widget("anki_tan_asleep", "static/anki-tan/asleep.png"),
+    widget("anki_tan_sad", "static/anki-tan/sad.png"),
+    widget("anki_tan_neglected", "static/anki-tan/neglected.png"),
+    widget("anki_tan_chibi_frozen", "static/anki-tan/chibi/frozen.png"),
     // Anki-tan's launcher icons (AnkiQuest-Android AnkiquestIcon), CC BY-SA 4.0.
     // The pack's icon is 256 px and is kept at that size.
     art("anki_tan_icon", "static/anki-tan/icon.png", 432),
@@ -244,9 +260,14 @@ pub fn run(args: &[String]) -> ExitCode {
     }
 }
 
-/// Runs the add-on pose exporter: `[--check | --replace] <desktop-checkout>`.
+/// Runs the add-on pose exporter: `[--check] <desktop-checkout>`.
 pub fn addon(args: &[String]) -> ExitCode {
     addon::run(args)
+}
+
+/// Runs the art coverage report.
+pub fn coverage(args: &[String]) -> ExitCode {
+    coverage::run(args)
 }
 
 /// Runs the banner command: `[--social] [--out <file>]`.
@@ -260,21 +281,9 @@ fn usage() -> ExitCode {
     ExitCode::FAILURE
 }
 
-/// The repository root, where the masters live.
-fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
 /// The drawable's path relative to an Android checkout.
 fn drawable(name: &str) -> String {
     format!("{DRAWABLES}/{name}.webp")
-}
-
-/// The drawable's size: `size` square, or smaller to never upscale.
-fn target(width: u32, height: u32, size: u32) -> (u32, u32) {
-    let scale = (f64::from(size) / f64::from(width.max(height))).min(1.0);
-    let side = |n: u32| (f64::from(n) * scale).round_ties_even() as u32;
-    (side(width), side(height))
 }
 
 /// Writes every drawable into the checkout.
@@ -329,12 +338,6 @@ fn check(android: &Path) -> Result<ExitCode, String> {
     }
     println!("all {} drawables match", ART.len());
     Ok(ExitCode::SUCCESS)
-}
-
-/// Decodes a PNG master as 8-bit RGBA.
-fn load(path: &Path) -> Result<RgbaImage, String> {
-    let image = image::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    Ok(image.into_rgba8())
 }
 
 /// The master as [`Look`] asks for it.
@@ -392,11 +395,6 @@ fn widen(lines: &RgbaImage, spread: u32, axis: Axis) -> RgbaImage {
     })
 }
 
-/// A PNG's pixel size, read from its header.
-fn png_size(path: &Path) -> Result<(u32, u32), String> {
-    image::image_dimensions(path).map_err(|e| format!("{}: {e}", path.display()))
-}
-
 /// A WebP's pixel size, or `None` when the file does not exist.
 fn webp_size(path: &Path) -> Result<Option<(u32, u32)>, String> {
     if !path.exists() {
@@ -406,37 +404,6 @@ fn webp_size(path: &Path) -> Result<Option<(u32, u32)>, String> {
     let features =
         webp::BitstreamFeatures::new(&bytes).ok_or(format!("{}: not a WebP", path.display()))?;
     Ok(Some((features.width(), features.height())))
-}
-
-/// Lanczos downscale in premultiplied alpha, as Pillow does, so fully
-/// transparent pixels do not bleed their colour into the edges.
-fn shrink(image: RgbaImage, width: u32, height: u32) -> RgbaImage {
-    if image.dimensions() == (width, height) {
-        return image;
-    }
-    let mut linear = Rgba32FImage::from(image::DynamicImage::ImageRgba8(image));
-    for pixel in linear.pixels_mut() {
-        let alpha = pixel[3];
-        pixel.0[..3].iter_mut().for_each(|c| *c *= alpha);
-    }
-    let mut small = imageops::resize(&linear, width, height, FilterType::Lanczos3);
-    for pixel in small.pixels_mut() {
-        unpremultiply(&mut pixel.0);
-    }
-    image::DynamicImage::ImageRgba32F(small).into_rgba8()
-}
-
-/// Divides colour by alpha, clamping Lanczos overshoot.
-fn unpremultiply(pixel: &mut [f32; 4]) {
-    let alpha = pixel[3].clamp(0.0, 1.0);
-    pixel[3] = alpha;
-    if alpha == 0.0 {
-        pixel[..3].fill(0.0);
-        return;
-    }
-    pixel[..3]
-        .iter_mut()
-        .for_each(|c| *c = (*c / alpha).clamp(0.0, 1.0));
 }
 
 /// Encodes lossy WebP with full-quality alpha.
@@ -458,13 +425,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn target_never_upscales() {
-        assert_eq!((336, 336), target(1254, 1254, 336));
-        assert_eq!((200, 100), target(200, 100, 336));
-        assert_eq!((336, 168), target(1254, 627, 336));
-    }
-
-    #[test]
     fn widget_poses_are_large() {
         // Large widget poses, including core art awaiting companion selection wiring.
         let poses = [
@@ -474,6 +434,19 @@ mod tests {
             "aki_frozen",
             "aki_neglected",
             "ankilope_face",
+            "ankilope_sad",
+            "ankilope_hopeful",
+            "ankilope_frozen",
+            "ankilope_sleeping",
+            "ankilope_neglected",
+            "bluma_face",
+            "bluma_asleep",
+            "bluma_happy",
+            "bluma_streak",
+            "bluma_sad",
+            "bluma_hopeful",
+            "bluma_frozen",
+            "bluma_neglected",
             "aki_celebrate",
             "aki_streak",
             "ankilope_celebrate",
@@ -493,6 +466,9 @@ mod tests {
             "aki_sleeping",
             "aki_at_risk",
             "anki_tan_frozen",
+            "anki_tan_asleep",
+            "anki_tan_sad",
+            "anki_tan_neglected",
             "anki_tan_chibi_frozen",
         ];
         let large: Vec<_> = ART.iter().filter(|art| art.size == WIDGET).collect();
@@ -539,22 +515,6 @@ mod tests {
         assert_eq!([0, 0, 0, 255], lines.get_pixel(0, 0).0, "black line");
         assert_eq!(0, lines.get_pixel(1, 0)[3], "skin");
         assert_eq!(0, lines.get_pixel(2, 0)[3], "faint dark pixel");
-    }
-
-    #[test]
-    fn transparent_edges_stay_clean() {
-        // A red opaque half next to transparent green must not turn green.
-        let mut image = RgbaImage::new(64, 64);
-        for (x, _, pixel) in image.enumerate_pixels_mut() {
-            *pixel = if x < 32 {
-                image::Rgba([255, 0, 0, 255])
-            } else {
-                image::Rgba([0, 255, 0, 0])
-            };
-        }
-        let small = shrink(image, 16, 16);
-        let edge = small.get_pixel(7, 8);
-        assert!(edge[1] < 8, "{edge:?}");
     }
 
     #[test]
