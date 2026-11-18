@@ -45,6 +45,8 @@ const MAX_EXCEPTION_BYTES: usize = 1024;
 const LISTED: i64 = 100;
 /// App versions remembered per signature; the least recently seen is forgotten first.
 const MAX_VERSIONS: usize = 10;
+/// The longest app version kept, in bytes.
+const MAX_VERSION_BYTES: usize = 64;
 /// What replaces a value that looks like a credential.
 const REMOVED: &str = "[removed]";
 /// The shortest run of token characters treated as a credential.
@@ -116,6 +118,17 @@ pub fn initialize(conn: &Connection) -> Result<(), Error> {
 pub(crate) struct Limiter(Mutex<HashMap<IpAddr, Vec<i64>>>);
 
 impl Limiter {
+    /// Forgets clients quiet for an hour at `now`; the worker calls it on every tick, so an
+    /// address is not kept longer than the hour it counts for.
+    pub(crate) fn forget(&self, now: i64) {
+        let recent = |at: &i64| now - at < HOUR_MS;
+        let mut clients = self.0.lock().unwrap();
+        clients.retain(|_, times| {
+            times.retain(recent);
+            !times.is_empty()
+        });
+    }
+
     /// Counts a report from `client` at `now`; false when it is over the hourly limit.
     fn admit(&self, client: IpAddr, now: i64) -> bool {
         let client = client_key(client);
@@ -410,7 +423,7 @@ fn file(conn: &Connection, report: &Value, signature: &str, now: i64) -> Result<
     };
     let version = report["APP_VERSION_NAME"]
         .as_str()
-        .map(str::to_string)
+        .map(|name| cut(name, MAX_VERSION_BYTES).to_string())
         .or(code.map(|code| code.to_string()));
 
     // Delete what is past the retention first, so it does not take up room below.
@@ -478,11 +491,16 @@ fn make_room(conn: &Connection) -> Result<bool, Error> {
 /// [`MAX_EXCEPTION_BYTES`].
 fn exception(report: &Value) -> Option<String> {
     let line = report.get(STACK_TRACE)?.as_str()?.lines().next()?;
-    let mut end = line.len().min(MAX_EXCEPTION_BYTES);
-    while !line.is_char_boundary(end) {
+    Some(cut(line, MAX_EXCEPTION_BYTES).to_string())
+}
+
+/// `text` cut to at most `max` bytes, at a character boundary.
+fn cut(text: &str, max: usize) -> &str {
+    let mut end = text.len().min(max);
+    while !text.is_char_boundary(end) {
         end -= 1;
     }
-    Some(line[..end].to_string())
+    &text[..end]
 }
 
 /// Records that a report with `signature` from app `version` came at `now`.
@@ -556,7 +574,7 @@ pub(crate) struct Group {
     app_version: Option<String>,
     /// The versions seen, the latest last.
     app_versions: Vec<String>,
-    /// The first line of the first report's stack trace: the exception and its message.
+    /// The first line of the latest report's stack trace: the exception and its message.
     exception: Option<String>,
     /// The ids of the stored reports, oldest first.
     reports: Vec<i64>,
@@ -961,6 +979,79 @@ mod tests {
         let clients = limiter.0.lock().unwrap();
         assert_eq!(clients.len(), MAX_CLIENTS);
         assert!(!clients.contains_key(&IpAddr::from(0u32.to_be_bytes())));
+    }
+
+    #[test]
+    fn the_limiter_forgets_addresses_quiet_for_an_hour() {
+        let limiter = Limiter::default();
+        let quiet: IpAddr = "192.0.2.10".parse().unwrap();
+        let active: IpAddr = "192.0.2.11".parse().unwrap();
+        assert!(limiter.admit(quiet, NOW_MS));
+        assert!(limiter.admit(active, NOW_MS + 1));
+
+        // The worker's pass forgets an address whose last report is an hour old, though the
+        // map is far from full and the address never sends again.
+        limiter.forget(NOW_MS + HOUR_MS);
+        let clients = limiter.0.lock().unwrap();
+        assert!(!clients.contains_key(&quiet));
+        assert!(clients.contains_key(&active));
+    }
+
+    #[tokio::test]
+    async fn the_tick_forgets_quiet_addresses() {
+        fix_now(NOW_MS);
+        let (app, path) = fixture();
+        assert!(
+            app.crash_reports
+                .admit("192.0.2.12".parse().unwrap(), NOW_MS)
+        );
+        fix_now(NOW_MS + HOUR_MS);
+        crate::worker::tick(&app).unwrap();
+        assert!(app.crash_reports.0.lock().unwrap().is_empty());
+        cleanup(app, path);
+    }
+
+    #[test]
+    fn app_versions_are_cut_to_a_few_bytes() {
+        let conn = memory();
+
+        // Distinct long versions, past the samples, so most reports are only counted.
+        let long = |index: usize| format!("{}{index}", "\u{e9}".repeat(MAX_BYTES / 2));
+        for index in 0..MAX_VERSIONS + 2 {
+            let report = json!({"STACK_TRACE": "x", "APP_VERSION_NAME": long(index)});
+            insert(&conn, &report, SIGNATURE, NOW_MS + index as i64).unwrap();
+        }
+        let (_, _, count, versions) = seen(&conn, SIGNATURE).unwrap();
+        assert_eq!(count, (MAX_VERSIONS + 2) as i64);
+        let versions = versions.as_array().unwrap();
+        assert_eq!(
+            versions.len(),
+            1,
+            "cut versions with the same start are one"
+        );
+        let kept = versions[0].as_str().unwrap();
+        assert_eq!(kept.len(), MAX_VERSION_BYTES);
+        assert!(long(0).starts_with(kept));
+
+        // Over the hourly cap a known signature is only counted; its version is cut too.
+        let small = json!({"STACK_TRACE": "x"});
+        for index in 1..STORED_PER_HOUR {
+            insert(&conn, &small, &nth(index), NOW_MS + 100 + index).unwrap();
+        }
+        let capped = json!({"STACK_TRACE": "x", "APP_VERSION_NAME": format!("9{}", "a".repeat(MAX_BYTES / 2))});
+        assert_eq!(
+            insert(&conn, &capped, SIGNATURE, NOW_MS + HOUR_MS - 1).unwrap(),
+            Outcome::Counted
+        );
+        let (_, _, _, versions) = seen(&conn, SIGNATURE).unwrap();
+        let latest = versions
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()
+            .as_str()
+            .unwrap();
+        assert_eq!(latest.len(), MAX_VERSION_BYTES);
     }
 
     #[test]
