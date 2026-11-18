@@ -1,10 +1,19 @@
-//! Writes the desktop add-on's companion poses into `addon/art` of an
-//! AnkiQuest-Desktop checkout from the master PNGs in `static/`.
+//! Writes the desktop add-on's companion poses into an AnkiQuest-Desktop
+//! checkout from the master PNGs in `static/`: every `addon` entry of the
+//! checkout's art manifest (`art-exports.json`).
 //!
 //! Each pose is a 256 px square, 256-colour palette PNG with transparency.
-//! Export writes only the poses that are missing, because the existing ones
-//! were tuned by hand; `--replace` writes them all. `--check` writes nothing
-//! and fails when a pose is missing or has a different pixel size.
+//! Export writes every pose whose picture changed, retires the file it
+//! replaces, and records each file's SHA-256 in the manifest. `--check`
+//! writes nothing and fails when a pose differs from what export would
+//! write, or from the hash in the manifest.
+//!
+//! Linux exports are canonical. Another platform, or a new quantiser
+//! version, maps a few colours to other palette entries: a few hundred
+//! pixels move far while the mean barely moves. Export and check therefore
+//! treat a pose as current when it is `close` to a fresh render, so a
+//! clean checkout passes everywhere and export leaves the committed files
+//! alone.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,10 +22,8 @@ use std::process::ExitCode;
 use color_quant::NeuQuant;
 use image::RgbaImage;
 
-use super::{load, png_size, root, shrink, target};
-
-/// The add-on's pose folder inside an AnkiQuest-Desktop checkout.
-const FOLDER: &str = "addon/art";
+use super::exports::{self, DESKTOP_MANIFEST, Export, Exporter, Retired};
+use super::{load, root, shrink, target};
 
 /// Pose edge in pixels: the Today panel shows 96 px at up to 2x, and
 /// moments 112 px.
@@ -28,50 +35,23 @@ const COLOURS: usize = 256;
 /// NeuQuant sampling factor: 1 looks at every pixel, the slowest and best.
 const SAMPLING: i32 = 1;
 
-/// One pose: its file name without extension and its master PNG.
-struct Pose {
-    name: &'static str,
-    source: &'static str,
-}
+/// Largest mean channel difference, out of 255, between a committed pose
+/// and a fresh export: drift moves a few palette entries, a different
+/// picture moves far more.
+const MEAN_TOLERANCE: f64 = 0.5;
 
-/// A pose by name and master.
-const fn pose(name: &'static str, source: &'static str) -> Pose {
-    Pose { name, source }
-}
+/// A pixel has drifted when one of its channels moves more than this.
+const DRIFT: u8 = 16;
 
-/// Every pose the add-on shows, as Android names its drawables.
-const POSES: &[Pose] = &[
-    pose("aki_face", "static/aki/face.png"),
-    pose("aki_sad", "static/aki/sad.png"),
-    pose("aki_hopeful", "static/aki/hopeful.png"),
-    pose("aki_frozen", "static/aki/frozen.png"),
-    pose("aki_neglected", "static/aki/neglected.png"),
-    pose(
-        "anki_tan_frozen",
-        "static/anki-tan/generated/frozen-full.png",
-    ),
-    pose(
-        "anki_tan_chibi_frozen",
-        "static/anki-tan/generated/frozen-chibi.png",
-    ),
-    pose("aki_welcome", "static/aki/welcome.png"),
-    pose("aki_review", "static/aki/review.png"),
-    pose("aki_celebrate", "static/aki/celebrate.png"),
-    pose("aki_winner", "static/aki/winner.png"),
-    pose("aki_streak", "static/aki/streak.png"),
-    pose("aki_streak_hot", "static/aki/streak_hot.png"),
-    pose("aki_streak_blazing", "static/aki/streak_blazing.png"),
-    pose("aki_streak_legend", "static/aki/streak_legend.png"),
-    pose("aki_streak_milestone", "static/aki/streak_milestone.png"),
-    pose("aki_freeze", "static/aki/freeze.png"),
-    pose("aki_freeze_used", "static/aki/freeze_used.png"),
-    pose("aki_sleeping", "static/aki/sleeping.png"),
-    pose("aki_at_risk", "static/aki/at_risk.png"),
-    pose("ankilope_face", "static/ankilope/face.png"),
-    pose("ankilope_welcome", "static/ankilope/welcome.png"),
-    pose("ankilope_study", "static/ankilope/study.png"),
-    pose("ankilope_celebrate", "static/ankilope/celebrate.png"),
-];
+/// Largest share of drifted pixels. Drift from Windows/MSVC and from
+/// color_quant 2 moves at most 0.4% of a pose; no single pixel is bounded,
+/// since one swapped palette entry can move a pixel by 150.
+const DRIFTED_SHARE: f64 = 0.01;
+
+/// Where export moves a pose it replaces, inside the Desktop checkout:
+/// companion art is never deleted (AGENTS.md, Companion art), and nothing
+/// packaged reads this folder.
+const RETIRED: &str = "assets/retired";
 
 /// What the command does.
 #[derive(PartialEq)]
@@ -80,37 +60,17 @@ enum Mode {
     Check,
 }
 
-/// What export does with a pose that is already there.
-#[derive(PartialEq)]
-enum Existing {
-    Keep,
-    Replace,
-}
-
-/// Runs the exporter: `[--check | --replace] <desktop-checkout>`.
+/// Runs the exporter: `[--check] <desktop-checkout>`.
 pub fn run(args: &[String]) -> ExitCode {
-    let mut mode = Mode::Export;
-    let mut existing = Existing::Keep;
-    let mut desktop = None;
-    for arg in args {
-        match arg.as_str() {
-            "--check" => mode = Mode::Check,
-            "--replace" => existing = Existing::Replace,
-            _ if arg.starts_with('-') || desktop.is_some() => return usage(),
-            _ => desktop = Some(PathBuf::from(arg)),
-        }
-    }
-    if mode == Mode::Check && existing == Existing::Replace {
-        return usage();
-    }
-    let Some(desktop) = desktop else {
-        return usage();
+    let (mode, desktop) = match args {
+        [desktop] if !desktop.starts_with('-') => (Mode::Export, desktop),
+        [flag, desktop] if flag == "--check" && !desktop.starts_with('-') => (Mode::Check, desktop),
+        _ => return usage(),
     };
-
-    let folder = desktop.join(FOLDER);
+    let desktop = PathBuf::from(desktop);
     let result = match mode {
-        Mode::Export => export(&folder, &existing),
-        Mode::Check => check(&folder),
+        Mode::Export => export(&desktop),
+        Mode::Check => check(&desktop),
     };
     match result {
         Ok(code) => code,
@@ -123,69 +83,188 @@ pub fn run(args: &[String]) -> ExitCode {
 
 /// Prints the usage text and fails.
 fn usage() -> ExitCode {
-    eprintln!("usage: xtask export-addon-art [--check | --replace] <desktop-checkout>");
+    eprintln!("usage: xtask export-addon-art [--check] <desktop-checkout>");
     ExitCode::FAILURE
 }
 
-/// The pose's file in `folder`.
-fn file(folder: &Path, name: &str) -> PathBuf {
-    folder.join(format!("{name}.png"))
+/// Whether a manifest entry is an add-on pose.
+fn is_pose(export: &Export) -> bool {
+    export.exporter == Exporter::Addon
 }
 
-/// Writes the poses into `folder`.
-fn export(folder: &Path, existing: &Existing) -> Result<ExitCode, String> {
-    fs::create_dir_all(folder).map_err(|e| format!("{}: {e}", folder.display()))?;
-    for pose in POSES {
-        let path = file(folder, pose.name);
-        if *existing == Existing::Keep && path.exists() {
-            continue;
-        }
+/// The pose `export` describes, made from its master.
+fn render(export: &Export) -> Result<Vec<u8>, String> {
+    let master = load(&root().join(&export.master))?;
+    let (width, height) = target(master.width(), master.height(), SIZE);
+    encode(&shrink(master, width, height))
+}
 
-        // Downscale, reduce to a palette and write.
-        let master = load(&root().join(pose.source))?;
-        let (width, height) = target(master.width(), master.height(), SIZE);
-        let bytes = encode(&shrink(master, width, height))?;
-        fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
-        println!(
-            "{}: {width}x{height}, {} bytes",
-            path.display(),
-            bytes.len()
-        );
+/// Writes every pose whose picture changed into the Desktop checkout,
+/// retiring the file it replaces, and records each pose's hash in the
+/// checkout's manifest.
+fn export(desktop: &Path) -> Result<ExitCode, String> {
+    let manifest_path = desktop.join(DESKTOP_MANIFEST);
+    let mut manifest = exports::read_at(&manifest_path)?;
+    let mut retired = Vec::new();
+    for export in manifest.exports.iter_mut().filter(|export| is_pose(export)) {
+        let fresh = render(export)?;
+        let path = desktop.join(&export.file);
+        let committed = fs::read(&path).ok();
+        match step(committed.as_deref(), &fresh)? {
+            // Keep a committed pose that differs only by drift.
+            Step::Keep => {
+                let committed = committed.unwrap_or_default();
+                export.sha256 = exports::sha256(&committed);
+                println!("{}: current", export.file);
+                continue;
+            }
+            Step::Add => {}
+
+            // Move the previous picture aside before replacing it.
+            Step::Replace => {
+                let committed = committed.unwrap_or_default();
+                retired.push(retire(desktop, export, &committed)?);
+            }
+        }
+        save(&path, &fresh)?;
+        export.sha256 = exports::sha256(&fresh);
+        println!("{}: {} bytes", export.file, fresh.len());
     }
+    // A picture retired before keeps its one entry.
+    for entry in retired {
+        if !manifest
+            .retired
+            .iter()
+            .any(|known| known.file == entry.file)
+        {
+            manifest.retired.push(entry);
+        }
+    }
+    exports::write(&manifest_path, &manifest)?;
     Ok(ExitCode::SUCCESS)
 }
 
-/// Compares every pose's pixel size with what export would write.
-fn check(folder: &Path) -> Result<ExitCode, String> {
-    let failed = missing(folder)?;
+/// What export does with one pose.
+#[derive(PartialEq, Debug)]
+enum Step {
+    /// No file yet: write it.
+    Add,
+    /// The committed file is current: leave it.
+    Keep,
+    /// The picture changed: retire the committed file, then write.
+    Replace,
+}
+
+/// What export does with a pose, given the committed file and a fresh render.
+fn step(committed: Option<&[u8]>, fresh: &[u8]) -> Result<Step, String> {
+    let Some(committed) = committed else {
+        return Ok(Step::Add);
+    };
+    if committed == fresh || close(fresh, committed)? {
+        return Ok(Step::Keep);
+    }
+    Ok(Step::Replace)
+}
+
+/// Keeps `bytes`, the pose `export` is about to replace, under `RETIRED`
+/// of the Desktop checkout with its hash in the name, and returns its
+/// manifest entry.
+fn retire(desktop: &Path, export: &Export, bytes: &[u8]) -> Result<Retired, String> {
+    let file = retired_path(&export.file, &exports::sha256(bytes));
+    save(&desktop.join(&file), bytes)?;
+    println!("{}: retired to {file}", export.file);
+    Ok(Retired {
+        file,
+        why: format!(
+            "Earlier {}, replaced when export-addon-art wrote a new export of {}. Unreferenced.",
+            export.file, export.master
+        ),
+    })
+}
+
+/// Where a replaced pose goes: `addon/art/aki_happy.png` with hash
+/// `0123abcd…` becomes `assets/retired/addon/art/aki_happy-0123abcd.png`.
+fn retired_path(file: &str, sha256: &str) -> String {
+    let (stem, extension) = file.rsplit_once('.').unwrap_or((file, "png"));
+    format!("{RETIRED}/{stem}-{}.{extension}", &sha256[..8])
+}
+
+/// Writes `bytes` to `path`, creating its folder.
+fn save(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if let Some(folder) = path.parent() {
+        fs::create_dir_all(folder).map_err(|e| format!("{}: {e}", folder.display()))?;
+    }
+    fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Compares every pose in the Desktop checkout with a fresh export and
+/// with the checkout's manifest.
+fn check(desktop: &Path) -> Result<ExitCode, String> {
+    let failed = stale(desktop)?;
     for line in &failed {
         println!("{line}");
     }
     if !failed.is_empty() {
         return Ok(ExitCode::FAILURE);
     }
-    println!("all {} add-on poses match", POSES.len());
+    println!("all add-on poses match");
     Ok(ExitCode::SUCCESS)
 }
 
-/// One line for each pose in `folder` that is missing or has the wrong size.
-fn missing(folder: &Path) -> Result<Vec<String>, String> {
+/// One line for each pose that is missing, edited or out of date.
+fn stale(desktop: &Path) -> Result<Vec<String>, String> {
     let mut failed = Vec::new();
-    for pose in POSES {
-        let (width, height) = png_size(&root().join(pose.source))?;
-        let expected = target(width, height, SIZE);
-        let path = file(folder, pose.name);
-        if !path.exists() {
-            failed.push(format!("missing: {}", path.display()));
+    for export in exports::read_at(&desktop.join(DESKTOP_MANIFEST))?
+        .exports
+        .iter()
+        .filter(|export| is_pose(export))
+    {
+        let path = desktop.join(&export.file);
+        let Ok(committed) = fs::read(&path) else {
+            failed.push(format!("missing: {}", export.file));
+            continue;
+        };
+        if exports::sha256(&committed) != export.sha256 {
+            failed.push(format!("{}: not the file export wrote", export.file));
             continue;
         }
-        let actual = png_size(&path)?;
-        if actual != expected {
-            let ((aw, ah), (ew, eh)) = (actual, expected);
-            failed.push(format!("{}: {aw}x{ah}, expected {ew}x{eh}", path.display()));
+        let fresh = render(export)?;
+        if fresh != committed && !close(&fresh, &committed)? {
+            failed.push(format!("{}: differs from {}", export.file, export.master));
         }
     }
     Ok(failed)
+}
+
+/// Whether two PNGs show the same picture up to drift: a small mean
+/// difference and few drifted pixels.
+fn close(a: &[u8], b: &[u8]) -> Result<bool, String> {
+    let decode = |bytes: &[u8]| {
+        image::load_from_memory(bytes)
+            .map(|image| image.into_rgba8())
+            .map_err(|e| e.to_string())
+    };
+    let (a, b) = (decode(a)?, decode(b)?);
+    if a.dimensions() != b.dimensions() {
+        return Ok(false);
+    }
+    let differences: Vec<u8> = a
+        .as_raw()
+        .iter()
+        .zip(b.as_raw())
+        .map(|(x, y)| x.abs_diff(*y))
+        .collect();
+
+    // Mean over every channel, share over pixels.
+    let total: f64 = differences.iter().map(|&d| f64::from(d)).sum();
+    let mean = total / differences.len().max(1) as f64;
+    let (pixels, _) = differences.as_chunks::<4>();
+    let drifted = pixels
+        .iter()
+        .filter(|pixel| pixel.iter().any(|&d| d > DRIFT))
+        .count();
+    let share = drifted as f64 / pixels.len().max(1) as f64;
+    Ok(mean <= MEAN_TOLERANCE && share <= DRIFTED_SHARE)
 }
 
 /// Encodes `image` as an indexed PNG with a 256-colour RGBA palette.
@@ -222,25 +301,81 @@ fn encode(image: &RgbaImage) -> Result<Vec<u8>, String> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn export_writes_missing_poses() {
-        // An empty checkout misses every pose.
+    /// The add-on's winner pose.
+    const WINNER: &str = "addon/art/aki_winner.png";
+
+    /// The manifest entry for the winner pose, before its first export.
+    fn winner_export() -> Export {
+        Export {
+            file: WINNER.into(),
+            master: "static/aki/winner.png".into(),
+            exporter: Exporter::Addon,
+            sha256: String::new(),
+        }
+    }
+
+    /// A Desktop checkout whose manifest lists the winner pose.
+    fn checkout() -> tempfile::TempDir {
         let desktop = tempfile::tempdir().unwrap();
-        let folder = desktop.path().join(FOLDER);
-        fs::create_dir_all(&folder).unwrap();
-        assert_eq!(POSES.len(), missing(&folder).unwrap().len());
+        let manifest = exports::Manifest {
+            exports: vec![winner_export()],
+            retired: Vec::new(),
+        };
+        exports::write(&desktop.path().join(DESKTOP_MANIFEST), &manifest).unwrap();
+        desktop
+    }
 
-        // Export writes the others and keeps a hand-tuned pose.
-        let tuned = file(&folder, POSES[0].name);
-        fs::write(&tuned, b"tuned").unwrap();
-        export(&folder, &Existing::Keep).unwrap();
-        assert_eq!(b"tuned".as_slice(), fs::read(&tuned).unwrap());
+    #[test]
+    fn export_writes_checks_and_retires() {
+        // A fresh checkout misses the pose; export writes it.
+        let desktop = checkout();
+        let desktop = desktop.path();
+        assert_eq!(vec![format!("missing: {WINNER}")], stale(desktop).unwrap());
+        export(desktop).unwrap();
+        assert!(stale(desktop).unwrap().is_empty());
 
-        // Once the tuned pose is gone, export fills it in and check passes.
-        fs::remove_file(&tuned).unwrap();
-        export(&folder, &Existing::Keep).unwrap();
-        let failed = missing(&folder).unwrap();
-        assert!(failed.is_empty(), "{failed:?}");
+        // An edited pose fails the check.
+        let path = desktop.join(WINNER);
+        let blue = RgbaImage::from_pixel(SIZE, SIZE, image::Rgba([0, 0, 255, 255]));
+        let edited = encode(&blue).unwrap();
+        fs::write(&path, &edited).unwrap();
+        assert_eq!(
+            vec![format!("{WINNER}: not the file export wrote")],
+            stale(desktop).unwrap()
+        );
+
+        // Export replaces it and keeps the edited file as retired.
+        export(desktop).unwrap();
+        assert!(stale(desktop).unwrap().is_empty());
+        let manifest = exports::read_at(&desktop.join(DESKTOP_MANIFEST)).unwrap();
+        let retired = retired_path(WINNER, &exports::sha256(&edited));
+        assert_eq!(
+            vec![retired.clone()],
+            manifest
+                .retired
+                .iter()
+                .map(|r| r.file.clone())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(edited, fs::read(desktop.join(retired)).unwrap());
+    }
+
+    #[test]
+    fn retiring_the_same_picture_twice_lists_it_once() {
+        let desktop = checkout();
+        let desktop = desktop.path();
+        export(desktop).unwrap();
+        let path = desktop.join(WINNER);
+        let blue = RgbaImage::from_pixel(SIZE, SIZE, image::Rgba([0, 0, 255, 255]));
+        let edited = encode(&blue).unwrap();
+
+        // Edit, export, edit back to the same bytes, export again.
+        for _ in 0..2 {
+            fs::write(&path, &edited).unwrap();
+            export(desktop).unwrap();
+        }
+        let manifest = exports::read_at(&desktop.join(DESKTOP_MANIFEST)).unwrap();
+        assert_eq!(1, manifest.retired.len());
     }
 
     #[test]
@@ -252,10 +387,65 @@ mod tests {
     }
 
     #[test]
-    fn poses_are_named_once() {
-        let mut names: Vec<_> = POSES.iter().map(|pose| pose.name).collect();
-        names.sort_unstable();
-        names.dedup();
-        assert_eq!(POSES.len(), names.len());
+    fn a_changed_picture_is_not_close() {
+        let red = RgbaImage::from_pixel(8, 8, image::Rgba([255, 0, 0, 255]));
+        let blue = RgbaImage::from_pixel(8, 8, image::Rgba([0, 0, 255, 255]));
+        let (red, blue) = (encode(&red).unwrap(), encode(&blue).unwrap());
+        assert!(close(&red, &red).unwrap());
+        assert!(!close(&red, &blue).unwrap());
+    }
+
+    /// `image` as a plain RGBA PNG.
+    fn png(image: &RgbaImage) -> Vec<u8> {
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image.write_to(&mut bytes, image::ImageFormat::Png).unwrap();
+        bytes.into_inner()
+    }
+
+    /// The Aki winner pose as export writes it, decoded.
+    fn winner() -> RgbaImage {
+        let bytes = render(&winner_export()).unwrap();
+        image::load_from_memory(&bytes).unwrap().into_rgba8()
+    }
+
+    /// The drift reported on Windows/MSVC for aki_winner.png: one pixel
+    /// off by 64, everything else the same.
+    #[test]
+    fn one_drifted_pixel_is_close() {
+        let committed = winner();
+        let mut fresh = committed.clone();
+        fresh.put_pixel(146, 160, image::Rgba([116, 98, 114, 253]));
+        assert!(close(&png(&fresh), &png(&committed)).unwrap());
+        assert_eq!(step(Some(&png(&committed)), &png(&fresh)), Ok(Step::Keep));
+    }
+
+    /// A 40 px patch painted over the pose is an edit, not drift.
+    #[test]
+    fn a_painted_patch_is_not_close() {
+        let committed = winner();
+        let mut edited = committed.clone();
+        for (x, y, pixel) in edited.enumerate_pixels_mut() {
+            if (100..140).contains(&x) && (100..140).contains(&y) {
+                *pixel = image::Rgba([255, 0, 255, 255]);
+            }
+        }
+        assert!(!close(&png(&edited), &png(&committed)).unwrap());
+        assert_eq!(
+            step(Some(&png(&committed)), &png(&edited)),
+            Ok(Step::Replace)
+        );
+    }
+
+    #[test]
+    fn a_missing_pose_is_added() {
+        assert_eq!(step(None, &png(&winner())), Ok(Step::Add));
+    }
+
+    #[test]
+    fn replaced_poses_keep_their_hash() {
+        assert_eq!(
+            retired_path("addon/art/aki_winner.png", "0123abcd4567"),
+            "assets/retired/addon/art/aki_winner-0123abcd.png"
+        );
     }
 }
