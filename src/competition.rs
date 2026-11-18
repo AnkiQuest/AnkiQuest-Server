@@ -1914,6 +1914,7 @@ mod tests {
     async fn community_empty_history_has_no_invented_champions_and_rejects_bad_filters() {
         let (app, path) = app_with(serde_json::json!({
             "registration": true,
+            "configured_tokens": "enabled",
             "users": {
                 "cerro": {"token": "cerro-secret"},
                 "hill": {"token": "hill-secret"},

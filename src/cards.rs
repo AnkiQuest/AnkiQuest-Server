@@ -1628,6 +1628,7 @@ mod tests {
     fn fixture(private_site: bool, public_url: Option<&str>) -> (Arc<App>, PathBuf) {
         let mut config = serde_json::json!({
             "private_site": private_site,
+            "configured_tokens": "enabled",
             "users": {
                 "cerro": {"display": "Cerro", "token": "cerro-secret"},
                 "hill": {"display": "Hill", "token": "hill-secret"}

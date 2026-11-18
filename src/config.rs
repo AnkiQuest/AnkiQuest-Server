@@ -142,9 +142,60 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    use super::Config;
+
     #[test]
     fn a_config_with_the_removed_remind_hour_still_loads() {
-        let config: super::Config = serde_json::from_str(r#"{"remind_hour": 20}"#).unwrap();
+        let config: Config = serde_json::from_str(r#"{"remind_hour": 20}"#).unwrap();
         assert!(config.check().is_ok());
+    }
+
+    /// Reads `json` as a configuration file, the way the server starts.
+    fn read(json: serde_json::Value) -> Result<Config, String> {
+        let (store, dir) = crate::test_support::temporary_store();
+        let path = dir.join("config.json");
+        std::fs::write(&path, json.to_string()).unwrap();
+        let config = Config::read(path.to_str().unwrap()).map_err(|e| e.to_string());
+        crate::test_support::cleanup(store, dir);
+        config
+    }
+
+    #[test]
+    fn configured_tokens_stop_the_server_without_the_opt_in() {
+        // Off by default: a token or a token file alone is a startup error.
+        for user in [
+            serde_json::json!({"token": "hill-secret"}),
+            serde_json::json!({"token_file": "hill.token"}),
+        ] {
+            let error = read(serde_json::json!({"users": {"hill": user}}))
+                .err()
+                .expect("a configured token without the opt-in must not load");
+            assert!(error.contains("hill"), "{error}");
+            assert!(error.contains("configured_tokens"), "{error}");
+        }
+        let error = read(serde_json::json!({
+            "configured_tokens": "disabled",
+            "users": {"hill": {"token": "hill-secret"}}
+        }))
+        .err()
+        .expect("disabled refuses configured tokens");
+        assert!(error.contains("configured_tokens"), "{error}");
+    }
+
+    #[test]
+    fn configured_tokens_load_with_the_opt_in() {
+        let config = read(serde_json::json!({
+            "configured_tokens": "enabled",
+            "users": {"hill": {"token": "hill-secret"}}
+        }));
+        assert!(config.is_ok(), "{:?}", config.err());
+    }
+
+    #[test]
+    fn players_without_tokens_need_no_opt_in() {
+        let config = read(serde_json::json!({
+            "users": {"hill": {"display": "Hill", "ntfy_topic": "hill-topic"}}
+        }));
+        assert!(config.is_ok(), "{:?}", config.err());
     }
 }

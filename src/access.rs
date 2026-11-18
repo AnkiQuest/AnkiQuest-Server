@@ -882,6 +882,7 @@ mod tests {
         let config = serde_json::from_value(serde_json::json!({
             "private_site": private_site,
             "public_url": "https://anki.example.test",
+            "configured_tokens": "enabled",
             "users": {"alice": {"token": "alice-token"}, "bob": {"token": "bob-token"}}
         }))
         .unwrap();
@@ -1940,17 +1941,42 @@ mod tests {
     }
 
     #[test]
+    fn configured_tokens_sign_in_only_with_the_opt_in() {
+        let bearer =
+            HeaderMap::from_iter([(header::AUTHORIZATION, "Bearer alice-token".parse().unwrap())]);
+
+        // Off by default: the configured token signs nobody in.
+        let users = serde_json::json!({"alice": {"token": "alice-token"}});
+        let (app, path) = crate::test_support::app_with(serde_json::json!({"users": users}));
+        assert!(!authorized(&app, "alice", &bearer));
+        assert!(!app.can_sign_in("alice"));
+        assert!(app.members().is_empty());
+        cleanup(app, path);
+
+        // Opted in, it signs Alice in.
+        let (app, path) = crate::test_support::app_with(serde_json::json!({
+            "configured_tokens": "enabled",
+            "users": users
+        }));
+        assert!(authorized(&app, "alice", &bearer));
+        assert!(app.can_sign_in("alice"));
+        cleanup(app, path);
+    }
+
+    #[test]
     fn private_configuration_requires_real_credentials_and_rejects_empty_password_files() {
         let empty: Config =
             serde_json::from_value(serde_json::json!({"private_site": true})).unwrap();
         assert!(Access::from_config(&empty).is_err());
         let empty_token: Config = serde_json::from_value(
-            serde_json::json!({"private_site": true, "users": {"alice": {"token": ""}}}),
+            serde_json::json!({"private_site": true, "configured_tokens": "enabled",
+            "users": {"alice": {"token": ""}}}),
         )
         .unwrap();
         assert!(Access::from_config(&empty_token).is_err());
         let token: Config = serde_json::from_value(
-            serde_json::json!({"private_site": true, "users": {"alice": {"token": "secret"}}}),
+            serde_json::json!({"private_site": true, "configured_tokens": "enabled",
+            "users": {"alice": {"token": "secret"}}}),
         )
         .unwrap();
         assert!(Access::from_config(&token).is_ok());

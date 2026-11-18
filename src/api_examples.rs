@@ -35,6 +35,7 @@ impl Fixture {
                 "google": {"client_id": "example-google", "client_secret": "example"},
                 "github": {"client_id": "example-github", "client_secret": "example"}
             },
+            "configured_tokens": "enabled",
             "users": {
                 "hill": {"display": "Hill", "token": "hill-secret"},
                 "cerro": {"display": "Cerro", "token": "cerro-secret"},
