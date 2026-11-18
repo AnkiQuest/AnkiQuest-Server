@@ -416,6 +416,20 @@ mod tests {
     }
 
     #[test]
+    fn asleep_has_one_name() {
+        // #32: every companion's asleep export and master use the pose name.
+        let asleep: Vec<_> = ART
+            .iter()
+            .filter(|art| art.name.contains("sleep") && art.size == WIDGET)
+            .collect();
+        assert_eq!(4, asleep.len(), "aki, ankilope, bluma, anki_tan");
+        for art in asleep {
+            assert!(art.name.ends_with("_asleep"), "{}", art.name);
+            assert!(art.source.ends_with("/asleep.png"), "{}", art.source);
+        }
+    }
+
+    #[test]
     fn names_are_unique() {
         let mut names: Vec<_> = ART.iter().map(|art| art.name).collect();
         names.sort_unstable();

@@ -315,6 +315,16 @@ mod tests {
     }
 
     #[test]
+    fn asleep_masters_use_the_pose_name() {
+        // #32: no master keeps the older `sleeping` file name.
+        for (companion, folder) in COMPANIONS {
+            let folder = root().join("static").join(folder);
+            assert!(!folder.join("sleeping.png").exists(), "{companion}");
+        }
+        assert!(RENAMES.iter().all(|(pose, _)| *pose != "asleep"));
+    }
+
+    #[test]
     fn counts_named_anki_tan_art() {
         let poses = fixture();
         let full = root().join("static/anki-tan");

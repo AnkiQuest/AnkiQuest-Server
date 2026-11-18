@@ -125,6 +125,7 @@ mod tests {
         assert_eq!(stem("happy"), "celebrate");
         assert_eq!(stem("frozen"), "frozen");
         assert_eq!(stem("streak"), "streak");
+        assert_eq!(stem("asleep"), "asleep");
         assert_eq!(pose_of("celebrate"), "happy");
         assert_eq!(pose_of("freeze"), "freeze");
         assert_eq!(pose_of("winner"), "winner");
