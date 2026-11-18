@@ -19,6 +19,7 @@ const STEPS: &[Step] = &[
     share_notes,
     cow_companion,
     companion_milestones,
+    earned_companions,
     share_receipts,
     group_invitations,
 ];
@@ -202,9 +203,14 @@ fn share_notes(conn: &Connection) -> Result<(), Error> {
     add_column(conn, "notifications", "note", "text")
 }
 
-/// The cow joined the companions. SQLite cannot change a check constraint in place, so the
-/// table is rebuilt with [`crate::companions::TABLE`] and its rows copied over.
+/// The cow joined the companions.
 fn cow_companion(conn: &Connection) -> Result<(), Error> {
+    rebuild_companions(conn)
+}
+
+/// SQLite cannot change a check constraint in place, so the companion table is rebuilt with
+/// [`crate::companions::TABLE`] and its rows copied over.
+fn rebuild_companions(conn: &Connection) -> Result<(), Error> {
     conn.execute_batch(&format!(
         "alter table companion_preferences rename to companion_preferences_old;
          {}
@@ -229,6 +235,11 @@ fn companion_milestones(conn: &Connection) -> Result<(), Error> {
              where exists (select 1 from seen where seen.user = companion_unlocks.user);",
     )?;
     Ok(())
+}
+
+/// Anki-tan, her chibi and Leech-tan can be stored, ready for when they go live.
+fn earned_companions(conn: &Connection) -> Result<(), Error> {
+    rebuild_companions(conn)
 }
 
 /// Preserve outstanding Undo values before new sends get durable, distinct receipts.
@@ -548,6 +559,27 @@ mod tests {
     }
 
     #[test]
+    fn a_desktop_built_database_still_gets_share_receipts() {
+        let dir = temp_dir("desktop-version-9");
+        drop(Store::open(&dir).unwrap());
+        {
+            // A version 9 database from the server built from AnkiQuest-Desktop: its step 9 was
+            // `earned_companions`, so the companion table is current but Undo receipts are not.
+            let conn = Connection::open(dir.join("ankiquest.db")).unwrap();
+            conn.execute_batch(
+                "alter table win_deliveries drop column send_until;
+                 drop table win_receipts;
+                 pragma user_version = 9;",
+            )
+            .unwrap();
+        }
+        let store = Store::open(&dir).unwrap();
+        assert_eq!(version(&store.conn), STEPS.len());
+        assert!(has_column(&store.conn, "win_deliveries", "send_until").unwrap());
+        cleanup(store, dir);
+    }
+
+    #[test]
     fn the_cow_can_be_stored_after_the_companion_table_is_rebuilt() {
         let dir = temp_dir("cow-companion");
         drop(Store::open(&dir).unwrap());
@@ -575,6 +607,36 @@ mod tests {
         assert_eq!(store.companion("ana").unwrap(), "none");
         store.set_companion("bo", "cow").unwrap();
         assert_eq!(store.companion("bo").unwrap(), "cow");
+        assert!(store.set_companion("bo", "horse").is_err());
+        cleanup(store, dir);
+    }
+
+    #[test]
+    fn the_earned_companions_can_be_stored_after_the_table_is_rebuilt() {
+        let dir = temp_dir("earned-companions");
+        drop(Store::open(&dir).unwrap());
+        {
+            // A version 8 database, whose check knows only the first four companions.
+            let conn = Connection::open(dir.join("ankiquest.db")).unwrap();
+            conn.execute_batch(
+                "drop table companion_preferences;
+                 create table companion_preferences (
+                     user text primary key,
+                     companion text not null check (companion in ('aki', 'ankilope', 'cow', 'none'))
+                 ) without rowid;
+                 insert into companion_preferences values ('hill', 'cow'), ('ana', 'none');
+                 pragma user_version = 8;",
+            )
+            .unwrap();
+        }
+        let store = Store::open(&dir).unwrap();
+        assert_eq!(version(&store.conn), STEPS.len());
+        assert_eq!(store.companion("hill").unwrap(), "cow");
+        assert_eq!(store.companion("ana").unwrap(), "none");
+        for companion in ["anki_tan", "anki_tan_chibi", "leech_tan"] {
+            store.set_companion("bo", companion).unwrap();
+            assert_eq!(store.companion("bo").unwrap(), companion);
+        }
         assert!(store.set_companion("bo", "horse").is_err());
         cleanup(store, dir);
     }
