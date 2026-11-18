@@ -54,3 +54,30 @@ test("the frozen moods fall back to the frozen pose", () => {
     assert.equal(core(pose), "frozen", pose);
   }
 });
+
+test("the progress poses fall back to frozen and hopeful", () => {
+  // thawing and almost have no art yet; companions show these core poses instead.
+  assert.equal(core("thawing"), "frozen");
+  assert.equal(core("almost"), "hopeful");
+});
+
+type Stages = {
+  stages: {
+    starts: {stage: string; from_percent: number}[];
+    cases: {time_ms: number; streak_minutes: number; expected: string}[];
+  };
+};
+
+const MINUTE_MS = 60_000;
+const PERCENT = 100;
+
+test("the stage cases follow the stage starts", () => {
+  // Whole-number comparison, as the fixture says, so no rounding moves a boundary.
+  const {starts, cases} = read<Stages>("streak_moods.json").stages;
+  assert.equal(starts[0].from_percent, 0);
+  for (const {time_ms: time, streak_minutes: minutes, expected} of cases) {
+    const reached = starts.filter((start) => minutes > 0 && time * PERCENT >= start.from_percent * minutes * MINUTE_MS);
+    const stage = reached.at(-1)?.stage ?? starts[0].stage;
+    assert.equal(stage, expected, `${time} ms of ${minutes} minutes`);
+  }
+});
