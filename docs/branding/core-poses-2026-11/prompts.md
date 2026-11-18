@@ -73,3 +73,40 @@ Sit with the ringed tail wrapped around the feet and two paws resting on it.
 Ears tip outward and down, eyelids lowered, a quiet tired gaze and small soft
 mouth. Slightly rumpled fur and a crooked scarf; satchel at the hip. No tears
 or injury. Show low energy while waiting kindly for the player.
+
+## Ankilope style
+
+Match the welcome and celebration masters: golden tan antelope, cream muzzle
+and belly, large brown eyes, long expressive ears, two curved ridged brown horns,
+dark hooves, indigo scarf and matching flashcard satchel with a gold button.
+Keep the soft painted shading, restrained fur texture, thin outlines and warm
+palette. Exactly two arms, two legs, two horns, two ears and one short tail.
+
+## Ankilope: sad
+
+Stand with lowered shoulders and drooping ears, holding a blank cream flashcard
+low in both hooves. Small closed frown and sad eyes. Keep both feet visible.
+
+## Ankilope: hopeful
+
+Stand upright with ears lifted and bright eyes. Hold a blank cream flashcard
+near the chest in one hoof; lift the other slightly in quiet anticipation.
+Small expectant smile, without a victory gesture.
+
+## Ankilope: frozen
+
+Sit with arms crossed tightly at the chest, shoulders tucked and a small chilly
+frown. Add pale blue frost only along the horn tips and ear edges. Keep the
+scarf and satchel visible. No ice debris, glow, text or shivering marks.
+
+## Ankilope: asleep
+
+Curl up on one side with eyes closed and head resting on the forehooves. Fold
+the legs under the body, with the short tail curled alongside it. Keep the
+scarf and satchel. A peaceful compact silhouette, without sleep letters.
+
+## Ankilope: neglected
+
+Sit with one hoof propping up the cheek, eyelids lowered and ears drooping.
+The other hoof rests by the satchel. Slightly rumpled fur and a crooked scarf.
+Show quiet low energy while waiting; no tears, injury or blaming gesture.

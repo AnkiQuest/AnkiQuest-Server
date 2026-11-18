@@ -13,16 +13,6 @@
       }
     },
     {
-      "android_resource": "aki_review",
-      "source": "A small step starts with one card.",
-      "translations": {
-        "es": "Un pequeño paso empieza con una tarjeta.",
-        "de": "Ein kleiner Schritt beginnt mit einer Karte.",
-        "fr": "Un petit pas commence par une carte.",
-        "pt": "Um pequeno passo começa com um cartão."
-      }
-    },
-    {
       "android_resource": "aki_complete",
       "source": "Your cards are done for now. Nice work!",
       "translations": {
