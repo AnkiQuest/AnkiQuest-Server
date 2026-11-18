@@ -56,7 +56,8 @@ owner requested.
 [Ankilope’s five new core poses beside the existing references](ankilope-core-review.png)
 show white and dark backgrounds, with 64 px and 32 px copies. The frozen
 master uses `frozen`, distinct from a used-freeze picture. The asleep master
-uses the established `sleeping` export name.
+used the established `sleeping` export name; since #32 it is `asleep`,
+like every companion's.
 [Desktop and Android exports](ankilope-core-exports.png) are compared at
 matching sizes. Linux re-export at `0f12507` verified all five Android
 files byte for byte. Four desktop files also match; the hopeful PNG uses
