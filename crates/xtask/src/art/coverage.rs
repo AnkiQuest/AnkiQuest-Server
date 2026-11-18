@@ -32,7 +32,6 @@ const COMPANIONS: &[(&str, &str)] = &[
 /// Poses whose masters may still have the file name they had before the
 /// fixture; the pose's own name is checked first.
 const RENAMES: &[(&str, &str)] = &[
-    ("asleep", "sleeping"),
     ("happy", "celebrate"),
     ("frozen", "freeze"),
     ("leech_defeated", "leech"),

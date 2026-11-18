@@ -5,8 +5,9 @@ use std::collections::BTreeMap;
 
 /// Poses whose masters were named before the fixture: pose, then the
 /// master's file name without `.png`. Wins store these file names (the
-/// `art` field of the wins API), so they stay.
-const LEGACY: [(&str, &str); 2] = [("happy", "celebrate"), ("asleep", "sleeping")];
+/// `art` field of the wins API), so they stay. No win stores the asleep
+/// pose, so its masters use the pose name (#32).
+const LEGACY: [(&str, &str); 1] = [("happy", "celebrate")];
 
 /// The core poses and the extensions with their fallbacks.
 pub struct Poses {
