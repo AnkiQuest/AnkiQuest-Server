@@ -32,7 +32,6 @@ const COMPANIONS: &[(&str, &str)] = &[
 /// Poses whose masters may still have the file name they had before the
 /// fixture; the pose's own name is checked first.
 const RENAMES: &[(&str, &str)] = &[
-    ("asleep", "sleeping"),
     ("happy", "celebrate"),
     ("frozen", "freeze"),
     ("leech_defeated", "leech"),
@@ -312,6 +311,16 @@ mod tests {
         for pose in &poses.core {
             assert_eq!(Status::Present, status(&folder, &poses, pose), "{pose}");
         }
+    }
+
+    #[test]
+    fn asleep_masters_use_the_pose_name() {
+        // #32: no master keeps the older `sleeping` file name.
+        for (companion, folder) in COMPANIONS {
+            let folder = root().join("static").join(folder);
+            assert!(!folder.join("sleeping.png").exists(), "{companion}");
+        }
+        assert!(RENAMES.iter().all(|(pose, _)| *pose != "asleep"));
     }
 
     #[test]
