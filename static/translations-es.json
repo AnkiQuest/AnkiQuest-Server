@@ -1399,6 +1399,12 @@
   "You reached level {0}.": "Has alcanzado el nivel {0}.",
   "I reached level {0}.": "He alcanzado el nivel {0}.",
   "You have studied for {0} hours in total.": "Has estudiado {0} horas en total.",
+  "You kept a {0}-day streak.": "Has mantenido una racha de {0} días.",
+  "I kept a {0}-day streak.": "He mantenido una racha de {0} días.",
+  "You found {0}.": "Has encontrado a {0}.",
+  "I found {0}.": "He encontrado a {0}.",
+  "You tamed {0} leeches.": "Has domado {0} sanguijuelas.",
+  "I tamed {0} leeches.": "He domado {0} sanguijuelas.",
   "Reach level {0}": "Alcanza el nivel {0}",
   "Level {0} of {1}": "Nivel {0} de {1}",
   "{0} of {1} hours": "{0} de {1} horas"

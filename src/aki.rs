@@ -18,6 +18,16 @@ macro_rules! png {
     };
 }
 
+/// A face icon build.rs exports from `face.png`, served at the same path.
+macro_rules! icon {
+    ($path:literal) => {
+        (
+            concat!("/", $path),
+            include_bytes!(concat!(env!("OUT_DIR"), "/art/", $path)),
+        )
+    };
+}
+
 /// Every companion picture, by the path it is served at. `face-192.png` and `face-32.png` are
 /// small copies of `face.png` for icons, which pages draw at 25 to 72 pixels.
 const ASSETS: &[(&str, &[u8])] = &[
@@ -28,13 +38,13 @@ const ASSETS: &[(&str, &[u8])] = &[
     png!("aki/freeze.png"),
     png!("aki/winner.png"),
     png!("aki/face.png"),
-    png!("aki/face-192.png"),
-    png!("aki/face-32.png"),
+    icon!("aki/face-192.png"),
+    icon!("aki/face-32.png"),
     png!("ankilope/welcome.png"),
     png!("ankilope/study.png"),
     png!("ankilope/celebrate.png"),
     png!("ankilope/face.png"),
-    png!("ankilope/face-192.png"),
+    icon!("ankilope/face-192.png"),
 ];
 
 pub(crate) fn public_asset(path: &str) -> bool {
