@@ -201,7 +201,7 @@ const ART: &[Art] = &[
     ),
 ];
 
-/// Whether to write drawables or only compare their sizes.
+/// Whether to write drawables or only compare them with a fresh export.
 #[derive(PartialEq)]
 enum Mode {
     Export,
@@ -223,9 +223,10 @@ pub fn run(args: &[String]) -> ExitCode {
         return usage();
     };
 
+    let all: Vec<&Art> = ART.iter().collect();
     let result = match mode {
-        Mode::Export => export(&android),
-        Mode::Check => check(&android),
+        Mode::Export => export(&android, &all),
+        Mode::Check => check(&android, &all),
     };
     match result {
         Ok(code) => code,
@@ -262,58 +263,81 @@ fn drawable(name: &str) -> String {
     format!("{DRAWABLES}/{name}.webp")
 }
 
-/// Writes every drawable into the checkout.
-fn export(android: &Path) -> Result<ExitCode, String> {
+/// What export writes for `art`: its pixel size and WebP bytes.
+fn render(art: &Art) -> Result<((u32, u32), Vec<u8>), String> {
+    let master = look(load(&root().join(art.source))?, art.look);
+    let (width, height) = target(master.width(), master.height(), art.size);
+    if (width, height) != (art.size, art.size) {
+        println!(
+            "{}: {} is {}x{}, kept at {width}x{height}",
+            art.name,
+            art.source,
+            master.width(),
+            master.height()
+        );
+    }
+
+    // Downscale and encode.
+    let image = shrink(master, width, height);
+    Ok(((width, height), encode(&image, art.quality)?))
+}
+
+/// Writes `arts` into the checkout.
+fn export(android: &Path, arts: &[&Art]) -> Result<ExitCode, String> {
     let folder = android.join(DRAWABLES);
     fs::create_dir_all(&folder).map_err(|e| format!("{}: {e}", folder.display()))?;
-    for art in ART {
-        let master = look(load(&root().join(art.source))?, art.look);
-        let (width, height) = target(master.width(), master.height(), art.size);
-        if (width, height) != (art.size, art.size) {
-            println!(
-                "{}: {} is {}x{}, kept at {width}x{height}",
-                art.name,
-                art.source,
-                master.width(),
-                master.height()
-            );
-        }
-
-        // Downscale, encode and write.
-        let image = shrink(master, width, height);
-        let bytes = encode(&image, art.quality)?;
-        let path = android.join(drawable(art.name));
-        fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    for art in arts {
+        let ((width, height), bytes) = render(art)?;
         let name = drawable(art.name);
+        let path = android.join(&name);
+        fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
         println!("{name}: {width}x{height}, {} bytes", bytes.len());
     }
     Ok(ExitCode::SUCCESS)
 }
 
-/// Compares every drawable's pixel size with what export would write.
-fn check(android: &Path) -> Result<ExitCode, String> {
-    let mut failed = false;
-    for art in ART {
+/// Compares `arts` in the checkout with what export would write.
+fn check(android: &Path, arts: &[&Art]) -> Result<ExitCode, String> {
+    let failed = stale(android, arts)?;
+    for line in &failed {
+        println!("{line}");
+    }
+    if !failed.is_empty() {
+        return Ok(ExitCode::FAILURE);
+    }
+    println!("all {} drawables match", arts.len());
+    Ok(ExitCode::SUCCESS)
+}
+
+/// One line for each drawable that is missing or has another pixel size.
+fn stale(android: &Path, arts: &[&Art]) -> Result<Vec<String>, String> {
+    let mut failed = Vec::new();
+    for art in arts {
         let (width, height) = png_size(&root().join(art.source))?;
         let expected = target(width, height, art.size);
         let name = drawable(art.name);
         let Some(actual) = webp_size(&android.join(&name))? else {
-            println!("missing: {name}");
-            failed = true;
+            failed.push(format!("missing: {name}"));
             continue;
         };
         if actual != expected {
             let (aw, ah) = actual;
             let (ew, eh) = expected;
-            println!("{name}: {aw}x{ah}, expected {ew}x{eh}");
-            failed = true;
+            failed.push(format!("{name}: {aw}x{ah}, expected {ew}x{eh}"));
         }
     }
-    if failed {
-        return Ok(ExitCode::FAILURE);
+    Ok(failed)
+}
+
+/// A WebP's pixel size, or `None` when the file does not exist.
+fn webp_size(path: &Path) -> Result<Option<(u32, u32)>, String> {
+    if !path.exists() {
+        return Ok(None);
     }
-    println!("all {} drawables match", ART.len());
-    Ok(ExitCode::SUCCESS)
+    let bytes = fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let features =
+        webp::BitstreamFeatures::new(&bytes).ok_or(format!("{}: not a WebP", path.display()))?;
+    Ok(Some((features.width(), features.height())))
 }
 
 /// The master as [`Look`] asks for it.
@@ -331,17 +355,6 @@ fn look(master: RgbaImage, look: Look) -> RgbaImage {
         pixel.0 = if line { [0, 0, 0, 255] } else { [0, 0, 0, 0] };
     }
     lines
-}
-
-/// A WebP's pixel size, or `None` when the file does not exist.
-fn webp_size(path: &Path) -> Result<Option<(u32, u32)>, String> {
-    if !path.exists() {
-        return Ok(None);
-    }
-    let bytes = fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let features =
-        webp::BitstreamFeatures::new(&bytes).ok_or(format!("{}: not a WebP", path.display()))?;
-    Ok(Some((features.width(), features.height())))
 }
 
 /// Encodes lossy WebP with full-quality alpha.
@@ -441,6 +454,29 @@ mod tests {
             features.format(),
             Some(webp::BitstreamFormat::Lossy)
         ));
+    }
+
+    #[test]
+    fn check_compares_bytes() {
+        // The smallest drawable keeps the test fast.
+        let art = ART.iter().min_by_key(|art| art.size).unwrap();
+        let android = tempfile::tempdir().unwrap();
+        export(android.path(), &[art]).unwrap();
+        assert!(stale(android.path(), &[art]).unwrap().is_empty());
+
+        // Same size, other bytes: an edited file must fail.
+        let path = android.path().join(drawable(art.name));
+        let mut bytes = fs::read(&path).unwrap();
+        let middle = bytes.len() / 2;
+        bytes[middle] ^= 0xff;
+        fs::write(&path, &bytes).unwrap();
+        let failed = stale(android.path(), &[art]).unwrap();
+        assert_eq!(1, failed.len());
+        assert!(failed[0].contains("not what export writes"), "{failed:?}");
+
+        fs::remove_file(&path).unwrap();
+        let failed = stale(android.path(), &[art]).unwrap();
+        assert_eq!(vec![format!("missing: {}", drawable(art.name))], failed);
     }
 
     #[test]
