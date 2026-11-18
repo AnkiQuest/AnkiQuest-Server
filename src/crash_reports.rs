@@ -786,8 +786,21 @@ mod tests {
     #[serde(deny_unknown_fields)]
     struct TokenCase {
         name: String,
+        #[serde(default, rename = "in")]
+        place: Place,
         text: String,
         expected: String,
+    }
+
+    /// Where a case's text stands in a report.
+    #[derive(serde::Deserialize, Default)]
+    #[serde(rename_all = "snake_case")]
+    enum Place {
+        /// A string value.
+        #[default]
+        Text,
+        /// The name of a preference in `SHARED_PREFERENCES`.
+        PreferenceKey,
     }
 
     #[test]
@@ -797,11 +810,18 @@ mod tests {
         assert_eq!(fixture.version, 1);
         assert!(!fixture.tokens.is_empty());
 
-        // Every string in a report goes through `scrub`; these cases hold no email addresses.
+        // Every string and key name in a report goes through `scrub`; these cases hold no
+        // email addresses.
         for case in fixture.tokens {
-            let mut value = Value::String(case.text);
+            let (mut value, expected) = match case.place {
+                Place::Text => (Value::String(case.text), Value::String(case.expected)),
+                Place::PreferenceKey => (
+                    json!({SHARED_PREFERENCES: {"default": {case.text: "1"}}}),
+                    json!({SHARED_PREFERENCES: {"default": {case.expected: "1"}}}),
+                ),
+            };
             scrub(&mut value);
-            assert_eq!(value, Value::String(case.expected), "{}", case.name);
+            assert_eq!(value, expected, "{}", case.name);
         }
     }
 
@@ -1364,6 +1384,17 @@ mod tests {
                 "STACK_TRACE": "java.lang.Object@1a2b3c\n\tat a.B.c(B.kt:1)",
                 "other": "@Override, user@localhost, @x.org and x@.org"
             })
+        );
+    }
+
+    /// A preference key can name an account; its name is scrubbed like a string.
+    #[test]
+    fn email_addresses_are_removed_from_key_names() {
+        let mut value = json!({SHARED_PREFERENCES: {"default": {"deckOrder:player@example.com": "2"}}});
+        strip(&mut value);
+        assert_eq!(
+            value,
+            json!({SHARED_PREFERENCES: {"default": {format!("deckOrder:{REMOVED}"): "2"}}})
         );
     }
 

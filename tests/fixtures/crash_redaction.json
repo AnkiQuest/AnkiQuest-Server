@@ -1,5 +1,5 @@
 {
-  "_about": "How crash report text is redacted. `tokens`: the credential rule the server applies to every stored string and the Android app to the report before it is saved; both test against these. A credential is the word after \"Bearer\" (any case, after spaces only) or a run of at least 32 letters, digits, `-` and `_` with both letters and digits; it becomes `[removed]`. `device`: Android only, because they need what the device knows: `hosts`, the server hosts it redacts (the default server and the ones the player set), and `token`, the stored device token. Each whole host, with an IP address Java prints after it (`host/203.0.113.7`), becomes `[server]`; a longer host name containing it is kept. The stored token becomes `[removed]` wherever it appears. The token rule applies after both.",
+  "_about": "How crash report text is redacted. `tokens`: the credential rule the server applies to every stored string and the Android app to the report before it is saved; both test against these. A credential is the word after \"Bearer\" (any case, after spaces only) or a run of at least 32 letters, digits, `-` and `_` with both letters and digits; it becomes `[removed]`. `device`: Android only, because they need what the device knows: `hosts`, the server hosts it redacts (the default server and the ones the player set), and `token`, the stored device token. Each whole host, with an IP address Java prints after it (`host/203.0.113.7`), becomes `[server]`; a longer host name containing it is kept. The stored token becomes `[removed]` wherever it appears. The token rule applies after both. A case with `\"in\": \"preference_key\"` is the name of a preference in `SHARED_PREFERENCES`, not a value: both redact key names as they redact strings, because a key can hold a server or a credential (AnkiQuest keeps records per server under keys like `ankiquestUploadedThrough:https://quest.example.net/hill`). Without `in`, the case is a string.",
   "version": 1,
   "tokens": [
     {"name": "bearer_value", "text": "I/Sync: Authorization: Bearer hill-secret", "expected": "I/Sync: Authorization: Bearer [removed]"},
@@ -15,7 +15,8 @@
     {"name": "letters_only_kept", "text": "at com.ichi2.anki.AnkiDroidCrashReportDialogFragment_onCreateView(Dialog.kt:42)", "expected": "at com.ichi2.anki.AnkiDroidCrashReportDialogFragment_onCreateView(Dialog.kt:42)"},
     {"name": "digits_only_kept", "text": "card 12345678901234567890123456789012345 due 1763380800000", "expected": "card 12345678901234567890123456789012345 due 1763380800000"},
     {"name": "each_line", "text": "D/Quest: Bearer a\nD/Quest: ok\nD/Quest: 0123456789abcdef0123456789abcdef", "expected": "D/Quest: Bearer [removed]\nD/Quest: ok\nD/Quest: [removed]"},
-    {"name": "empty", "text": "", "expected": ""}
+    {"name": "empty", "text": "", "expected": ""},
+    {"name": "token_in_preference_key", "in": "preference_key", "text": "lastSync:0123456789abcdef0123456789abcdef", "expected": "lastSync:[removed]"}
   ],
   "device": [
     {"name": "default_host", "hosts": ["ankiquest.rationality-munich.com"], "text": "Unable to resolve host \"ankiquest.rationality-munich.com\": No address associated with hostname", "expected": "Unable to resolve host \"[server]\": No address associated with hostname"},
@@ -30,6 +31,10 @@
     {"name": "two_hosts", "hosts": ["ankiquest.rationality-munich.com", "quest.example.net"], "text": "moved from ankiquest.rationality-munich.com to quest.example.net", "expected": "moved from [server] to [server]"},
     {"name": "stored_token", "hosts": [], "token": "hill-device-token", "text": "X-Token: hill-device-token;", "expected": "X-Token: [removed];"},
     {"name": "short_stored_token_kept", "hosts": [], "token": "abc123", "text": "abc123 xyz", "expected": "abc123 xyz"},
-    {"name": "host_token_and_bearer", "hosts": ["quest.example.net"], "token": "hill-device-token", "text": "POST quest.example.net/203.0.113.7 Bearer hill-device-token", "expected": "POST [server] Bearer [removed]"}
+    {"name": "host_token_and_bearer", "hosts": ["quest.example.net"], "token": "hill-device-token", "text": "POST quest.example.net/203.0.113.7 Bearer hill-device-token", "expected": "POST [server] Bearer [removed]"},
+    {"name": "host_in_account_key", "in": "preference_key", "hosts": ["quest.example.net"], "text": "ankiquestUploadedThrough:https://quest.example.net/hill", "expected": "ankiquestUploadedThrough:https://[server]/hill"},
+    {"name": "host_and_port_in_server_key", "in": "preference_key", "hosts": ["quest.example.net"], "text": "ankiquestCapabilities:http://quest.example.net:8080", "expected": "ankiquestCapabilities:http://[server]:8080"},
+    {"name": "default_host_in_key", "in": "preference_key", "hosts": ["ankiquest.rationality-munich.com"], "text": "ankiquestUnlocks:https://ankiquest.rationality-munich.com/hill", "expected": "ankiquestUnlocks:https://[server]/hill"},
+    {"name": "longer_host_in_key_kept", "in": "preference_key", "hosts": ["quest.example.net"], "text": "ankiquestUploadedThrough:https://quest.example.network/hill", "expected": "ankiquestUploadedThrough:https://quest.example.network/hill"}
   ]
 }
