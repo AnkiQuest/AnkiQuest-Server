@@ -8,9 +8,10 @@ license = "AGPL-3.0-only"
 repository = "https://github.com/AnkiQuest/AnkiQuest-Server"
 
 [workspace]
-members = [".", "crates/i18n", "crates/i18n-wasm", "crates/xtask"]
+members = [".", "crates/art", "crates/i18n", "crates/i18n-wasm", "crates/xtask"]
 
 [dependencies]
+ankiquest-art = { path = "crates/art" }
 ankiquest-i18n = { path = "crates/i18n" }
 argon2 = "0.6"
 axum = "0.8"
@@ -26,6 +27,10 @@ sha2 = "0.11"
 skrifa = "0.50"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync", "time"] }
 ureq = "3"
+
+# build.rs exports the share-card and icon pictures from static/.
+[build-dependencies]
+ankiquest-art = { path = "crates/art" }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
@@ -77,6 +82,13 @@ opt-level = 3
 opt-level = 3
 
 [profile.dev.package.crc32fast]
+opt-level = 3
+
+# Downscaling and quantising masters, in build.rs and the art tests.
+[profile.dev.package.ankiquest-art]
+opt-level = 3
+
+[profile.dev.package.color_quant]
 opt-level = 3
 
 [profile.release]
