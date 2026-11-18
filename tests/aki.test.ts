@@ -36,6 +36,13 @@ test('yesterday\'s cached profile never promises current protection or completio
   assert.equal(mood(aki,{day_ends_at:expired,streak_state:'protected',today:{reviews:0}}),'review');
   assert.equal(mood(aki,{day_ends_at:expired,quests:[{done:true}]}),'review');
 });
+test('Aki keeps quiet while cards are due',()=>{
+  // Android and Desktop show the pose without a line in the review mood.
+  const markup=fixture().profile({streak_state:'pending',today:{reviews:0}});
+  assert.match(markup,/data-aki-companion="review"/);
+  assert.match(markup,/<img /);
+  assert.doesNotMatch(markup,/<p>/);
+});
 test('pose paths are fixed and optional classes cannot inject attributes',()=>{
   const markup=fixture().image('../config.json', '\" onerror=\"alert(1)');
   assert.match(markup,/src="\/aki\/welcome.png"/);
