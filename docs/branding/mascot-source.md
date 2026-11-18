@@ -1,57 +1,112 @@
-# A single source for mascot art
+# A single source for companion art
 
-Keep the transparent PNG masters in `art/mascots/<mascot>/<pose>.png`.
-Register each mascot and its required poses in `art/mascots/manifest.json`.
-Start with the shared core that every mascot already has, plus each mascot's
-existing poses; expand that core as the missing art is completed. Check that
-every registered mascot has its declared poses. Reserve `scenes/` for group
-illustrations with participants listed by mascot ID, and `common/` for icons
-without a mascot. Exclude those reserved folders from the directory-registration
-check. Keep each mascot's generation prompts with its masters. Size variants
-such as `face-192` and `face-32` are exports of one face master.
+The transparent PNG masters live in `static/<companion>/<pose>.png`, and
+nowhere else. Every other picture of a companion is made from them by
+`build.rs` or an `xtask` exporter and checked in CI; nobody commits a
+hand-made copy (AGENTS.md, Companion art).
 
-The manifest records each export's dimensions, format, and destination. Keep
-existing web URLs, add-on filenames, card keys and Android resource names.
+Pose names and fallbacks come from `tests/fixtures/companion_poses.json`.
+Masters named before the fixture keep their file names: `happy` is
+`celebrate.png` (`crates/art/src/poses.rs`). Every `asleep` master is
+`asleep.png`; Aki's and Ankilope's were `sleeping.png` until #32.
+`freeze.png` (a used streak freeze) is not the core `frozen` pose. Wins store those file names in their `art`
+field.
 
 ```text
-PNG masters and manifest
+static/<companion>/<pose>.png
     |
-    +-- Rust exporter --> web, add-on and card PNGs
+    +-- build.rs (crates/art) --> OUT_DIR: share-card art, face icons
     |
-    +-- Rust exporter --> Android WebPs and SHA-256 manifest
+    +-- xtask export-addon-art --> Desktop addon/art/*.png, addon/*_face.png
+    |
+    +-- xtask export-android-art --> Android drawable-nodpi WebPs
+    |
+    +-- xtask banner --> docs/graphics/banner_readme.png, social_preview.png
 ```
 
-## Exporter and packaging
+## Shared exporter
 
-Add a Rust workspace crate in `tools/mascot-export/` with a CLI and a library.
-Enable the existing `image` crate's `webp` feature for lossless WebP output and
-commit the resulting dependency lockfile. Fix the resize filter, encoder
-settings, and metadata handling in the exporter. Generate the
-files from the manifest in sorted order. Run the exporter twice in CI and
-compare bytes to verify reproducibility.
+`crates/art` (`ankiquest-art`) holds the downscaler every export uses
+(Lanczos in premultiplied alpha, never upscaled), the PNG encoder and the
+pose list with its fallbacks. `build.rs` and `crates/xtask` both call it.
 
-Call the exporter library from `build.rs` for the web and card PNGs. Write them
-under Cargo's `OUT_DIR`, register the source files for rebuilds, and point the
-`include_bytes!` calls in `src/cards.rs` and the web handlers at those outputs.
-Nix builds the same locked dependencies and source tree as Cargo. The build
-script runs with its local inputs. Keep the generated copies in `static/aki/`,
-`static/ankilope/`, `assets/cards/`, `addon/art/` and `addon/*_face.png` committed
-and SHA-256 checked against the manifest, so runtime consumers and development
-add-ons work straight from a checkout. Add-on packaging regenerates and checks
-those same PNGs before adding them to the archive. Remove a committed copy
-only after every consumer generates or reads its replacement. Extend
-`setWebExports` in `addon/__init__.py` from the registered mascot list when
-adding another mascot; its current expression names only Aki and Ankilope.
+## Server
 
-## Android drawables
+`build.rs` writes these under Cargo's `OUT_DIR/art`, and the server embeds
+them from there:
 
-Keep the generated WebPs committed in Android's `drawable-nodpi` so a checkout
-can build offline. Record the server source commit and a SHA-256 for each
-drawable in an Android manifest. Whoever changes the masters runs the locked
-exporter and updates the drawables and manifest in a companion PR. Android CI
-regenerates the WebPs from the pinned server commit and checks the complete
-resource list, dimensions, and hashes against the committed files. Gradle
-consumes the committed resources directly.
+- Share-card art, 512 px: for every folder in `static/` with a `happy`
+  master, each card pose it has (`happy`, `streak`, `frozen`, `freeze`, `winner`),
+  listed in a generated `cards.rs`. `src/cards.rs` picks the pose, else its
+  fallback from the fixture, else `happy`; a companion without masters shows
+  no art. The cow has no masters yet (#88) and shows Ankilope's art turned
+  purple.
+- Face icons: `aki/face-192`, `aki/face-32` and `ankilope/face-192`, served
+  at `/aki/face-192.png` and so on.
 
-Review generated assets at native size and 64 px on light and dark backgrounds.
-Check neutral icons at 24 px and the launcher art on a device.
+Nix builds from `lib.cleanSource`, which includes `static/`, `crates/art`
+and the fixture, so `nix build` runs the same export.
+
+## Committed copies
+
+`crates/xtask/art-exports.json` lists the copies that must be committed
+because a consumer reads them straight from a checkout. This repository
+has none at the moment; the manifest holds its retired copies.
+
+The desktop add-on's copies (`addon/art/*.png` and `addon/*_face.png`) are
+in AnkiQuest-Desktop, listed in the same format in its `art-exports.json`.
+`cargo run -p ankiquest-xtask -- export-addon-art <desktop-checkout>`
+writes each one whose picture changed, moves the file it replaces to the
+checkout's `assets/retired/` (listed as retired), and records each file's
+SHA-256; `--check` fails when a file differs from that hash or from a
+fresh export of its master.
+
+Linux exports are canonical. Other platforms and quantiser versions move a
+few palette entries, so a committed pose is current when a fresh export
+differs from it by a mean under 0.5/255 per channel and in under 1% of its
+pixels. A clean checkout passes on every platform, and export there leaves
+the committed files alone.
+
+The README banner and social preview are drawn by `xtask banner` and
+checked by its own tests against a fresh render. Android's WebPs live in
+the Android repository, which checks them against the pinned server commit.
+
+## Retired copies
+
+Companion art is never deleted. Copies nothing reads any more are listed
+under `retired` in the manifest, each with the reason, and a test fails if
+code under `src/`, `web/`, `addon/`, `crates/` or `build.rs` names one:
+
+- `assets/cards/*.png`: the hand-made share-card copies `src/cards.rs` used
+  to embed.
+- `static/aki/face-192.png`, `static/aki/face-32.png`,
+  `static/ankilope/face-192.png`: hand-made icon copies, now exported by
+  `build.rs`.
+- `docs/branding/ankilope-celebrate-review/review.png` and
+  `docs/branding/core-poses-2026-11/aki-core-*.png`: review sheets.
+
+## The guard
+
+`crates/xtask/src/art/guard.rs` walks every PNG, WebP and GIF in the
+repository. An image is companion art when its path names a companion (Aki,
+the companions in `tests/fixtures/companion_unlock.json`, or a folder in
+`static/`), or when its 16 px fingerprint matches a master at another size.
+It fails unless such an image is a master in `static/<companion>/`, an
+export in the manifest, or retired there. Animated PNGs get no fingerprint:
+their frames are not a scaled copy of one still.
+
+Anki-tan's folder holds Shigeyuki's asset pack as published
+(`static/anki-tan/README.md` maps its files to poses). It has no
+`<pose>.png` masters yet, so share cards show no art for her.
+
+## Adding art
+
+- A new master: add `static/<companion>/<pose>.png`. Share cards pick it up
+  on the next build when it is a card pose.
+- A new add-on pose: add an `addon` entry to the Desktop checkout's
+  manifest and run `export-addon-art <desktop-checkout>`.
+- A new Android drawable: add it to `ART` in `crates/xtask/src/art.rs` and
+  run `export-android-art`.
+
+Review generated assets at native size and 64 px on light and dark
+backgrounds.
