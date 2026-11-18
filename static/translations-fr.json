@@ -1,5 +1,4 @@
 {
-  "A small step starts with one card.": "Un petit pas commence avec une carte.",
   "Your daily quests are complete. Look at you go!": "Tes missions du jour sont terminées. Bravo, tu avances !",
   "You showed up today. That is progress worth keeping.": "Tu as étudié aujourd’hui. C’est un progrès qui compte.",
   "Your streak is protected by a freeze. A fresh start is waiting.": "Ta série est protégée par un gel. Un nouveau départ t’attend.",
@@ -1401,6 +1400,12 @@
   "You reached level {0}.": "Vous avez atteint le niveau {0}.",
   "I reached level {0}.": "J’ai atteint le niveau {0}.",
   "You have studied for {0} hours in total.": "Vous avez étudié {0} heures au total.",
+  "You kept a {0}-day streak.": "Vous avez tenu une série de {0} jours.",
+  "I kept a {0}-day streak.": "J’ai tenu une série de {0} jours.",
+  "You found {0}.": "Vous avez trouvé {0}.",
+  "I found {0}.": "J’ai trouvé {0}.",
+  "You tamed {0} leeches.": "Vous avez dompté {0} sangsues.",
+  "I tamed {0} leeches.": "J’ai dompté {0} sangsues.",
   "Reach level {0}": "Atteins le niveau {0}",
   "Level {0} of {1}": "Niveau {0} sur {1}",
   "{0} of {1} hours": "{0} heures sur {1}"

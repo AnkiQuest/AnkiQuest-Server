@@ -1136,6 +1136,9 @@ pub struct Lifetime {
     pub quests: u64,
     /// Hard cards learned at last; see [`conquests`].
     pub conquered: u64,
+    /// Leeches among them, each card once; see [`leeches_tamed`]. Unlocks Leech-tan.
+    #[serde(skip)]
+    pub leeches_tamed: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -1954,6 +1957,7 @@ pub fn compute_with_rules(
             .map(conquest_event),
     );
     let conquered = all_conquests.len() as u64;
+    let tamed = leeches_tamed(&all_conquests);
     let recent_conquests: Vec<Conquest> = all_conquests
         .into_iter()
         .rev()
@@ -2044,6 +2048,7 @@ pub fn compute_with_rules(
             best_combo: totals.best_combo,
             quests: totals.quests,
             conquered,
+            leeches_tamed: tamed,
         },
         quests: today_quests,
         achievements,
@@ -2153,6 +2158,17 @@ pub fn conquests(reviews: &[Review], now_ms: i64) -> Vec<Conquest> {
     found
 }
 
+/// How many cards were tamed as leeches. A leech that lapses again can be tamed again; it
+/// counts once. A card's first answer in the history is a review id, so it names the card.
+fn leeches_tamed(conquests: &[Conquest]) -> u64 {
+    let cards: HashSet<i64> = conquests
+        .iter()
+        .filter(|c| c.leech)
+        .map(|c| c.since)
+        .collect();
+    cards.len() as u64
+}
+
 pub(crate) fn conquest_event(c: &Conquest) -> Event {
     Event {
         key: format!("conquered:{}", c.at),
@@ -2245,6 +2261,39 @@ mod tests {
                 .collect::<Vec<_>>(),
             [(8, true), (9, true)]
         );
+    }
+
+    #[test]
+    fn each_tamed_leech_counts_once_and_hard_cards_not_at_all() {
+        // A leech tamed twice, at 8 and 9 lapses.
+        let mut leech = Vec::new();
+        for _ in 0..8 {
+            leech.extend(lapse(5, Some(1)));
+        }
+        leech.push((1, 10, Some(30)));
+        leech.extend(lapse(30, Some(1)));
+        leech.push((1, 10, Some(28)));
+
+        // A hard card conquered at 4 lapses is no leech.
+        let mut hard = Vec::new();
+        for _ in 0..4 {
+            hard.extend(lapse(3, Some(1)));
+        }
+        hard.push((1, 1, Some(25)));
+
+        let mut reviews = [card(3, &leech), card(4, &hard)].concat();
+        reviews.sort_by_key(|r| r.id);
+        let at = reviews.last().unwrap().id;
+        let profile = compute(
+            "hill",
+            "Hill",
+            &reviews,
+            &Clock::default(),
+            &Week::default(),
+            at,
+        );
+        assert_eq!(profile.lifetime.conquered, 3);
+        assert_eq!(profile.lifetime.leeches_tamed, 1);
     }
 
     #[test]

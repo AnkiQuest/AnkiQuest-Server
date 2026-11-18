@@ -2,6 +2,10 @@
 //! TypeScript from `web/` through esbuild, the translation module from
 //! `crates/i18n-wasm` as WebAssembly, and each page in `static/` with its
 //! `<script data-entry="…"></script>` placeholders replaced by the compiled code.
+//!
+//! Also exports the companion pictures the server embeds into `OUT_DIR/art`,
+//! downscaled from the masters in `static/<companion>/`: share-card art and
+//! the small face icons.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -28,6 +32,21 @@ const PAGES: [&str; 8] = [
     "oauth",
 ];
 
+/// Poses a share card shows, as the fixture names them, and `freeze`
+/// (a used streak freeze), which the fixture does not name. A companion
+/// without one falls back through the fixture when the card is drawn.
+const CARD_POSES: [&str; 5] = ["happy", "streak", "frozen", "freeze", "winner"];
+
+/// Share-card art edge in pixels: cards draw it at up to 470 px.
+const CARD_SIZE: u32 = 512;
+
+/// Face icons the pages use: companion, file name and edge in pixels.
+const ICONS: [(&str, &str, u32); 3] = [
+    ("aki", "face-192", 192),
+    ("aki", "face-32", 32),
+    ("ankilope", "face-192", 192),
+];
+
 type Error = Box<dyn std::error::Error>;
 
 fn main() -> Result<(), Error> {
@@ -37,20 +56,96 @@ fn main() -> Result<(), Error> {
     for watched in [
         "web",
         "static",
+        "crates/art",
         "crates/i18n",
         "crates/i18n-wasm",
+        "tests/fixtures/companion_poses.json",
         "Cargo.lock",
     ] {
         println!("cargo::rerun-if-changed={watched}");
     }
     println!("cargo::rerun-if-env-changed=ESBUILD");
 
+    art(&root, &out.with_file_name("art"))?;
     typescript(&root, &out)?;
     wasm(&root, &out)?;
     for page in PAGES {
         let source = std::fs::read_to_string(root.join(format!("static/{page}.html")))?;
         std::fs::write(out.join(format!("{page}.html")), inline(&source, &out)?)?;
     }
+    Ok(())
+}
+
+/// Writes the card art and face icons, and `cards.rs`, which lists the
+/// card art by companion and master file name for `src/cards.rs`.
+fn art(root: &Path, out: &Path) -> Result<(), Error> {
+    std::fs::create_dir_all(out)?;
+    let masters = root.join("static");
+    let mut table = String::from("[\n");
+    let mut count = 0;
+
+    // Card art for every folder in static/ with a happy master: a companion.
+    for companion in companions(&masters)? {
+        for pose in CARD_POSES {
+            let stem = ankiquest_art::stem(pose);
+            let master = masters.join(&companion).join(format!("{stem}.png"));
+            if !master.is_file() {
+                continue;
+            }
+            let path = out
+                .join("cards")
+                .join(&companion)
+                .join(format!("{stem}.png"));
+            export(&master, &path, CARD_SIZE)?;
+            table += &format!("    ({companion:?}, {stem:?}, include_bytes!({path:?})),\n");
+            count += 1;
+        }
+    }
+    table += "]";
+    let code = format!(
+        "/// Card art by companion and master file name, made by build.rs.\n\
+         const CARD_ART: [(&str, &str, &[u8]); {count}] = {table};\n"
+    );
+    std::fs::write(out.join("cards.rs"), code)?;
+
+    // Face icons, from each companion's face master.
+    for (companion, name, size) in ICONS {
+        let master = masters.join(companion).join("face.png");
+        export(
+            &master,
+            &out.join(companion).join(format!("{name}.png")),
+            size,
+        )?;
+    }
+    Ok(())
+}
+
+/// Folders in static/ that hold a happy master, sorted.
+fn companions(masters: &Path) -> Result<Vec<String>, Error> {
+    let happy = format!("{}.png", ankiquest_art::stem("happy"));
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(masters)? {
+        let entry = entry?;
+        if !entry.path().join(&happy).is_file() {
+            continue;
+        }
+        let name = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| "folder name is not UTF-8")?;
+        found.push(name);
+    }
+    found.sort();
+    Ok(found)
+}
+
+/// Writes `master` fitted into `size` square as PNG to `path`.
+fn export(master: &Path, path: &Path, size: u32) -> Result<(), Error> {
+    let image = ankiquest_art::fit(ankiquest_art::load(master)?, size);
+    if let Some(folder) = path.parent() {
+        std::fs::create_dir_all(folder)?;
+    }
+    std::fs::write(path, ankiquest_art::encode(&image)?)?;
     Ok(())
 }
 

@@ -16,15 +16,18 @@ dark backgrounds. All five cleaned masters were also inspected at full size.
 counts. Compositing over white, dark and magenta changes no channel by more
 than 4/255. No erosion, color replacement or outline masking was applied.
 
-Reproduce from the source hashes with Pillow:
+The masters were written with Pillow. The same pixels, from the source
+hashes, with the `image` crate (the PNG encoding, and so the file hash,
+depends on the encoder):
 
-```python
-image = Image.open(source).convert("RGBA")
-data = bytearray(image.tobytes())
-for offset in range(0, len(data), 4):
-    if 0 < data[offset + 3] <= 4:
-        data[offset:offset + 4] = bytes(4)
-Image.frombytes("RGBA", image.size, bytes(data)).save(destination)
+```rust
+let mut image = image::open(source)?.into_rgba8();
+for pixel in image.pixels_mut() {
+    if (1..=4).contains(&pixel[3]) {
+        *pixel = image::Rgba([0, 0, 0, 0]);
+    }
+}
+image.save(destination)?;
 ```
 
 ## Duo
