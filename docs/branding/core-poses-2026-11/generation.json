@@ -178,5 +178,155 @@
     "references": [
       "static/aki/welcome.png"
     ]
+  },
+  {
+    "candidate": "ankilope-sad-a",
+    "prompt": "Use case: identity-preserve. Create a new full-body pose variant of the supplied Ankilope mascot, for a study app. Match the exact existing hand-painted storybook rendering, fine fur strokes, warm golden tan coat, cream muzzle/eye patches/chest, large brown eyes, oversized long cream-lined ears, two short curved banded brown horns, cloven dark hooves, small tufted tail, indigo-purple scarf and matching crossbody flashcard satchel with gold button. Preserve this specific character's proportions, line weight and palette; she is an antelope, not a fox, dog, deer or cow. Single isolated character, centered, all horns, ears, feet, tail and satchel inside the frame with a comfortable transparent margin. Output exactly 1254 by 1254 pixels, true transparent background with alpha, no ground, shadow blob, lettering, symbols or text on cards. The expression must read clearly at small icon size. No fire, confetti, extra characters, props or scenery.\nSad core pose: standing quietly with ears tilted lower, shoulders gently drooping, both front hooves loosely holding one blank flashcard at the belly. Closed small downturned mouth, eyebrows gently raised at the inner ends. Mild disappointment after missing study, sympathetic and recoverable, not crying or suffering.",
+    "tool": "image_gen",
+    "model": "The built-in tool does not expose the model identifier",
+    "references": [
+      "static/ankilope/welcome.png",
+      "static/ankilope/celebrate.png"
+    ]
+  },
+  {
+    "candidate": "ankilope-sad-b",
+    "prompt": "Use case: identity-preserve. Create a new full-body pose variant of the supplied Ankilope mascot, for a study app. Match the exact existing hand-painted storybook rendering, fine fur strokes, warm golden tan coat, cream muzzle/eye patches/chest, large brown eyes, oversized long cream-lined ears, two short curved banded brown horns, cloven dark hooves, small tufted tail, indigo-purple scarf and matching crossbody flashcard satchel with gold button. Preserve this specific character's proportions, line weight and palette; she is an antelope, not a fox, dog, deer or cow. Single isolated character, centered, all horns, ears, feet, tail and satchel inside the frame with a comfortable transparent margin. Output exactly 1254 by 1254 pixels, true transparent background with alpha, no ground, shadow blob, lettering, symbols or text on cards. The expression must read clearly at small icon size. No fire, confetti, extra characters, props or scenery.\nSad core pose: full body standing in a slight three-quarter turn, head tilted downward toward one blank flashcard held close to the chest in both hooves, lowered ears and softly worried brows. Closed small mouth, modest disappointment; keep the huge brown eyes and long ears unmistakably like the reference, no tears.",
+    "tool": "image_gen",
+    "model": "The built-in tool does not expose the model identifier",
+    "references": [
+      "static/ankilope/welcome.png",
+      "static/ankilope/celebrate.png"
+    ]
+  },
+  {
+    "candidate": "ankilope-sad-c",
+    "prompt": "Use case: identity-preserve. Create a new full-body pose variant of the supplied Ankilope mascot, for a study app. Match the exact existing hand-painted storybook rendering, fine fur strokes, warm golden tan coat, cream muzzle/eye patches/chest, large brown eyes, oversized long cream-lined ears, two short curved banded brown horns, cloven dark hooves, small tufted tail, indigo-purple scarf and matching crossbody flashcard satchel with gold button. Preserve this specific character's proportions, line weight and palette; she is an antelope, not a fox, dog, deer or cow. Single isolated character, centered, all horns, ears, feet, tail and satchel inside the frame with a comfortable transparent margin. Output exactly 1254 by 1254 pixels, true transparent background with alpha, no ground, shadow blob, lettering, symbols or text on cards. The expression must read clearly at small icon size. No fire, confetti, extra characters, props or scenery.\nSad core pose: seated with hind legs neatly tucked, satchel beside her hip still on its strap, both front hooves holding a blank card against the cream chest. Head slightly bowed, ears relaxed sideways and droopy, gentle downturned closed mouth and apologetic brown eyes. A quiet missed-study mood, not a sleepy or injured pose.",
+    "tool": "image_gen",
+    "model": "The built-in tool does not expose the model identifier",
+    "references": [
+      "static/ankilope/welcome.png",
+      "static/ankilope/celebrate.png"
+    ]
+  },
+  {
+    "candidate": "ankilope-hopeful-a",
+    "prompt": "Use case: identity-preserve. Create a new full-body pose variant of the supplied Ankilope mascot, for a study app. Match the exact existing hand-painted storybook rendering, fine fur strokes, warm golden tan coat, cream muzzle/eye patches/chest, large brown eyes, oversized long cream-lined ears, two short curved banded brown horns, cloven dark hooves, small tufted tail, indigo-purple scarf and matching crossbody flashcard satchel with gold button. Preserve this specific character's proportions, line weight and palette; she is an antelope, not a fox, dog, deer or cow. Single isolated character, centered, all horns, ears, feet, tail and satchel inside the frame with a comfortable transparent margin. Output exactly 1254 by 1254 pixels, true transparent background with alpha, no ground, shadow blob, lettering, symbols or text on cards. The expression must read clearly at small icon size. No fire, confetti, extra characters, props or scenery.\nHopeful core pose: standing with ears perking upward, head lifted slightly, a small confident closed-mouth smile. Hold one blank flashcard lightly in both front hooves at chest level. Gentle determination during a little study before reaching the minimum, clearly quieter than celebrating.",
+    "tool": "image_gen",
+    "model": "The built-in tool does not expose the model identifier",
+    "references": [
+      "static/ankilope/welcome.png",
+      "static/ankilope/celebrate.png"
+    ]
+  },
+  {
+    "candidate": "ankilope-hopeful-b",
+    "prompt": "Use case: identity-preserve. Create a new full-body pose variant of the supplied Ankilope mascot, for a study app. Match the exact existing hand-painted storybook rendering, fine fur strokes, warm golden tan coat, cream muzzle/eye patches/chest, large brown eyes, oversized long cream-lined ears, two short curved banded brown horns, cloven dark hooves, small tufted tail, indigo-purple scarf and matching crossbody flashcard satchel with gold button. Preserve this specific character's proportions, line weight and palette; she is an antelope, not a fox, dog, deer or cow. Single isolated character, centered, all horns, ears, feet, tail and satchel inside the frame with a comfortable transparent margin. Output exactly 1254 by 1254 pixels, true transparent background with alpha, no ground, shadow blob, lettering, symbols or text on cards. The expression must read clearly at small icon size. No fire, confetti, extra characters, props or scenery.\nHopeful core pose: standing in a slight three-quarter view, one front hoof holding a blank flashcard near the chest, the other close to it in a modest ready-to-try gesture. Ears attentive and raised, softly uplifted eyebrows, warm hopeful brown eyes and a restrained closed-mouth smile. Keep hooves, not human fingers.",
+    "tool": "image_gen",
+    "model": "The built-in tool does not expose the model identifier",
+    "references": [
+      "static/ankilope/welcome.png",
+      "static/ankilope/celebrate.png"
+    ]
+  },
+  {
+    "candidate": "ankilope-hopeful-c",
+    "prompt": "Use case: identity-preserve. Create a new full-body pose variant of the supplied Ankilope mascot, for a study app. Match the exact existing hand-painted storybook rendering, fine fur strokes, warm golden tan coat, cream muzzle/eye patches/chest, large brown eyes, oversized long cream-lined ears, two short curved banded brown horns, cloven dark hooves, small tufted tail, indigo-purple scarf and matching crossbody flashcard satchel with gold button. Preserve this specific character's proportions, line weight and palette; she is an antelope, not a fox, dog, deer or cow. Single isolated character, centered, all horns, ears, feet, tail and satchel inside the frame with a comfortable transparent margin. Output exactly 1254 by 1254 pixels, true transparent background with alpha, no ground, shadow blob, lettering, symbols or text on cards. The expression must read clearly at small icon size. No fire, confetti, extra characters, props or scenery.\nHopeful core pose: standing relaxed with both feet planted, holding a single blank flashcard just below the chin with both front hooves, looking slightly upward with bright determined eyes, a small optimistic smile, ears lifted. A calm hopeful study moment, no jumping, no celebration effects.",
+    "tool": "image_gen",
+    "model": "The built-in tool does not expose the model identifier",
+    "references": [
+      "static/ankilope/welcome.png",
+      "static/ankilope/celebrate.png"
+    ]
+  },
+  {
+    "candidate": "ankilope-frozen-a",
+    "prompt": "Use case: identity-preserve. Create a new full-body pose variant of the supplied Ankilope mascot, for a study app. Match the exact existing hand-painted storybook rendering, fine fur strokes, warm golden tan coat, cream muzzle/eye patches/chest, large brown eyes, oversized long cream-lined ears, two short curved banded brown horns, cloven dark hooves, small tufted tail, indigo-purple scarf and matching crossbody flashcard satchel with gold button. Preserve this specific character's proportions, line weight and palette; she is an antelope, not a fox, dog, deer or cow. Single isolated character, centered, all horns, ears, feet, tail and satchel inside the frame with a comfortable transparent margin. Output exactly 1254 by 1254 pixels, true transparent background with alpha, no ground, shadow blob, lettering, symbols or text on cards. The expression must read clearly at small icon size. No fire, confetti, extra characters, props or scenery.\nFrozen core pose: she is awake and shivering gently, sitting compactly with her forehooves tucked into her purple scarf and her eyes open with a worried but safe expression. Small pale-blue crystalline frost coats the tips of her horns and ears and the hem of her scarf. The original golden fur stays visible. No snow ground, no snowflake symbols, no separate props.",
+    "tool": "image_gen",
+    "model": "The built-in tool does not expose the model identifier",
+    "references": [
+      "static/ankilope/welcome.png",
+      "static/ankilope/celebrate.png"
+    ]
+  },
+  {
+    "candidate": "ankilope-frozen-b",
+    "prompt": "Use case: identity-preserve. Create a new full-body pose variant of the supplied Ankilope mascot, for a study app. Match the exact existing hand-painted storybook rendering, fine fur strokes, warm golden tan coat, cream muzzle/eye patches/chest, large brown eyes, oversized long cream-lined ears, two short curved banded brown horns, cloven dark hooves, small tufted tail, indigo-purple scarf and matching crossbody flashcard satchel with gold button. Preserve this specific character's proportions, line weight and palette; she is an antelope, not a fox, dog, deer or cow. Single isolated character, centered, all horns, ears, feet, tail and satchel inside the frame with a comfortable transparent margin. Output exactly 1254 by 1254 pixels, true transparent background with alpha, no ground, shadow blob, lettering, symbols or text on cards. The expression must read clearly at small icon size. No fire, confetti, extra characters, props or scenery.\nFrozen core pose: standing with shoulders hunched and forehooves held close together against her scarf, hind legs close together, eyes open and brows mildly worried from cold. A delicate pale-blue rime coats horn tips, ear edges and the satchel edges. Keep the original warm golden coat and recognisable purple scarf and bag. No ice block, no scenery, no floating symbols.",
+    "tool": "image_gen",
+    "model": "The built-in tool does not expose the model identifier",
+    "references": [
+      "static/ankilope/welcome.png",
+      "static/ankilope/celebrate.png"
+    ]
+  },
+  {
+    "candidate": "ankilope-frozen-c",
+    "prompt": "Use case: identity-preserve. Create a new full-body pose variant of the supplied Ankilope mascot, for a study app. Match the exact existing hand-painted storybook rendering, fine fur strokes, warm golden tan coat, cream muzzle/eye patches/chest, large brown eyes, oversized long cream-lined ears, two short curved banded brown horns, cloven dark hooves, small tufted tail, indigo-purple scarf and matching crossbody flashcard satchel with gold button. Preserve this specific character's proportions, line weight and palette; she is an antelope, not a fox, dog, deer or cow. Single isolated character, centered, all horns, ears, feet, tail and satchel inside the frame with a comfortable transparent margin. Output exactly 1254 by 1254 pixels, true transparent background with alpha, no ground, shadow blob, lettering, symbols or text on cards. The expression must read clearly at small icon size. No fire, confetti, extra characters, props or scenery.\nFrozen core pose: three-quarter seated figure hugging her own forelegs tightly, scarf wrapped snugly around her neck and satchel beside her hip still worn on its strap. Eyes open, small sympathetic chilly frown. Translucent pale-blue frost on the horns and ear tips clearly communicates a protected frozen day. No distress, no snow ground, no floating symbols.",
+    "tool": "image_gen",
+    "model": "The built-in tool does not expose the model identifier",
+    "references": [
+      "static/ankilope/welcome.png",
+      "static/ankilope/celebrate.png"
+    ]
+  },
+  {
+    "candidate": "ankilope-asleep-a",
+    "prompt": "Use case: identity-preserve. Create a new full-body pose variant of the supplied Ankilope mascot, for a study app. Match the exact existing hand-painted storybook rendering, fine fur strokes, warm golden tan coat, cream muzzle/eye patches/chest, large brown eyes, oversized long cream-lined ears, two short curved banded brown horns, cloven dark hooves, small tufted tail, indigo-purple scarf and matching crossbody flashcard satchel with gold button. Preserve this specific character's proportions, line weight and palette; she is an antelope, not a fox, dog, deer or cow. Single isolated character, centered, all horns, ears, feet, tail and satchel inside the frame with a comfortable transparent margin. Output exactly 1254 by 1254 pixels, true transparent background with alpha, no ground, shadow blob, lettering, symbols or text on cards. The expression must read clearly at small icon size. No fire, confetti, extra characters, props or scenery.\nAsleep core pose: curled up peacefully on her side, eyes softly closed, head resting on folded forehooves, knees tucked and tail curled beside her. Purple scarf remains around the neck, flashcard satchel rests against her hip on its strap. Both curved horns and long ears fully visible. Only the sleeping character, with no pillow, bed, ground shadow, moon, stars or letters.",
+    "tool": "image_gen",
+    "model": "The built-in tool does not expose the model identifier",
+    "references": [
+      "static/ankilope/welcome.png",
+      "static/ankilope/celebrate.png"
+    ]
+  },
+  {
+    "candidate": "ankilope-asleep-b",
+    "prompt": "Use case: identity-preserve. Create a new full-body pose variant of the supplied Ankilope mascot, for a study app. Match the exact existing hand-painted storybook rendering, fine fur strokes, warm golden tan coat, cream muzzle/eye patches/chest, large brown eyes, oversized long cream-lined ears, two short curved banded brown horns, cloven dark hooves, small tufted tail, indigo-purple scarf and matching crossbody flashcard satchel with gold button. Preserve this specific character's proportions, line weight and palette; she is an antelope, not a fox, dog, deer or cow. Single isolated character, centered, all horns, ears, feet, tail and satchel inside the frame with a comfortable transparent margin. Output exactly 1254 by 1254 pixels, true transparent background with alpha, no ground, shadow blob, lettering, symbols or text on cards. The expression must read clearly at small icon size. No fire, confetti, extra characters, props or scenery.\nAsleep core pose: sitting with knees gently tucked, head tilted onto her folded forehooves, eyes closed in a calm sleep and small relaxed smile. Large ears relaxed downward, horns unaltered. Scarf and satchel visible. No blanket, pillow, symbols, letters, scenery or ground.",
+    "tool": "image_gen",
+    "model": "The built-in tool does not expose the model identifier",
+    "references": [
+      "static/ankilope/welcome.png",
+      "static/ankilope/celebrate.png"
+    ]
+  },
+  {
+    "candidate": "ankilope-asleep-c",
+    "prompt": "Use case: identity-preserve. Create a new full-body pose variant of the supplied Ankilope mascot, for a study app. Match the exact existing hand-painted storybook rendering, fine fur strokes, warm golden tan coat, cream muzzle/eye patches/chest, large brown eyes, oversized long cream-lined ears, two short curved banded brown horns, cloven dark hooves, small tufted tail, indigo-purple scarf and matching crossbody flashcard satchel with gold button. Preserve this specific character's proportions, line weight and palette; she is an antelope, not a fox, dog, deer or cow. Single isolated character, centered, all horns, ears, feet, tail and satchel inside the frame with a comfortable transparent margin. Output exactly 1254 by 1254 pixels, true transparent background with alpha, no ground, shadow blob, lettering, symbols or text on cards. The expression must read clearly at small icon size. No fire, confetti, extra characters, props or scenery.\nAsleep core pose: a compact three-quarter curled resting posture, cheek on one forehoof and the other relaxed over her knees; closed eyes and relaxed ears make sleep unmistakable. Tail curves around her feet. Preserve the scarf and worn crossbody satchel. No bed, ground, pillow, stars, symbols or letters.",
+    "tool": "image_gen",
+    "model": "The built-in tool does not expose the model identifier",
+    "references": [
+      "static/ankilope/welcome.png",
+      "static/ankilope/celebrate.png"
+    ]
+  },
+  {
+    "candidate": "ankilope-neglected-a",
+    "prompt": "Use case: identity-preserve. Create a new full-body pose variant of the supplied Ankilope mascot, for a study app. Match the exact existing hand-painted storybook rendering, fine fur strokes, warm golden tan coat, cream muzzle/eye patches/chest, large brown eyes, oversized long cream-lined ears, two short curved banded brown horns, cloven dark hooves, small tufted tail, indigo-purple scarf and matching crossbody flashcard satchel with gold button. Preserve this specific character's proportions, line weight and palette; she is an antelope, not a fox, dog, deer or cow. Single isolated character, centered, all horns, ears, feet, tail and satchel inside the frame with a comfortable transparent margin. Output exactly 1254 by 1254 pixels, true transparent background with alpha, no ground, shadow blob, lettering, symbols or text on cards. The expression must read clearly at small icon size. No fire, confetti, extra characters, props or scenery.\nNeglected core pose, after time away from study: seated with a slumped but safe posture, drooping ears, slightly tousled fur and a loosely hanging purple scarf. Eyes open and tired, a small wistful frown. Forehooves rest on a closed satchel in her lap. Clearly different from an ordinary sad pose, but not injured, dead, sick or frightening. No tears, insects, cobwebs, dust clouds, extra objects or scenery.",
+    "tool": "image_gen",
+    "model": "The built-in tool does not expose the model identifier",
+    "references": [
+      "static/ankilope/welcome.png",
+      "static/ankilope/celebrate.png"
+    ]
+  },
+  {
+    "candidate": "ankilope-neglected-b",
+    "prompt": "Use case: identity-preserve. Create a new full-body pose variant of the supplied Ankilope mascot, for a study app. Match the exact existing hand-painted storybook rendering, fine fur strokes, warm golden tan coat, cream muzzle/eye patches/chest, large brown eyes, oversized long cream-lined ears, two short curved banded brown horns, cloven dark hooves, small tufted tail, indigo-purple scarf and matching crossbody flashcard satchel with gold button. Preserve this specific character's proportions, line weight and palette; she is an antelope, not a fox, dog, deer or cow. Single isolated character, centered, all horns, ears, feet, tail and satchel inside the frame with a comfortable transparent margin. Output exactly 1254 by 1254 pixels, true transparent background with alpha, no ground, shadow blob, lettering, symbols or text on cards. The expression must read clearly at small icon size. No fire, confetti, extra characters, props or scenery.\nNeglected core pose: standing slowly with shoulders drooped, head lowered and ears sagging, gently disheveled golden fur, loose uneven purple scarf and the usual satchel hanging low. Eyes open, half-lidded and weary, expression quietly longing for the player to return. Forehooves loosely clasped in front. Kind and safe, no wounds, horror, cobwebs, insects, floating symbols or extra props.",
+    "tool": "image_gen",
+    "model": "The built-in tool does not expose the model identifier",
+    "references": [
+      "static/ankilope/welcome.png",
+      "static/ankilope/celebrate.png"
+    ]
+  },
+  {
+    "candidate": "ankilope-neglected-c",
+    "prompt": "Use case: identity-preserve. Create a new full-body pose variant of the supplied Ankilope mascot, for a study app. Match the exact existing hand-painted storybook rendering, fine fur strokes, warm golden tan coat, cream muzzle/eye patches/chest, large brown eyes, oversized long cream-lined ears, two short curved banded brown horns, cloven dark hooves, small tufted tail, indigo-purple scarf and matching crossbody flashcard satchel with gold button. Preserve this specific character's proportions, line weight and palette; she is an antelope, not a fox, dog, deer or cow. Single isolated character, centered, all horns, ears, feet, tail and satchel inside the frame with a comfortable transparent margin. Output exactly 1254 by 1254 pixels, true transparent background with alpha, no ground, shadow blob, lettering, symbols or text on cards. The expression must read clearly at small icon size. No fire, confetti, extra characters, props or scenery.\nNeglected core pose: seated with knees tucked, chin resting on one forehoof, elbow resting on knee, other forehoof loosely holding the satchel strap. Long ears droop, purple scarf hangs loose and fur is slightly untidy. Open half-lidded eyes, subdued tired frown suggesting time away from study; not asleep, harmed, sick or scary. No extra props or scenery.",
+    "tool": "image_gen",
+    "model": "The built-in tool does not expose the model identifier",
+    "references": [
+      "static/ankilope/welcome.png",
+      "static/ankilope/celebrate.png"
+    ]
   }
 ]
