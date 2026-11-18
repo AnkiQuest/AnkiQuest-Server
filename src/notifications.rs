@@ -12,7 +12,7 @@ pub(crate) const INBOX_AGE_MS: i64 = 7 * DAY_MS;
 /// Any non-zero value keeps the worker from pushing it.
 pub(crate) const NO_PUSH_DESTINATION: i64 = 2;
 pub const ACTIVITY_DAYS: u32 = 90;
-const ACTIVITY_AGE_MS: i64 = ACTIVITY_DAYS as i64 * DAY_MS;
+pub(crate) const ACTIVITY_AGE_MS: i64 = ACTIVITY_DAYS as i64 * DAY_MS;
 pub(crate) const PUSH_LEASE_MS: i64 = 60_000;
 const MAX_SEPARATE_PUSHES: usize = 3;
 
@@ -69,17 +69,19 @@ fn peer_study_sql(table: &str, recipient: &str, peer_study: PeerStudy) -> String
 }
 
 const ACTIVITY_CATEGORY_SQL: &str = "case
-    when n.kind in ('message','reply','nudge') then 'messages'
+    when n.kind in ('message','reply','nudge','group_invite') then 'messages'
     when n.kind glob 'challenge_*' then 'challenges'
     when n.kind in ('completion','conquest') then 'deck_completions'
     else 'study_updates' end";
 
 macro_rules! action_required_sql {
     () => {
-        "exists(select 1 from community_members m
+        "(exists(select 1 from community_members m
     join community_challenges c on c.id=m.challenge where c.id=n.challenge_id
     and n.kind='challenge_invite' and m.user=n.recipient and m.status='invited'
-    and c.cancelled=0 and c.end_at>?2)"
+    and c.cancelled=0 and c.end_at>?2)
+    or exists(select 1 from group_invitations gi where n.kind='group_invite'
+    and gi.group_id=n.group_id and gi.user=n.recipient))"
     };
 }
 
@@ -104,8 +106,8 @@ pub struct Notification {
     /// Who this is about, and so who a reply goes to. Empty for older rows.
     pub sender: String,
     pub replied: bool,
-    /// What put this here: "completion", "conquest", "reply", "nudge" or "message". Clients
-    /// choose how loudly to announce each.
+    /// What put this here: "completion", "conquest", "reply", "nudge", "message",
+    /// "group_invite" and others. Clients choose how loudly to announce each.
     pub kind: String,
     /// Unix seconds, independently of push/delivery state.
     pub read_at: Option<i64>,
@@ -147,6 +149,9 @@ pub struct Notification {
     /// What the sender wrote with a moment shared by hand.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// The group a `group_invite` row invites the recipient to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -155,7 +160,7 @@ pub struct ReplyContext {
     pub body: String,
 }
 
-/// A reply or friend nudge this player wrote; `read_at` is when the recipient read it.
+/// A message, reply or friend nudge this player wrote; `read_at` is when the recipient read it.
 #[derive(Debug, Serialize)]
 pub struct Sent {
     pub recipient: String,
@@ -214,6 +219,7 @@ fn notification(row: &rusqlite::Row<'_>) -> rusqlite::Result<Notification> {
         share_body: None,
         moment: row.get(18)?,
         note: row.get(19)?,
+        group: row.get(20)?,
     })
 }
 
@@ -225,8 +231,13 @@ const NOTICE_COLUMNS: &str = concat!(
     ",n.reply_to_title,n.reply_to_body,n.topic,n.win_id,
  exists(select 1 from reactions r where r.reactor=n.recipient and r.notification=n.id),
  (select w.link_token from wins w where w.id=n.win_id),n.quiet,
- (select w.key from wins w where w.id=n.win_id),n.note"
+ (select w.key from wins w where w.id=n.win_id),n.note,n.group_id"
 );
+/// The title of a message or reply a player wrote, naming them.
+pub(crate) fn message_title(display: &str) -> String {
+    format!("💬 {display}")
+}
+
 /// A notification written by the server itself: a nudge, or a message sent by hand.
 pub struct Outgoing<'a> {
     pub to: &'a str,
@@ -479,7 +490,7 @@ impl Store {
     ) -> Result<SentPage, Error> {
         let mut stmt = self.conn.prepare(&format!(
             "select {NOTICE_COLUMNS},n.recipient from notifications n
-            where n.sender=?1 and n.kind in ('reply','nudge') and n.push_only=0
+            where n.sender=?1 and n.kind in ('message','reply','nudge') and n.push_only=0
             and n.created_at>=?3 and (?4 is null or n.id<?4)
             order by n.id desc limit ?5"
         ))?;
@@ -495,7 +506,7 @@ impl Store {
                 |row| {
                     Ok(Sent {
                         notice: notification(row)?,
-                        recipient: row.get(20)?,
+                        recipient: row.get(21)?,
                     })
                 },
             )?
@@ -742,10 +753,16 @@ impl Store {
             "update notifications set replied = 1 where id = ?1",
             params![id],
         )?;
+
+        // A player who muted the replier hears nothing; the replier is told the same.
+        if crate::social::muted(&tx, &sender, user)? {
+            tx.commit()?;
+            return Ok(Some(sender));
+        }
         tx.execute(
             "insert into notifications (recipient, sender, title, body, day, created_at, kind, reply_to_title, reply_to_body)
              values (?1, ?2, ?3, ?4, ?5, ?6, 'reply', ?7, ?8)",
-            params![sender, user, format!("💬 {display}"), message, day, now_ms, title, body],
+            params![sender, user, message_title(display), message, day, now_ms, title, body],
         )?;
         tx.commit()?;
         Ok(Some(sender))
@@ -758,6 +775,11 @@ impl Store {
         self.conn.execute(
             "delete from notifications where created_at < ?1",
             [now_ms - ACTIVITY_AGE_MS],
+        )?;
+        // Invitations go with their inbox rows.
+        self.conn.execute(
+            "delete from group_invitations where created_at < ?1",
+            [now_ms - crate::social::INVITATION_AGE_MS],
         )?;
         Ok(())
     }
@@ -775,14 +797,14 @@ impl Store {
                      select recipient, max(retry_at) as last_retry from notifications
                      where push_attempts > 0 group by recipient
                  )
-                 select id, title, body, day, created_at / 1000, sender, replied, kind, read_at / 1000, challenge_id, 0, reply_to_title, reply_to_body, topic, win_id, 0, null, quiet, (select w.key from wins w where w.id = ready.win_id), note, ready.recipient
+                 select id, title, body, day, created_at / 1000, sender, replied, kind, read_at / 1000, challenge_id, 0, reply_to_title, reply_to_body, topic, win_id, 0, null, quiet, (select w.key from wins w where w.id = ready.win_id), note, group_id, ready.recipient
                  from ready left join attempted using (recipient)
                  order by turn, coalesce(last_retry, 0), retry_at, id limit 100",
                 completion_visible_sql("notifications", "notifications.recipient")
             ))?;
             stmt.query_map(params![now_ms, now_ms - INBOX_AGE_MS], |r| {
                 Ok(Delivery {
-                    user: r.get(20)?,
+                    user: r.get(21)?,
                     notification: notification(r)?,
                 })
             })?

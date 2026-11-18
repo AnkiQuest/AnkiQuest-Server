@@ -23,6 +23,8 @@ pub(crate) const FEATURES: &[&str] = &[
     "devices",
     "global_leaderboard_hide",
     "goal_backlog_days",
+    "group_invites",
+    "messages",
     "mute",
     "reactions",
     "review_offsets",

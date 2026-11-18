@@ -1,0 +1,32 @@
+{
+  "friends": [
+    {
+      "display": "Cerro",
+      "user": "cerro"
+    }
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "invite": "example-invite-1",
+      "invited": [
+        {
+          "display": "Cerro",
+          "user": "cerro"
+        }
+      ],
+      "members": [
+        {
+          "display": "Hill",
+          "user": "hill"
+        }
+      ],
+      "name": "Spanish club",
+      "owner": true
+    }
+  ],
+  "incoming": [],
+  "muted": [],
+  "outgoing": [],
+  "public": true
+}

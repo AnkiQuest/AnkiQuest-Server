@@ -20,6 +20,7 @@ const STEPS: &[Step] = &[
     cow_companion,
     companion_milestones,
     share_receipts,
+    group_invitations,
 ];
 
 /// Brings the database up to the latest step, then turns foreign keys on for the connection.
@@ -247,6 +248,11 @@ fn share_receipts(conn: &Connection) -> Result<(), Error> {
         [crate::conquests::UNDO_MS],
     )?;
     Ok(())
+}
+
+/// Invitations to a group reach the invitee's inbox as rows that name the group.
+fn group_invitations(conn: &Connection) -> Result<(), Error> {
+    add_column(conn, "notifications", "group_id", "integer")
 }
 
 #[cfg(test)]

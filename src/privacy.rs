@@ -74,6 +74,8 @@ const EXPORT: &[(&str, &str)] = &[
     ("challenge_requests", "select request_id, challenge, payload from community_requests where creator = ?1"),
     ("weekly_suggestions", "select * from community_weekly_suggestions where owner = ?1 or friend = ?1"),
     ("groups", "select g.id, g.name, m.owner, m.joined_at from group_members m join groups g on g.id = m.group_id where m.user = ?1"),
+    ("group_invitations", "select group_id, user, invited_by, created_at from group_invitations
+         where user = ?1 or invited_by = ?1 order by created_at"),
     ("friendships", "select case when a = ?1 then b else a end as friend, requested_by, accepted, created_at
          from friendships where a = ?1 or b = ?1"),
     ("avatar", "select revision, image from avatars where user = ?1"),
@@ -161,6 +163,7 @@ const OWNED: &[(&str, &str)] = &[
     ("community_requests", "creator = ?1"),
     ("community_weekly_suggestions", "owner = ?1 or friend = ?1"),
     ("friendships", "a = ?1 or b = ?1 or requested_by = ?1"),
+    ("group_invitations", "user = ?1 or invited_by = ?1"),
     ("avatars", "user = ?1"),
     (
         "win_receipts",
@@ -229,6 +232,8 @@ pub(crate) const NAMED: &[(&str, &str)] = &[
     ("global_board_hides", "viewer"),
     ("global_board_hides", "target"),
     ("goals", "user"),
+    ("group_invitations", "invited_by"),
+    ("group_invitations", "user"),
     ("group_members", "user"),
     ("groups", "created_by"),
     ("incoming_muted_senders", "recipient"),

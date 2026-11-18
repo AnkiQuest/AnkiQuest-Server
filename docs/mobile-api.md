@@ -8,7 +8,7 @@ these additions preserve bearer authentication and the existing notification arr
 `GET /api/capabilities` needs no sign-in, also on a private site, and may be cached for five minutes (`Cache-Control: max-age=300`). It answers what this server supports, so a client can turn a feature on when the server has it instead of waiting for a deploy:
 
 ```json
-{ "version": 1, "features": ["activity", "app_sign_in", "companion_milestones", "companion_unlocks", "cookie_session", "deck_share", "devices", "global_leaderboard_hide", "goal_backlog_days", "mute", "reactions", "review_offsets", "settings_sync", "share_cards", "share_moments", "share_undo_send", "upload_first", "wins"], "public_url": "https://anki.example.test" }
+{ "version": 1, "features": ["activity", "app_sign_in", "companion_milestones", "companion_unlocks", "cookie_session", "deck_share", "devices", "global_leaderboard_hide", "goal_backlog_days", "group_invites", "messages", "mute", "reactions", "review_offsets", "settings_sync", "share_cards", "share_moments", "share_undo_send", "upload_first", "wins"], "public_url": "https://anki.example.test" }
 ```
 
 `public_url` is the server's main address, without a trailing slash, and is present only when the server has `public_url` configured. A client that saved another address for the same server (an old address that proxies to it) may move to this one: it checks that its saved token works there with one signed-in request that needs it, such as `GET /api/devices/{user}` (the profile also answers without a token), and only then saves the new address and moves anything it keeps per address. Clients only move to an `https` address, keep the saved one when the check fails or they are offline, and ignore the field otherwise.
@@ -24,6 +24,8 @@ these additions preserve bearer authentication and the existing notification arr
 | `devices` | password change and the device list and sign-out (`/api/devices/{user}`, see `docs/server.md`) |
 | `global_leaderboard_hide` | private Global leaderboard hides and undo at `/api/leaderboard/hidden/{viewer}` (below) |
 | `goal_backlog_days` | the `backlog` goal clears the backlog in `value` days, with `since`, `chosen` and `restart` (see [sharing.md](sharing.md)) |
+| `group_invites` | a group's owner invites a player with `POST /api/social/{user}` `{"action": "invite", "group", "user"}`; the invitee answers with `accept_invite` or `decline_invite` (below, friends and groups for apps) |
+| `messages` | sending a friend a message, `POST /api/messages/{user}` (below, messages between friends) |
 | `mute` | muting a person, `POST /api/social/{user}` `{ "action": "mute" \| "unmute", "user" }`; `muted` in the social overview (see [community.md](community.md)) |
 | `reactions` | cheering a friend's share, `POST /api/react/{user}` |
 | `review_offsets` | an uploaded review row may carry `offset_west_min`, the device's UTC offset when the review was made, and the server dates time-zone changes from it (see `docs/server.md`, "getting reviews in"). Older servers ignore the field, so sending it is harmless |
@@ -161,7 +163,7 @@ both timestamp fields are Unix **seconds**; challenge `start_at` and `end_at` re
 
 Own moments wait until studying stops and survive an account switch without replaying dismissed keys. Clients check `kind` as well as `moment` and fold the session recap into the same card. Their topic priority is secured, streak, level, rank, achievement, record, leech, conquered, goal, quest, then session; newer moments come first within a priority. Quiet rows other than the daily secured cue only add to the badge.
 
-counts cover all items within the selected window, independently of pagination, push state, and any Android delivery cursor. `unread_count` counts rows with no read timestamp. `action_count` counts still-pending challenge invitations whose challenge is neither cancelled nor past its deadline. reading an invitation does not accept it. a 30-day view counts its own 30-day window; use the default 90-day view for the full retained inbox. follow `next_before` until null to load more.
+counts cover all items within the selected window, independently of pagination, push state, and any Android delivery cursor. `unread_count` counts rows with no read timestamp. `action_count` counts still-pending challenge invitations whose challenge is neither cancelled nor past its deadline, and unanswered group invitations. reading an invitation does not accept it. a 30-day view counts its own 30-day window; use the default 90-day view for the full retained inbox. follow `next_before` until null to load more.
 
 `attention` contains up to three still-pending invitations independently of the displayed page, so the all-activity view can show them first. `latest_id` is the newest retained inbox ID in the window, independent of filters and pagination; use it as the cutoff for marking everything currently known read. Neither field is a cursor for announcing historical reminders.
 
@@ -185,7 +187,7 @@ repeated successful accept, decline, leave, and creator cancel operations are id
 
 ### friends and groups for apps
 
-`GET /api/social/{user}` answers `{ "friends", "incoming", "outgoing", "muted", "groups", "public" }`. `friends`, `incoming` (requests waiting for the player), `outgoing` (the player's requests waiting for an answer) and `muted` are people as `{ "user", "display" }`, by display name. each group has `id`, `name`, `owner` (whether the player owns it), `invite` (its invite code, only for the owner, otherwise null) and `members`. Anyone may open a public profile, which appears on the global board unless its player opts out. Profiles are public until the player sends `visibility` with `"public": false`. Players with private profiles can opt in to the global leaderboard. a conquest's `label` reaches viewers outside the player's friends and groups only when the player made the profile public themselves (or is a configured player who never chose), since labels written before profiles became public by default were meant for friends. a group's invite link is `/join/{invite}` on the server's site.
+`GET /api/social/{user}` answers `{ "friends", "incoming", "outgoing", "muted", "groups", "public" }`, and `invitations` when the player has any. `friends`, `incoming` (requests waiting for the player), `outgoing` (the player's requests waiting for an answer) and `muted` are people as `{ "user", "display" }`, by display name. each group has `id`, `name`, `owner` (whether the player owns it), `invite` (its invite code, only for the owner, otherwise null), `members` and, for the owner and only when there are some, `invited`: players invited who have not answered yet. `invitations` lists the groups the player is invited to, newest first, each as `{ "group", "name", "members" (the member count), "from" }` with `from` a person; invitations from people the player muted are left out. Anyone may open a public profile, which appears on the global board unless its player opts out. Profiles are public until the player sends `visibility` with `"public": false`. Players with private profiles can opt in to the global leaderboard. a conquest's `label` reaches viewers outside the player's friends and groups only when the player made the profile public themselves (or is a configured player who never chose), since labels written before profiles became public by default were meant for friends. a group's invite link is `/join/{invite}` on the server's site.
 
 `POST /api/social/{user}` takes one `{ "action", ... }` and answers the same object as the `GET`, so a client redraws from the answer:
 
@@ -197,12 +199,23 @@ repeated successful accept, decline, leave, and creator cancel operations are id
 | `create_group` | `name` | 1–40 characters; the player owns the new group |
 | `rename_group` | `group`, `name` | owner only |
 | `new_invite` | `group` | owner only; the old code stops working |
-| `join` | `invite` | the code from a `/join/{invite}` link; joining again is fine |
+| `join` | `invite` | the code from a `/join/{invite}` link; joining again is fine. Answers an invitation to that group too |
+| `invite` | `group`, `user` | owner only, since only the owner holds the invite link; the player must exist, not be a member and have a profile the owner can see. Inviting again while the invitation waits changes nothing |
+| `accept_invite` | `group` | joins a group the player is invited to, within the same limits as `join` |
+| `decline_invite` | `group` | ends the invitation; declining again is fine |
 | `leave` | `group` | the longest-standing member inherits an owner's group; an empty group is deleted |
 | `remove` | `group`, `member` | owner only, not themselves |
 | `visibility` | `public` | |
 
-a refusal has `{ "error" }` to show: `400` for a group name, `403` for an owner action by someone else, `404` for an unknown player or invite, `409` when the player is in 20 groups, a group has 200 members, 50 requests wait or 500 people are muted. `GET /api/invites/{code}` needs no credential and answers `{ "name", "members" }` (the member count) to show before joining, or `404`. examples: `social.json`, `group_create.json`, `invite.json` and `social_change.json` in [api/examples](api/examples/README.md). friend requests and group joins send no notifications yet.
+a refusal has `{ "error" }` to show: `400` for a group name, `403` for an owner action by someone else, `404` for an unknown player or invite, `404` for an invitation that does not exist any more, `409` when the player is in 20 groups, a group has 200 members, 50 requests or 50 invitations to one group wait, 500 people are muted, or an invited player is already a member. `GET /api/invites/{code}` needs no credential and answers `{ "name", "members" }` (the member count) to show before joining, or `404`. examples: `social.json`, `group_create.json`, `invite.json`, `social_change.json`, `group_invite.json`, `social_invitation.json` and `group_invite_accept.json` in [api/examples](api/examples/README.md). friend requests and group joins send no notifications yet.
+
+An invitation puts a `group_invite` row in the invitee's activity, in the `messages` category, with `sender` (the owner) and `group` (the group's id). Its `action_required` is true, and it counts in `action_count` and `attention`, until the player accepts, declines or joins by link, which also marks it read, or until the group is deleted. An invitation lasts as long as its row (90 days). When the invitee muted the owner, the invitation is kept, so the owner sees no difference, but the invitee gets no row and it is not in their `invitations`. Apps without `group_invites` share the `/join/{invite}` link instead.
+
+### messages between friends
+
+`POST /api/messages/{user}` sends a friend a message: `{ "to": "<user>", "message": "<text>" }`, answered with `{ "sent_to": "<display name>" }`. The text is trimmed and is 1 to 200 bytes on one line, the same rule as replies. It reaches the friend's activity as a `message` row, in the `messages` category, with `sender` and the title `💬 <display name>`, is pushed like other rows, and shows in the sender's `GET /api/activity/{user}/sent`. Messages cannot be edited or taken back. Errors: `400` for the text, `401` for someone else's `{user}`, `403` when `to` is not a friend (an accepted friendship; group mates and strangers cannot be messaged), `404` for an unknown player or the player themselves, `429` after 30 messages in 24 hours from one sender. When the recipient muted the sender, nothing is stored or delivered and the answer is the same as for a delivered message. Example: `message.json`; `activity_messages.json` shows a message and an invitation in the recipient's activity.
+
+The recipient answers any row with a `sender` with `POST /api/reply/{user}` `{ "notification": <id>, "message": "<text>" }`, answered with `{ "sent_to" }`, once per row: `404` once it is answered or when there is nobody to answer. The answer arrives as a `reply` row with `reply_to` (the row it answers) and can be answered in turn. A reply to a player who muted the replier is not delivered, and the answer is the same.
 
 ## sharing a win
 

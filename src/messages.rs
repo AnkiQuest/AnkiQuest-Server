@@ -1,11 +1,17 @@
 //! Messages between friends: a short text that lands in the friend's inbox as a `message` row,
 //! which they answer with `POST /api/reply/{user}` like any other row.
 
+use crate::access::require_owner;
 use crate::app::{App, now_ms};
+use crate::game::DAY_MS;
+use crate::notifications::{Outgoing, insert_notification, message_title};
+use crate::store::{Error, Store};
+use crate::web_util::{failed_for, normalize_user};
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
 use axum::{Json, Router};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -24,14 +30,101 @@ struct MessageResponse {
     sent_to: String,
 }
 
+/// What became of a message.
+#[derive(Debug, PartialEq, Eq)]
+enum Outcome {
+    Delivered,
+    /// The recipient muted the sender: nothing is stored, and the sender hears the same as
+    /// for [`Outcome::Delivered`].
+    Muted,
+    NotFriends,
+    DailyLimit,
+}
+
+impl Outcome {
+    fn status(&self) -> Result<(), StatusCode> {
+        match self {
+            Self::Delivered | Self::Muted => Ok(()),
+            Self::NotFriends => Err(StatusCode::FORBIDDEN),
+            Self::DailyLimit => Err(StatusCode::TOO_MANY_REQUESTS),
+        }
+    }
+}
+
+/// Delivers `text` from `sender` to their friend `to`, within the sender's daily limit.
+fn deliver(
+    store: &mut Store,
+    sender: &str,
+    display: &str,
+    to: &str,
+    text: &str,
+    now: i64,
+) -> Result<Outcome, Error> {
+    let tx = store.conn.transaction()?;
+    if !crate::social::friends(&tx, sender)?.contains(to) {
+        return Ok(Outcome::NotFriends);
+    }
+    let sent: u32 = tx.query_row(
+        "select count(*) from notifications
+         where sender = ?1 and kind = 'message' and created_at > ?2",
+        params![sender, now - DAY_MS],
+        |r| r.get(0),
+    )?;
+    if sent >= MAX_MESSAGES_PER_DAY {
+        return Ok(Outcome::DailyLimit);
+    }
+    if crate::social::muted(&tx, to, sender)? {
+        return Ok(Outcome::Muted);
+    }
+
+    // A `message` row with a sender is replyable, as messages sent from the command line are.
+    let day = crate::store::clock_in(&tx, to)?.day(now);
+    insert_notification(
+        &tx,
+        &Outgoing {
+            to,
+            from: sender,
+            title: &message_title(display),
+            body: text,
+            kind: "message",
+        },
+        day,
+        now,
+        false,
+    )?;
+    tx.commit()?;
+    Ok(Outcome::Delivered)
+}
+
+/// Sends a friend a message, so a conversation can start without a notification to answer.
 async fn send(
-    State(_app): State<Arc<App>>,
-    Path(_user): Path<String>,
-    _headers: HeaderMap,
-    Json(_request): Json<MessageRequest>,
+    State(app): State<Arc<App>>,
+    Path(user): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<MessageRequest>,
 ) -> Result<Json<MessageResponse>, StatusCode> {
-    let _ = now_ms();
-    Err(StatusCode::NOT_IMPLEMENTED)
+    require_owner(&app, &user, &headers)?;
+    let to = normalize_user(&request.to);
+    if to == user || !app.is_user(&to) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let text = request.message.trim();
+    if !crate::decks::valid_message(text) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let outcome = deliver(
+        &mut app.store.lock().unwrap(),
+        &user,
+        &app.display(&user),
+        &to,
+        text,
+        now_ms(),
+    )
+    .map_err(failed_for("message from", &user))?;
+    outcome.status()?;
+    Ok(Json(MessageResponse {
+        sent_to: app.display(&to),
+    }))
 }
 
 pub(crate) fn routes() -> Router<Arc<App>> {
