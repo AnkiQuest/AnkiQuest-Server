@@ -109,7 +109,7 @@ cargo run -- ankiquest.json
 }
 ```
 
-players sign up for accounts and sign in with a password or a provider. `users` gives players a display name and an ntfy topic, for example players whose reviews come from `sync_base`; it signs nobody in by itself.
+players sign up for accounts and sign in with a password or a provider. `users` gives players a display name and an ntfy topic, for example players whose reviews come from `sync_base`; it signs nobody in by itself. a name in `users` is taken: nobody can sign up with it, by password or provider. so list `hill` only once hill has an account, or adopt a configured player with `adopt-players` (see [configured tokens](#configured-tokens)).
 
 ### configured tokens
 
@@ -314,7 +314,7 @@ services.ankiquest = {
 };
 ```
 
-for [configured tokens](#configured-tokens), set `configuredTokens = "enabled";` and give each player `tokenFile = "/etc/nixos/secrets/ankiquest-hill";`, a runtime file the module loads as a systemd credential.
+as in the JSON configuration, `users.hill` takes the name `hill`: hill needs an account before this, or is adopted from a configured token. for [configured tokens](#configured-tokens), set `configuredTokens = "enabled";` and give each player `tokenFile = "/etc/nixos/secrets/ankiquest-hill";`, a runtime file the module loads as a systemd credential.
 
 the module runs the server in a tight sandbox. systemd holds the port and
 passes it in, and the service may not connect to loopback or private
