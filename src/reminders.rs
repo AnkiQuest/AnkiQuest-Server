@@ -803,6 +803,18 @@ mod tests {
     }
 
     #[test]
+    fn own_week_end_matches_fixture() {
+        for case in game::weekly_fixture::cases() {
+            assert_eq!(
+                own_week_end(&case.clock, &Week::default(), case.now_ms),
+                case.expected.own_week_ends_at,
+                "{}",
+                case.name
+            );
+        }
+    }
+
+    #[test]
     fn quiet_hours_match_fixture() {
         #[derive(Deserialize)]
         struct Case {

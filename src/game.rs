@@ -4096,4 +4096,106 @@ mod tests {
         assert!(!week(&ruled(&reviews, at(7), &[(0, 10)])));
         assert!(week(&ruled(&study(&days), at(7), &[(0, 10)])));
     }
+
+    #[test]
+    fn weekly_board_fixture() {
+        use weekly_fixture::CountsToward;
+
+        let week = Week::default();
+        for case in weekly_fixture::cases() {
+            let name = &case.name;
+            let expected = &case.expected;
+            assert_eq!(
+                week.start_of(case.now_ms),
+                expected.board_starts_at,
+                "{name}"
+            );
+            assert_eq!(
+                week.end_after(case.now_ms),
+                expected.board_ends_at,
+                "{name}"
+            );
+
+            // One review now: its XP shows where the player's current day counts.
+            let review = Review {
+                id: case.now_ms,
+                cid: 1,
+                last_ivl: 0,
+                ivl: None,
+                time_ms: 5_000,
+                kind: 1,
+            };
+            let p = compute("a", "a", &[review], &case.clock, &week, case.now_ms);
+            let json = serde_json::to_value(&p).unwrap();
+            let today = p.periods.day;
+            assert!(today > 0, "{name}");
+            let (board, closing, next) = match expected.counts_toward {
+                CountsToward::Board => (today, None, None),
+                CountsToward::Closing => (0, Some(expected.own_week_ends_at), None),
+                CountsToward::Next => (0, None, Some(expected.board_ends_at)),
+            };
+            assert_eq!(p.week_xp, board, "{name}: week_xp");
+            assert_eq!(
+                json.get("closing_week").map(|c| c["ends_at"].as_i64()),
+                closing.map(Some),
+                "{name}: closing_week"
+            );
+            if closing.is_some() {
+                assert_eq!(json["closing_week"]["xp"], today, "{name}");
+            }
+            assert_eq!(
+                json.get("next_week").map(|n| n["starts_at"].as_i64()),
+                next.map(Some),
+                "{name}: next_week"
+            );
+            if next.is_some() {
+                assert_eq!(json["next_week"]["xp"], today, "{name}");
+            }
+        }
+    }
+}
+
+/// The cases in `tests/fixtures/weekly_board.json`, shared by the game and reminder tests.
+#[cfg(test)]
+pub(crate) mod weekly_fixture {
+    use super::Clock;
+    use serde::Deserialize;
+
+    /// Which week the player's current Anki day counts toward, next to the board's.
+    #[derive(Deserialize, Clone, Copy)]
+    pub(crate) enum CountsToward {
+        #[serde(rename = "board_week")]
+        Board,
+        #[serde(rename = "closing_week")]
+        Closing,
+        #[serde(rename = "next_week")]
+        Next,
+    }
+
+    #[derive(Deserialize)]
+    pub(crate) struct Expected {
+        pub board_starts_at: i64,
+        pub board_ends_at: i64,
+        pub counts_toward: CountsToward,
+        pub own_week_ends_at: i64,
+    }
+
+    #[derive(Deserialize)]
+    pub(crate) struct Case {
+        pub name: String,
+        pub now_ms: i64,
+        pub clock: Clock,
+        pub expected: Expected,
+    }
+
+    #[derive(Deserialize)]
+    struct Fixture {
+        cases: Vec<Case>,
+    }
+
+    pub(crate) fn cases() -> Vec<Case> {
+        let fixture: Fixture =
+            serde_json::from_str(include_str!("../tests/fixtures/weekly_board.json")).unwrap();
+        fixture.cases
+    }
 }
