@@ -6,7 +6,7 @@ use crate::game::{DAY_MS, PlayerStreakChange, ReviewWeighting, StreakChange, Str
 use crate::store::{Error, Store};
 use chrono::DateTime;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params, types::ValueRef};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -313,6 +313,9 @@ pub const USAGE: &str = "usage: ankiquest [config.json] admin <command>
   adopt-players                   turn every configured player into a regular account that
                                   keeps its name, display name and token, so the player
                                   can then be removed from the configuration
+  sign-ins                        how each configured player signs in, and which of them
+                                  set a password or link a provider so their token can
+                                  leave the configuration; also accounts with only a token
   grant-freeze <user> <date>...   protect a player's streak on these days (YYYY-MM-DD)
   revoke-freeze <user> <date>...  take that protection away again
   streak-minutes <user> <minutes|default>
@@ -418,6 +421,7 @@ pub fn parse(args: &[String]) -> Result<Command, Error> {
         ["unfriend", user, others @ ..] => Command::Unfriend(user.to_string(), names(others)),
         ["set-password", user] => Command::SetPassword(user.to_string()),
         ["adopt-players"] => Command::AdoptPlayers,
+        ["sign-ins"] => Command::SignIns,
         ["streak-minutes", user, "default"] => Command::PlayerStreakMinutes(user.to_string(), None),
         ["streak-minutes", user, minutes] => Command::PlayerStreakMinutes(
             user.to_string(),
@@ -499,8 +503,10 @@ pub fn run(
     if let Command::Sql(query) = &command {
         return sql(state_dir, query);
     }
-    if command == Command::AdoptPlayers || command.is_about_people() {
-        return Err("this command needs the configuration; use adopt() or people()".into());
+    if matches!(command, Command::AdoptPlayers | Command::SignIns) || command.is_about_people() {
+        return Err(
+            "this command needs the configuration; use adopt(), sign_ins() or people()".into(),
+        );
     }
     let store = Store::open(state_dir)?;
     let conn = &store.conn;
@@ -691,7 +697,7 @@ pub fn adopt(state_dir: &Path, players: &[Configured], now_ms: i64) -> Result<St
             continue;
         };
         let display = player.display.as_deref().unwrap_or(&player.user);
-        if !crate::accounts::create(&tx, &player.user, display, "", now_ms)? {
+        if !crate::accounts::adopt(&tx, &player.user, display, token, "", now_ms)? {
             out += &format!(
                 "{}: already an account
 ",
@@ -699,10 +705,6 @@ pub fn adopt(state_dir: &Path, players: &[Configured], now_ms: i64) -> Result<St
             );
             continue;
         }
-        tx.execute(
-            "insert or ignore into account_tokens (token_hash, user, device, created_at) values (?1, ?2, ?3, ?4)",
-            params![crate::accounts::token_hash(token), player.user, crate::accounts::ADOPTED_DEVICE, now_ms],
-        )?;
         admin_log(
             &tx,
             now_ms,
@@ -724,12 +726,69 @@ pub fn adopt(state_dir: &Path, players: &[Configured], now_ms: i64) -> Result<St
     Ok(out)
 }
 
+/// How each player signs in, so the operator knows whose token can leave the configuration:
+/// every player the configuration gives a token (`configured`), then every other account that
+/// has nothing but a device token. `offered` are the providers the configuration names.
 pub fn sign_ins(
-    _state_dir: &Path,
-    _configured: &[String],
-    _offered: &[crate::oauth::Provider],
+    state_dir: &Path,
+    configured: &[String],
+    offered: &[crate::oauth::Provider],
 ) -> Result<String, Error> {
-    Ok(String::new())
+    use crate::accounts::SignIn;
+
+    // Who has an account and a password, and which offered providers each linked.
+    let store = Store::open(state_dir)?;
+    let passwords: BTreeMap<String, bool> = store
+        .conn
+        .prepare("select user, password_hash != '' from accounts")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let links: Vec<String> = store
+        .conn
+        .prepare("select user, provider from sign_in_links")?
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter(|(_, key)| crate::oauth::Provider::parse(key).is_some_and(|p| offered.contains(&p)))
+        .map(|(user, _)| user)
+        .collect();
+    let sign_in = |user: &str| match passwords.get(user) {
+        Some(password) => SignIn::of(true, *password, links.iter().filter(|u| *u == user).count()),
+        None => SignIn::TokenOnly,
+    };
+    let words = |sign_in: SignIn| match sign_in {
+        SignIn::Password => "password",
+        SignIn::Provider => "provider",
+        SignIn::TokenOnly => "token only",
+    };
+
+    // Configured players first: they are the ones the configuration still has to keep.
+    let configured: BTreeSet<&str> = configured.iter().map(String::as_str).collect();
+    let mut out = String::new();
+    let mut ready = 0;
+    for user in &configured {
+        let how = sign_in(user);
+        let verdict = if how == SignIn::TokenOnly {
+            "keep in the configuration"
+        } else {
+            ready += 1;
+            "can leave the configuration"
+        };
+        out += &format!("{user}: {}, {verdict}\n", words(how));
+    }
+    for user in passwords
+        .keys()
+        .filter(|user| !configured.contains(user.as_str()))
+    {
+        if sign_in(user) == SignIn::TokenOnly {
+            out += &format!("{user}: token only, account\n");
+        }
+    }
+    out += &format!(
+        "{ready} of {} configured players can leave the configuration.\n",
+        configured.len()
+    );
+    Ok(out)
 }
 
 /// What [`people`] needs from the configuration besides the state.

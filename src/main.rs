@@ -156,6 +156,16 @@ async fn main() -> Result<(), Error> {
                     .collect();
                 admin::adopt(&config.state_dir, &players, now_ms())
             }),
+            Some(Ok(admin::Command::SignIns)) => {
+                // Players the configuration gives a token, as a file or inline.
+                let configured: Vec<String> = config
+                    .users
+                    .iter()
+                    .filter(|(_, c)| c.token_file.is_some() || c.token.is_some())
+                    .map(|(user, _)| user.clone())
+                    .collect();
+                admin::sign_ins(&config.state_dir, &configured, &config.oauth.named())
+            }
             Some(Ok(command)) if command.is_about_people() => {
                 let backups = std::env::var_os("ANKIQUEST_BACKUP_DIR")
                     .map_or_else(|| config.state_dir.join("backups"), Into::into);

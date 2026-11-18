@@ -1142,6 +1142,34 @@ async fn examples_match_the_handlers() {
         std::fs::remove_dir_all(&extra.path).unwrap();
     }
 
+    // Cerro, from the configuration, signs in only with his token until he sets a password.
+    // On a server of its own, so the examples above keep him configured.
+    let converted = Fixture::new();
+    examples.push((
+        "sign_in_methods_token_only",
+        converted
+            .call(
+                "GET",
+                "/api/sign-in/cerro",
+                Some("cerro-secret"),
+                Value::Null,
+            )
+            .await,
+    ));
+    examples.push((
+        "password_set_token_only",
+        converted
+            .call(
+                "POST",
+                "/api/sign-in/cerro",
+                Some("cerro-secret"),
+                json!({"action": "password", "password": PASSWORD, "sign_out_others": false}),
+            )
+            .await,
+    ));
+    drop(converted.app);
+    std::fs::remove_dir_all(&converted.path).unwrap();
+
     let update = std::env::var_os("UPDATE_API_EXAMPLES").is_some_and(|v| v == "1");
     let dir = examples_dir();
     let mut stale = Vec::new();

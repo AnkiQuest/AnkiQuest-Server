@@ -339,12 +339,97 @@ pub(crate) fn has_password(conn: &Connection, user: &str) -> Result<bool, Error>
     Ok(stored_hash(conn, user)?.is_some_and(|hash| !hash.is_empty()))
 }
 
+/// How a player can sign in again on a new device, as `sign_in` in `GET /api/sign-in/{user}`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SignIn {
+    /// With their password, and maybe a provider too.
+    Password,
+    /// With a linked provider the server offers; no password.
+    Provider,
+    /// Only with a device token: a player from the server configuration, who loses it when
+    /// the configuration drops them, or an account with neither a password nor a linked
+    /// provider the server offers.
+    TokenOnly,
+}
+
+impl SignIn {
+    /// `providers` counts the linked providers the server offers.
+    pub(crate) fn of(account: bool, password: bool, providers: usize) -> Self {
+        if !account {
+            return Self::TokenOnly;
+        }
+        if password {
+            return Self::Password;
+        }
+        if providers > 0 {
+            return Self::Provider;
+        }
+        Self::TokenOnly
+    }
+}
+
+/// Makes the configured player `user` an account with the same name, display name and token,
+/// so devices signed in with that token stay signed in once the configuration drops them.
+/// `hash` is the password's, or empty for none. False when `user` already has an account.
+/// Callers run it in a transaction.
+pub(crate) fn adopt(
+    conn: &Connection,
+    user: &str,
+    display: &str,
+    token: &str,
+    hash: &str,
+    now: i64,
+) -> Result<bool, Error> {
+    if !create(conn, user, display, hash, now)? {
+        return Ok(false);
+    }
+    conn.execute(
+        "insert or ignore into account_tokens (token_hash, user, device, created_at) values (?1, ?2, ?3, ?4)",
+        params![token_hash(token), user, ADOPTED_DEVICE, now],
+    )?;
+    Ok(true)
+}
+
 impl App {
     /// Whether a new account may not take this name.
     pub(crate) fn name_taken(&self, user: &str) -> bool {
         self.config.users.contains_key(user)
             || self.config.devs.iter().any(|dev| dev == user)
             || self.accounts.contains(user)
+    }
+
+    /// Makes the configured player `user` an account with the password hashed as `hash`,
+    /// keeping their name, display name and configured token.
+    fn become_account(&self, user: &str, hash: &str) -> Result<(), Error> {
+        let token = self
+            .config
+            .users
+            .get(user)
+            .and_then(|configured| configured.token.as_deref())
+            .filter(|token| !token.is_empty())
+            .ok_or("the configuration gives this player no token")?;
+        let display = self.display(user);
+
+        // The account and its token are saved together, or neither is.
+        let store = self.store.lock().unwrap();
+        let transaction = store.conn.unchecked_transaction()?;
+        if !adopt(&transaction, user, &display, token, hash, now_ms())? {
+            transaction.execute(
+                "update accounts set password_hash = ?2 where user = ?1",
+                params![user, hash],
+            )?;
+        }
+        transaction.commit()?;
+        drop(store);
+
+        self.accounts.insert(user, &display);
+        self.accounts
+            .tokens
+            .write()
+            .unwrap()
+            .insert(token_hash(token), user.to_string());
+        Ok(())
     }
 
     /// A new device token for an existing account, saved before it is handed out.
@@ -702,23 +787,21 @@ pub async fn change_devices(
 }
 
 /// Sets a new password. One the account already has must be given as `current`;
-/// an account that signs in with a provider can set its first one without.
+/// an account that signs in with a provider sets its first one after signing in with it
+/// again, and a player who signs in only with a device token sets it with that token,
+/// becoming an account if the configuration made them.
 /// `others` also signs out every other device. Returns the refusal, if the password was not saved.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn change_password(
     app: &App,
     user: &str,
     headers: &HeaderMap,
     client: IpAddr,
+    sign_in: SignIn,
     current: Option<&str>,
     password: &str,
     others: bool,
 ) -> Option<Response> {
-    if !app.accounts.contains(user) {
-        return Some(refuse(
-            StatusCode::CONFLICT,
-            "Players from the server configuration sign in with their token.",
-        ));
-    }
     if !(MIN_PASSWORD..=MAX_PASSWORD).contains(&password.chars().count()) {
         return Some(refuse(
             StatusCode::BAD_REQUEST,
@@ -732,38 +815,55 @@ pub(crate) async fn change_password(
             "Too many attempts. Try again in one minute.",
         ));
     }
-    let has_password = match has_password(&app.store.lock().unwrap().conn, user) {
-        Ok(has) => has,
-        Err(error) => return Some(internal(error)),
-    };
-    if has_password {
-        let Some(current) = current else {
-            return Some(refuse(
-                StatusCode::BAD_REQUEST,
-                "Enter your current password.",
-            ));
-        };
-        if !password_matches(app, user, current).await {
-            app.access.failure(client, now);
-            return Some(refuse(StatusCode::FORBIDDEN, "That password is not right."));
+
+    // What proves the request comes from the player depends on how they sign in.
+    match sign_in {
+        SignIn::Password => {
+            let Some(current) = current else {
+                return Some(refuse(
+                    StatusCode::BAD_REQUEST,
+                    "Enter your current password.",
+                ));
+            };
+            if !password_matches(app, user, current).await {
+                app.access.failure(client, now);
+                return Some(refuse(StatusCode::FORBIDDEN, "That password is not right."));
+            }
         }
-    } else if app
-        .access
-        .reauthenticated_until(headers, user, now)
-        .is_none()
-    {
-        // A first password would let whoever holds a signed-in device delete the account.
-        return Some(crate::access::reauth_first());
+        SignIn::Provider => {
+            // A first password would let whoever holds a signed-in device delete the account.
+            if app
+                .access
+                .reauthenticated_until(headers, user, now)
+                .is_none()
+            {
+                return Some(crate::access::reauth_first());
+            }
+        }
+        // The device token is the only proof there is of who the player is.
+        SignIn::TokenOnly => {}
     }
+
     let password = password.to_string();
     let Ok(Ok(hash)) = tokio::task::spawn_blocking(move || hash_password(&password)).await else {
         return Some(internal("password hashing failed".into()));
     };
-    if let Err(error) = app.store.lock().unwrap().conn.execute(
-        "update accounts set password_hash = ?2 where user = ?1",
-        params![user, hash],
-    ) {
-        return Some(internal(error.into()));
+    let saved = if app.accounts.contains(user) {
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .execute(
+                "update accounts set password_hash = ?2 where user = ?1",
+                params![user, hash],
+            )
+            .map(|_| ())
+            .map_err(Error::from)
+    } else {
+        app.become_account(user, &hash)
+    };
+    if let Err(error) = saved {
+        return Some(internal(error));
     }
     if others {
         return sign_out_others(app, user, &crate::access::credential(app, headers))
