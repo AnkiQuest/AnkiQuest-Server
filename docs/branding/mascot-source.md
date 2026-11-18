@@ -7,7 +7,8 @@ hand-made copy (AGENTS.md, Companion art).
 
 Pose names and fallbacks come from `tests/fixtures/companion_poses.json`.
 Masters named before the fixture keep their file names: `happy` is
-`celebrate.png`, `asleep` is `sleeping.png` (`crates/art/src/poses.rs`).
+`celebrate.png` (`crates/art/src/poses.rs`). Every `asleep` master is
+`asleep.png`; Aki's and Ankilope's were `sleeping.png` until #32.
 `freeze.png` (a used streak freeze) is not the core `frozen` pose. Wins store those file names in their `art`
 field.
 
