@@ -35,6 +35,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,sans-s
 <ul>
 <li><strong>Your account</strong>: username, display name, your password as an Argon2 hash (never the password itself), and a hashed token for each device you sign in on, with the device name and when it signed in. This lets you sign in.</li>
 {{sign_in}}
+<li><strong>Two-factor authentication</strong>, if you turn it on: the secret your authenticator app shares with us, which we need to check its codes, the time of the last code you used, so it cannot be used again, and your recovery codes as SHA-256 hashes. Turning it off deletes them.</li>
 <li><strong>Your study data</strong>: for each review, when it happened, the card's number, its interval before and after your answer, how long you took and the kind of review. Never the content of your cards. Also your Anki day (time zone offset and when your day starts). This is what XP, streaks, quests and leaderboards are calculated from.</li>
 <li><strong>Hard cards you choose to show</strong>: when you learn a card you kept forgetting, you can add the word or phrase it was to its celebration card. Only what you type or confirm is kept, it is shown to your friends and groups, to friends you tell and, if you made your profile public yourself, to anyone who can see that card. You can remove it at any time.</li>
 <li><strong>Decks</strong>: the names of your decks and when you finish them, but only for decks you choose to share.</li>

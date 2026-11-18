@@ -32,6 +32,8 @@ body{margin:0;padding:0;min-height:100vh;background:var(--bg);color:var(--ink);f
 <input id="signin-user" name="user" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="32"></div>
 <div class="login-field"><label for="signin-password"><span data-i18n="Password">Password</span></label>
 <input id="signin-password" name="password" type="password" autocomplete="current-password" required maxlength="256"></div>
+<div class="login-field" id="signin-code-field" hidden><label for="signin-code"><span data-i18n="Authenticator code or recovery code">Authenticator code or recovery code</span></label>
+<input id="signin-code" name="code" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="64"></div>
 <button class="login-submit primary" type="submit"><span data-i18n="Sign in">Sign in</span></button>
 <p class="login-status" id="signin-status" role="status" aria-live="polite"></p>
 </form>
