@@ -20,6 +20,7 @@
     "share_place",
     "share_undo_send",
     "upload_first",
+    "two_factor",
     "wins"
   ],
   "public_url": "https://anki.example.test",

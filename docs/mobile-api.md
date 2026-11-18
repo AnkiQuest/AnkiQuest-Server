@@ -33,6 +33,7 @@ these additions preserve bearer authentication and the existing notification arr
 | `share_notification` | older owned celebrations and recaps without a saved win can use the moment recipient picker |
 | `share_deck_moment` | an explicitly shared deck completion can use the moment recipient picker and be saved as a win |
 | `share_undo_send` | `DELETE /api/share/{user}/{win}?until={undo_until}` takes back the one send that answered that `undo_until` (see [sharing.md](sharing.md)). Older servers ignore `until` and take back every send of that win from the last day |
+| `two_factor` | password sign-in may answer `"second_factor": true` and accepts `code`; `/api/two-factor/{user}` turns two-factor authentication on and off (below, two-factor authentication) |
 | `upload_first` | other players' study waits for the caller's first uploaded review; locked answers carry `X-Ankiquest-Locked` (below, seeing other players) |
 | `wins` | wins, sharing policies and `{ "win", "to" }` shares (see [sharing.md](sharing.md)) |
 
@@ -102,6 +103,27 @@ Both need the player's token. Send only the keys that changed, each with the tim
 Clients keep, for each key they have, the time of the last local change (`0` for a value chosen before sync existed). On sign-in, on start, on their regular refresh and after the player changes a synced setting, they read the server's settings and, per key, apply the server's value when its `updated_at` is at least the local time, or send the local value when it is newer or the server has none. A value chosen before sync existed is sent with `updated_at` 0 only when it differs from the default, so any real change elsewhere wins over it. Clients ignore keys they don't have and values they cannot use.
 
 **Sync settings** (default on) is a device setting, never synced. While it is off a client neither sends nor applies synced settings; it still records the time of each local change, so turning it on again merges by the same rule. Clients only sync with a server that lists `settings_sync`.
+
+## two-factor authentication
+
+An account with a password can turn on two-factor authentication: a code from an authenticator app (TOTP, RFC 6238: SHA-1, 6 digits, 30-second steps, one step of drift either way) or one of ten single-use recovery codes. It is optional, and it guards password sign-in only: signing in with Google, GitHub or GitLab relies on that provider's own second factor. Device tokens issued before it was turned on keep working.
+
+**Sign-in.** `POST /api/accounts/tokens` and `POST /auth/session` `{"user", "password"}` answer as before for an account without it. For an account with it, a right password without a code answers `401` with `{"error": "Enter the code from your authenticator app.", "second_factor": true}` (`sign_in_second_factor.json`). The client then asks for the code and sends the same request again with `"code"`: six digits, or a recovery code (case, spaces and dashes do not matter). A wrong or reused code answers `401` with `"second_factor": true` and `"error": "That code is not right."`. Each code works once. After five wrong codes in 15 minutes the account answers `429` with `"second_factor": true` for the rest of that time, from any address; the per-address limit on wrong passwords applies as well. A wrong password never says `second_factor`.
+
+Send `code` only after the server asked for it: servers without `two_factor` refuse unknown fields with `400`. Clients that do not know `second_factor` show the `error` message.
+
+**Settings.** With the device token or a member session:
+
+| request | answers |
+|---|---|
+| `GET /api/two-factor/{user}` | `available` (an account with a password), `state` (`off`, `pending`, `on`), `recovery_codes_left` (`two_factor.json`) |
+| `POST /api/two-factor/{user}` `{"action": "begin"}` | the status with `secret` (base32) and `otpauth_uri`; replaces a secret not confirmed yet (`two_factor_begin.json`) |
+| `GET /api/two-factor/{user}/qr.svg` | the pending `otpauth_uri` as a QR code, `image/svg+xml`; `404` when nothing is pending |
+| `POST /api/two-factor/{user}` `{"action": "enable", "password", "code"}` | the status with `recovery_codes`, shown this once; `code` must come from the pending secret (`two_factor_enable.json`) |
+| `POST /api/two-factor/{user}` `{"action": "recovery_codes", "password", "code"}` | the status with ten new `recovery_codes`, replacing the old ones |
+| `POST /api/two-factor/{user}` `{"action": "disable", "password", "code"}` | the status; `code` may be a recovery code (`two_factor_disable.json`) |
+
+A wrong password answers `403` "That password is not right.", a wrong code `403` "That code is not right.", an account without a password `409`. The apps link to Settings on the website to set it up.
 
 ## browser identity
 
