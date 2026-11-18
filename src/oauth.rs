@@ -1735,6 +1735,7 @@ mod tests {
             "registration": registration,
             "public_url": ORIGIN,
             "devs": ["hill"],
+            "configured_tokens": "enabled",
             "users": {"alice": {"token": "alice-token"}},
             "oauth": {
                 "gitlab": {"client_id": "gitlab-app", "client_secret": "gitlab-secret", "base_url": base},
@@ -3298,9 +3299,9 @@ mod tests {
 
     #[tokio::test]
     async fn servers_without_providers_say_nothing_about_them() {
-        let (app, path) = crate::test_support::app_with(
-            serde_json::json!({"users": {"alice": {"token": "alice-token"}}}),
-        );
+        let (app, path) =
+            crate::test_support::app_with(serde_json::json!({"configured_tokens": "enabled",
+            "users": {"alice": {"token": "alice-token"}}}));
         let status = json(send(&app, "GET", "/auth/status", &[], "").await).await;
         assert!(status.get("oauth").is_none(), "{status}");
         assert_eq!(

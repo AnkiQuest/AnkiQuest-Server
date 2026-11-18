@@ -404,10 +404,7 @@ impl App {
     fn become_account(&self, user: &str, hash: &str) -> Result<(), Error> {
         let token = self
             .config
-            .users
-            .get(user)
-            .and_then(|configured| configured.token.as_deref())
-            .filter(|token| !token.is_empty())
+            .token(user)
             .ok_or("the configuration gives this player no token")?;
         let display = self.display(user);
 
@@ -887,6 +884,7 @@ mod tests {
     fn fixture(registration: bool) -> (Arc<App>, PathBuf) {
         crate::test_support::app_with(serde_json::json!({
             "registration": registration,
+            "configured_tokens": "enabled",
             "users": {"alice": {"token": "alice-token"}}
         }))
     }
@@ -1604,6 +1602,7 @@ mod tests {
     fn fixture_with_github() -> (Arc<App>, PathBuf) {
         crate::test_support::app_with(serde_json::json!({
             "registration": true,
+            "configured_tokens": "enabled",
             "users": {"alice": {"display": "Alice A.", "token": "alice-token"}},
             "oauth": {"github": {"client_id": "github-app", "client_secret": "github-secret"}}
         }))

@@ -33,6 +33,7 @@ mod tests {
         // Served on a private site too, where every other page needs a sign-in.
         let (app, path) = app_with(serde_json::json!({
             "private_site": true,
+            "configured_tokens": "enabled",
             "users": {"alice": {"token": "alice-token"}}
         }));
         let response = get(&app, "/robots.txt").await;
