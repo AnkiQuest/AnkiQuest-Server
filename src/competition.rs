@@ -1,6 +1,8 @@
 //! Persistent competition history. Anki-day XP is credited to the date of that Anki
-//! day on the player's own clock, as on the live board. This archive freezes each
-//! result after a late-sync grace period and never rewrites a finalized winner.
+//! day on the player's own clock, as on the live board; archives started before that
+//! keep their earlier allocation for finalized days (see `Allocation`). This archive
+//! freezes each result after a late-sync grace period and never rewrites a finalized
+//! winner.
 
 use crate::app::{App, now_ms};
 use crate::game::{self, ClockHistory, DAY_MS, FreezePolicy, Week};
@@ -83,6 +85,52 @@ struct Metadata {
     initialized_at: i64,
     time_zone: String,
     rollover_hour: u32,
+    /// Absent in archives written before own dates, which read as `ArchiveClock`.
+    #[serde(default)]
+    allocation: Allocation,
+}
+
+/// Which date an Anki day's XP is credited to. Finalized rows are never rewritten, so an
+/// archive that began on the archive clock keeps it for every day it had finalized.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum Allocation {
+    /// Every Anki day on the date its start falls on, on the archive clock. Only read from
+    /// archives written before own dates; the next refresh moves them to `OwnDatesFrom`.
+    #[default]
+    ArchiveClock,
+    /// Anki days the archive clock put before `from` stay there; later ones count on the
+    /// player's own date, but never before `from`.
+    OwnDatesFrom { from: String },
+    /// Every Anki day on the player's own date.
+    OwnDates,
+}
+
+impl Allocation {
+    /// Move an archive-clock archive to own dates from the day after its last finalized day.
+    fn upgrade(self, finalized: impl Iterator<Item = NaiveDate>) -> Self {
+        if self != Self::ArchiveClock {
+            return self;
+        }
+        finalized
+            .max()
+            .map_or(Self::OwnDates, |last| Self::OwnDatesFrom {
+                from: (last + Duration::days(1)).to_string(),
+            })
+    }
+
+    /// The date `day` counts toward.
+    fn date(&self, day: &game::HistoryDay, archive_week: &Week) -> Result<NaiveDate, Error> {
+        let Self::OwnDatesFrom { from } = self else {
+            return Ok(own_date(day));
+        };
+        let from = date(from)?;
+        let shared = archive_week.competition_date(day.at);
+        if shared < from {
+            return Ok(shared);
+        }
+        Ok(own_date(day).max(from))
+    }
 }
 
 pub fn initialize(conn: &Connection) -> Result<(), Error> {
@@ -135,12 +183,12 @@ fn date(value: &str) -> Result<NaiveDate, Error> {
     Ok(NaiveDate::parse_from_str(value, "%Y-%m-%d")?)
 }
 
-/// The Monday starting the week that contains `day`.
 /// The date of a player's Anki day on their own clock, the date its XP counts toward.
 fn own_date(day: &game::HistoryDay) -> NaiveDate {
     NaiveDate::parse_from_str(&day.date, "%Y-%m-%d").unwrap_or_default()
 }
 
+/// The Monday starting the week that contains `day`.
 pub(crate) fn monday(day: NaiveDate) -> NaiveDate {
     day - Duration::days(i64::from(day.weekday().num_days_from_monday()))
 }
@@ -238,6 +286,7 @@ pub fn refresh(
         initialized_at: now_ms,
         time_zone: week.tz.to_string(),
         rollover_hour: week.rollover_hour,
+        allocation: Allocation::OwnDates,
     });
     // The archive's time zone is fixed at creation. A later server config change
     // must not quietly re-label finalized dates or change old contest boundaries.
@@ -246,6 +295,21 @@ pub fn refresh(
         rollover_hour: meta.rollover_hour,
     };
     let today = archive_week.competition_date(now_ms);
+
+    // Finalized days are kept as stored; an archive from before own dates switches to
+    // them only after its last finalized day, so no Anki day is counted twice.
+    let old = read_periods(&store.conn)?;
+    let finalized_days: HashMap<_, _> = old
+        .into_iter()
+        .filter(|p| p.kind == "day" && p.is_final())
+        .map(|p| (p.key.clone(), p))
+        .collect();
+    let finalized_dates = finalized_days
+        .keys()
+        .map(|key| date(key))
+        .collect::<Result<Vec<_>, _>>()?;
+    meta.allocation = meta.allocation.upgrade(finalized_dates.into_iter());
+
     let mut credits: BTreeMap<NaiveDate, BTreeMap<String, Standing>> = BTreeMap::new();
     let mut joined = HashMap::new();
     let mut earliest = None;
@@ -266,16 +330,13 @@ pub fn refresh(
             now_ms,
             &player.freeze_policy,
         );
+        let first_day = profile.history.iter().find(|day| day.reviews > 0);
         joined.insert(
             player.user.clone(),
-            profile
-                .history
-                .iter()
-                .find(|day| day.reviews > 0)
-                .map_or(today, own_date),
+            first_day.map_or(Ok(today), |day| meta.allocation.date(day, &archive_week))?,
         );
         for day in profile.history {
-            let common_day = own_date(&day);
+            let common_day = meta.allocation.date(&day, &archive_week)?;
             if common_day > today {
                 continue;
             }
@@ -313,12 +374,6 @@ pub fn refresh(
         }
     };
     meta.start_date = first.map(|d| d.to_string());
-    let old = read_periods(&store.conn)?;
-    let finalized_days: HashMap<_, _> = old
-        .into_iter()
-        .filter(|p| p.kind == "day" && p.is_final())
-        .map(|p| (p.key.clone(), p))
-        .collect();
     let mut periods = Vec::new();
     if let Some(first) = first.filter(|first| *first <= today) {
         let mut day = first;
@@ -811,6 +866,7 @@ pub fn dashboard(
         initialized_at: now_ms,
         time_zone: week.tz.to_string(),
         rollover_hour: week.rollover_hour,
+        allocation: Allocation::OwnDates,
     });
     let periods = read_periods(&store.conn)?;
     let days: Vec<_> = periods.iter().filter(|p| p.kind == "day").collect();
@@ -958,7 +1014,11 @@ pub fn dashboard(
         }
     }
     let winner_history = winner_history_from_periods(Some(&meta), players, &periods)?;
+    // The allocation is how this archive stores days, not part of the answer.
     let mut metadata = serde_json::to_value(meta)?;
+    if let Some(fields) = metadata.as_object_mut() {
+        fields.remove("allocation");
+    }
     metadata["year"] = json!(year);
     metadata["month"] = json!(month);
     metadata["grace_hours"] = json!(24);

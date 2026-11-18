@@ -51,7 +51,7 @@ the live board compares one week. `GET /api/week` answers `starts_at` and `ends_
 
 ## what the historical record means
 
-the archive uses one shared competition timezone and cutoff, initially taken from `week_timezone` and `week_rollover_hour` (Nix: `weekTimezone`, `weekRolloverHour`). each Anki day's XP belongs to that day's date on the player's own clock, as on the live board. archives made before this rule credited a day to the shared date containing its start; their finalized periods keep that. weeks start on Monday and seasons start on the first of the month.
+the archive uses one shared competition timezone and cutoff, initially taken from `week_timezone` and `week_rollover_hour` (Nix: `weekTimezone`, `weekRolloverHour`). each Anki day's XP belongs to that day's date on the player's own clock, as on the live board. archives made before this rule credited a day to the shared date containing its start. on upgrade they keep that for every day up to their last finalized day; from the next day on, days count on their own date, and a day whose own date is earlier counts on that next day, so no study counts twice or is lost. weeks start on Monday and seasons start on the first of the month.
 
 set `competition_start_date` to the known server start date as `YYYY-MM-DD` before initializing the archive; the Nix option is `competitionStartDate`. otherwise, the archive uses the earliest retained review history, which can predate this server. it does not invent an exact server start date or claim missing history is complete. the archive records its original timezone and cutoff so later configuration changes cannot silently relabel finalized periods.
 
