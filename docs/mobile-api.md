@@ -71,10 +71,12 @@ Every companion but Aki is earned at a milestone. The conditions are defined onc
 | `ankilope` | reaching level 30 | `level` | 30 |
 | `cow` (Bluma) | 10 hours of study in total | `study_hours` | 10 |
 | `anki_tan` (Anki-tan), planned | a 66-day streak | `streak` | 66 |
-| `anki_tan_chibi` (Chibi Anki-tan), planned, secret | an Easter egg: 9 quick taps in a row on Anki-tan's picture, once she is unlocked | `taps` | 9 |
-| `leech_tan` (Leech-tan), planned, secret | 3 tamed leeches: cards with at least 8 lapses that later reached a 21-day interval, each card once | `leeches_tamed` | 3 |
+| `anki_tan_chibi` (Anki-tan chibi), planned, secret | an Easter egg: 9 quick taps in a row on Anki-tan's picture, once she is unlocked | `taps` | 9 |
+| `quest_chan` (Quest-chan), planned | reaching level 50 | `level` | 50 |
+| `quest_chan_chibi` (Quest-chan chibi), planned, secret | an Easter egg: 9 quick taps in a row on Quest-chan's picture, once she is unlocked | `taps` | 9 |
+| `leech_kun` (Leech-kun), planned, secret | 3 tamed leeches: cards with at least 8 lapses that later reached a 21-day interval, each card once | `leeches_tamed` | 3 |
 
-Companions without art yet are listed with `"status": "planned"`; servers and clients ignore them until they go live: they are not in `unlocks` or `progress`, never granted, and saving or asking for one is `400`. A `secret` companion is hidden until earned; the others show in the picker as a locked silhouette with their condition and progress, and cannot be chosen.
+Leech-kun's id was `leech_tan` before; no released client offered him, and stored rows moved to `leech_kun`. Companions without art yet are listed with `"status": "planned"`; servers and clients ignore them until they go live: they are not in `unlocks` or `progress`, never granted, and saving or asking for one is `400`. A `secret` companion is hidden until earned; the others show in the picker as a locked silhouette with their condition and progress, and cannot be chosen.
 
 The server decides from what it already has: the level, the whole hours studied, the current streak and the tamed leeches that the profile shows. A chibi (`taps`) is the exception: the client finds it (below). It checks when reviews are uploaded, on each worker run and on `GET /api/unlocks/{user}`, so a player who already qualifies gets the unlock the next time any of these happens. Unlocks are permanent: a level or streak lost later takes nothing back. Progress is worked out from the reviews each time and never stored.
 
@@ -90,7 +92,7 @@ A chibi is an Easter egg, like Android's developer mode. Every chibi names its b
 
 Saving a companion the player has not unlocked is `409` for a client that sends the header `X-AnkiQuest-Companions: milestones`, which says it shows locked companions itself. Send it with every `POST /api/companion/{user}`. Clients released before milestones offered Ankilope to everyone and do not send it: their save of `ankilope` is accepted and grants the unlock, without a moment, so they show no error; their save of `cow` is `409`, as before.
 
-When the server grants an unlock it records a moment with the event key `companion:{companion}`, such as `companion:cow`: a `celebration` row in the inbox with `topic` `companion`, the title "Bluma joined you!" (the companion's name), a body naming the milestone ("You have studied for 10 hours in total.", "You kept a 66-day streak.", "You found Chibi Anki-tan.", "You tamed 3 leeches.") and a win of kind `companion_unlocked`. Show it like the other moments, with the art of the companion that joined rather than the chosen one, and share it like any other win, for example `POST /api/share/{user}` `{"moment": {"key": "companion:cow"}, "to": "circle"}`. Its share card shows the companion that joined. Example: `notifications_companion.json`. Players who had Ankilope chosen or the cow unlocked when this came in keep them without a moment.
+When the server grants an unlock it records a moment with the event key `companion:{companion}`, such as `companion:cow`: a `celebration` row in the inbox with `topic` `companion`, the title "Bluma joined you!" (the companion's name), a body naming the milestone ("You have studied for 10 hours in total.", "You kept a 66-day streak.", "You found Anki-tan chibi.", "You tamed 3 leeches.") and a win of kind `companion_unlocked`. Show it like the other moments, with the art of the companion that joined rather than the chosen one, and share it like any other win, for example `POST /api/share/{user}` `{"moment": {"key": "companion:cow"}, "to": "circle"}`. Its share card shows the companion that joined. Example: `notifications_companion.json`. Players who had Ankilope chosen or the cow unlocked when this came in keep them without a moment.
 
 The cow has no art yet (#88). Until it has, clients and the server draw it with Ankilope's art turned purple: CSS `hue-rotate(250deg)`, or the same colour matrix applied to the image.
 

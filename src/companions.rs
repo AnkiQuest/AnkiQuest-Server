@@ -29,7 +29,8 @@ const FREE: [&str; 2] = ["aki", "none"];
 pub(crate) const TABLE: &str = "create table if not exists companion_preferences (
     user text primary key,
     companion text not null check (companion in
-        ('aki', 'ankilope', 'cow', 'none', 'anki_tan', 'anki_tan_chibi', 'leech_tan'))
+        ('aki', 'ankilope', 'cow', 'none', 'anki_tan', 'anki_tan_chibi', 'quest_chan',
+         'quest_chan_chibi', 'leech_kun'))
 ) without rowid;";
 
 /// Whether a player may save `value`: a free companion or a live unlock.
@@ -49,8 +50,12 @@ pub(crate) enum Unlock {
     AnkiTan,
     /// Anki-tan's chibi version, found by tapping Anki-tan.
     AnkiTanChibi,
-    /// Leech-tan, earned by taming leeches.
-    LeechTan,
+    /// Quest-chan, earned at a level after Ankilope's.
+    QuestChan,
+    /// Quest-chan's chibi version, found by tapping Quest-chan.
+    QuestChanChibi,
+    /// Leech-kun, earned by taming leeches.
+    LeechKun,
 }
 
 /// Whether the clients released before milestones offered a companion to everyone.
@@ -64,12 +69,14 @@ enum Released {
 
 impl Unlock {
     /// In the fixture's order.
-    const ALL: [Unlock; 5] = [
+    const ALL: [Unlock; 7] = [
         Unlock::Ankilope,
         Unlock::Cow,
         Unlock::AnkiTan,
         Unlock::AnkiTanChibi,
-        Unlock::LeechTan,
+        Unlock::QuestChan,
+        Unlock::QuestChanChibi,
+        Unlock::LeechKun,
     ];
 
     pub(crate) fn id(self) -> &'static str {
@@ -78,7 +85,9 @@ impl Unlock {
             Unlock::Cow => COW,
             Unlock::AnkiTan => "anki_tan",
             Unlock::AnkiTanChibi => "anki_tan_chibi",
-            Unlock::LeechTan => "leech_tan",
+            Unlock::QuestChan => "quest_chan",
+            Unlock::QuestChanChibi => "quest_chan_chibi",
+            Unlock::LeechKun => "leech_kun",
         }
     }
 
@@ -88,17 +97,22 @@ impl Unlock {
             Unlock::Ankilope => "Ankilope",
             Unlock::Cow => "Bluma",
             Unlock::AnkiTan => "Anki-tan",
-            Unlock::AnkiTanChibi => "Chibi Anki-tan",
-            Unlock::LeechTan => "Leech-tan",
+            Unlock::AnkiTanChibi => "Anki-tan chibi",
+            Unlock::QuestChan => "Quest-chan",
+            Unlock::QuestChanChibi => "Quest-chan chibi",
+            Unlock::LeechKun => "Leech-kun",
         }
     }
 
     fn released(self) -> Released {
         match self {
             Unlock::Ankilope => Released::Offered,
-            Unlock::Cow | Unlock::AnkiTan | Unlock::AnkiTanChibi | Unlock::LeechTan => {
-                Released::Hidden
-            }
+            Unlock::Cow
+            | Unlock::AnkiTan
+            | Unlock::AnkiTanChibi
+            | Unlock::QuestChan
+            | Unlock::QuestChanChibi
+            | Unlock::LeechKun => Released::Hidden,
         }
     }
 
@@ -1175,8 +1189,16 @@ mod tests {
         let cow = call(&app, "POST", unlocks, "hill-secret", ask("cow")).await;
         assert_eq!(cow.0, StatusCode::CONFLICT);
         // Planned companions are refused like unknown ids, as is Leech-kun's old id.
-        let planned = ["anki_tan", "anki_tan_chibi", "quest_chan", "quest_chan_chibi"];
-        for unknown in ["horse", "leech_tan", "leech_kun"].into_iter().chain(planned) {
+        let planned = [
+            "anki_tan",
+            "anki_tan_chibi",
+            "quest_chan",
+            "quest_chan_chibi",
+        ];
+        for unknown in ["horse", "leech_tan", "leech_kun"]
+            .into_iter()
+            .chain(planned)
+        {
             let bad = call(&app, "POST", unlocks, "hill-secret", ask(unknown)).await;
             assert_eq!(bad.0, StatusCode::BAD_REQUEST, "{unknown}");
         }

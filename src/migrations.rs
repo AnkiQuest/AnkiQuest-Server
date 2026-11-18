@@ -21,6 +21,7 @@ const STEPS: &[Step] = &[
     companion_milestones,
     earned_companions,
     share_receipts,
+    quest_companions,
 ];
 
 /// Brings the database up to the latest step, then turns foreign keys on for the connection.
@@ -257,6 +258,30 @@ fn share_receipts(conn: &Connection) -> Result<(), Error> {
          ) where automatic = 0 and send_until is null",
         [crate::conquests::UNDO_MS],
     )?;
+    Ok(())
+}
+
+/// Quest-chan and her chibi can be stored, and Leech-tan is now Leech-kun: rows that name him
+/// by his old id `leech_tan` follow. He was planned, so no released client offered him.
+fn quest_companions(conn: &Connection) -> Result<(), Error> {
+    // Unlocks and announced moments first; a row already under the new id wins.
+    conn.execute_batch(
+        "update or ignore companion_unlocks set unlock = 'leech_kun' where unlock = 'leech_tan';
+         delete from companion_unlocks where unlock = 'leech_tan';
+         update or ignore seen set key = 'companion:leech_kun' where key = 'companion:leech_tan';
+         delete from seen where key = 'companion:leech_tan';",
+    )?;
+
+    // The old check refuses `leech_kun`, so choices are renamed while copying into the new table.
+    conn.execute_batch(&format!(
+        "alter table companion_preferences rename to companion_preferences_old;
+         {}
+         insert into companion_preferences (user, companion)
+             select user, case companion when 'leech_tan' then 'leech_kun' else companion end
+             from companion_preferences_old;
+         drop table companion_preferences_old;",
+        crate::companions::TABLE
+    ))?;
     Ok(())
 }
 
