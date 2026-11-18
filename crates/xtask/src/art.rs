@@ -109,7 +109,7 @@ const ART: &[Art] = &[
     widget("ankilope_sad", "static/ankilope/sad.png"),
     widget("ankilope_hopeful", "static/ankilope/hopeful.png"),
     widget("ankilope_frozen", "static/ankilope/frozen.png"),
-    widget("ankilope_sleeping", "static/ankilope/sleeping.png"),
+    widget("ankilope_asleep", "static/ankilope/asleep.png"),
     widget("ankilope_neglected", "static/ankilope/neglected.png"),
     widget("bluma_face", "static/cow/face.png"),
     widget("bluma_asleep", "static/cow/asleep.png"),
@@ -145,7 +145,7 @@ const ART: &[Art] = &[
     art("aki_level_up", "static/aki/level_up.png", 336),
     art("aki_deck_conquered", "static/aki/deck_conquered.png", 336),
     art("aki_leech", "static/aki/leech.png", 336),
-    widget("aki_sleeping", "static/aki/sleeping.png"),
+    widget("aki_asleep", "static/aki/asleep.png"),
     widget("aki_at_risk", "static/aki/at_risk.png"),
     art("aki_backlog", "static/aki/backlog.png", 336),
     art("ankilope_backlog", "static/ankilope/backlog.png", 336),
@@ -382,7 +382,7 @@ mod tests {
             "ankilope_sad",
             "ankilope_hopeful",
             "ankilope_frozen",
-            "ankilope_sleeping",
+            "ankilope_asleep",
             "ankilope_neglected",
             "bluma_face",
             "bluma_asleep",
@@ -408,7 +408,7 @@ mod tests {
             "aki_comeback",
             "aki_minimum",
             "aki_goal",
-            "aki_sleeping",
+            "aki_asleep",
             "aki_at_risk",
             "anki_tan_frozen",
             "anki_tan_asleep",
@@ -420,6 +420,20 @@ mod tests {
         let names: Vec<_> = large.iter().map(|art| art.name).collect();
         assert_eq!(poses.to_vec(), names);
         assert!(large.iter().all(|art| art.quality == WIDGET_QUALITY));
+    }
+
+    #[test]
+    fn asleep_has_one_name() {
+        // #32: every companion's asleep export and master use the pose name.
+        let asleep: Vec<_> = ART
+            .iter()
+            .filter(|art| art.name.contains("sleep") && art.size == WIDGET)
+            .collect();
+        assert_eq!(4, asleep.len(), "aki, ankilope, bluma, anki_tan");
+        for art in asleep {
+            assert!(art.name.ends_with("_asleep"), "{}", art.name);
+            assert!(art.source.ends_with("/asleep.png"), "{}", art.source);
+        }
     }
 
     #[test]

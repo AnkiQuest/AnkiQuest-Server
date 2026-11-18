@@ -75,7 +75,7 @@ yet: they are not embedded in the server binary and are not public paths.
 | `challenge.png` | `aki_challenge` | An invitation to a friendly challenge |
 | `challenge_won.png` | `aki_challenge_won` | A completed challenge, celebrating as a good sport |
 | `challenge_lost.png` | `aki_challenge_lost` | Applauding the other player; available for an explicit losing result |
-| `sleeping.png` | `aki_sleeping` | Rest day, notifications off |
+| `asleep.png` | `aki_asleep` | Rest day, notifications off |
 | `../duo/friends.png` | `duo_friends` | Aki and Ankilope together: sharing, challenges, nudges |
 
 The four social poses (`nudge`, `challenge`, `challenge_won`, `challenge_lost`)
