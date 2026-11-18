@@ -218,24 +218,39 @@ fn strip(report: &mut Value) {
 }
 
 /// Removes [`DROPPED_KEYS`] at any depth and replaces email addresses and credentials in
-/// every string.
+/// every string and key name.
 fn scrub(value: &mut Value) {
     match value {
         Value::Object(fields) => {
             fields.retain(|key, _| !DROPPED_KEYS.iter().any(|d| d.eq_ignore_ascii_case(key)));
+
+            // Preference keys can name an account or hold a credential; rename those.
+            let renamed: Vec<(String, String)> = fields
+                .keys()
+                .filter_map(|key| cleaned(key).map(|clean| (key.clone(), clean)))
+                .collect();
+            for (key, clean) in renamed {
+                if let Some(inner) = fields.remove(&key) {
+                    fields.insert(clean, inner);
+                }
+            }
             fields.values_mut().for_each(scrub);
         }
         Value::Array(items) => items.iter_mut().for_each(scrub),
         Value::String(text) => {
-            if let Some(clean) = without_emails(text) {
-                *text = clean;
-            }
-            if let Some(clean) = without_tokens(text) {
+            if let Some(clean) = cleaned(text) {
                 *text = clean;
             }
         }
         _ => {}
     }
+}
+
+/// `text` without email addresses and credentials; `None` when it has neither.
+fn cleaned(text: &str) -> Option<String> {
+    let emails = without_emails(text);
+    let rest = emails.as_deref().unwrap_or(text);
+    without_tokens(rest).or(emails)
 }
 
 /// Removes AnkiQuest's and AnkiWeb's preferences from every preferences file in `value`.
@@ -1390,7 +1405,8 @@ mod tests {
     /// A preference key can name an account; its name is scrubbed like a string.
     #[test]
     fn email_addresses_are_removed_from_key_names() {
-        let mut value = json!({SHARED_PREFERENCES: {"default": {"deckOrder:player@example.com": "2"}}});
+        let mut value =
+            json!({SHARED_PREFERENCES: {"default": {"deckOrder:player@example.com": "2"}}});
         strip(&mut value);
         assert_eq!(
             value,
