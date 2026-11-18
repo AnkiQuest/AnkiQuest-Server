@@ -18,14 +18,21 @@ pub(crate) use std::sync::{Arc, Mutex, RwLock};
 /// reviews from the last hours fall on one study day.
 pub(crate) const STUDY_TIME: i64 = 1_793_183_400_000;
 
-/// Pins [`now_ms`] on the calling thread until dropped. Dropping also runs when a test
-/// panics, so a failed test never leaves the clock pinned for the next one on its thread.
-pub(crate) struct FixedClock;
+/// Pins [`now_ms`] on the calling thread until dropped, then restores the pin it replaced,
+/// so a nested clock leaves the outer one in place. Dropping also runs when a test panics,
+/// so a failed test never leaves the clock pinned for the next one on its thread. The pin
+/// is thread-local, so the guard is not `Send`: it cannot be dropped on another thread.
+pub(crate) struct FixedClock {
+    previous: Option<i64>,
+    thread: std::marker::PhantomData<*const ()>,
+}
 
 impl FixedClock {
     pub(crate) fn at(now: i64) -> Self {
-        crate::app::fix_now_ms(Some(now));
-        Self
+        Self {
+            previous: crate::app::fix_now_ms(Some(now)),
+            thread: std::marker::PhantomData,
+        }
     }
 
     /// Moves the pinned clock to `now`.
@@ -36,7 +43,7 @@ impl FixedClock {
 
 impl Drop for FixedClock {
     fn drop(&mut self) {
-        crate::app::fix_now_ms(None);
+        crate::app::fix_now_ms(self.previous);
     }
 }
 

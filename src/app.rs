@@ -290,10 +290,11 @@ thread_local! {
     static FIXED_NOW_MS: std::cell::Cell<Option<i64>> = const { std::cell::Cell::new(None) };
 }
 
-/// Pins [`now_ms`] on the calling thread, so a test answers the same on any day.
+/// Pins [`now_ms`] on the calling thread, so a test answers the same on any day, and
+/// returns the pin it replaces.
 #[cfg(test)]
-pub(crate) fn fix_now_ms(ms: Option<i64>) {
-    FIXED_NOW_MS.set(ms);
+pub(crate) fn fix_now_ms(ms: Option<i64>) -> Option<i64> {
+    FIXED_NOW_MS.replace(ms)
 }
 
 /// [`tokio::task::spawn_blocking`], keeping a test's pinned [`now_ms`] on the blocking thread.
