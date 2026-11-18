@@ -3,13 +3,14 @@
 //! Each drawable is a square lossy WebP with full-quality alpha, downscaled
 //! with Lanczos to about three times its largest place in the app and never
 //! upscaled. `--check` writes nothing and fails when a drawable is missing
-//! or has a different pixel size.
+//! or its bytes differ from what export would write. Exports are
+//! deterministic on Linux, where CI runs the check.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use ankiquest_art::{load, png_size, shrink, target};
+use ankiquest_art::{load, shrink, target};
 use image::RgbaImage;
 
 use crate::root;
@@ -296,7 +297,7 @@ fn export(android: &Path, arts: &[&Art]) -> Result<ExitCode, String> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Compares `arts` in the checkout with what export would write.
+/// Compares `arts` in the checkout with a fresh export, byte for byte.
 fn check(android: &Path, arts: &[&Art]) -> Result<ExitCode, String> {
     let failed = stale(android, arts)?;
     for line in &failed {
@@ -309,35 +310,28 @@ fn check(android: &Path, arts: &[&Art]) -> Result<ExitCode, String> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// One line for each drawable that is missing or has another pixel size.
+/// One line for each drawable that is missing or not what export writes.
+///
+/// A size check alone passes an edited or unrelated file of the right size
+/// (AnkiQuest-Android#314), so the bytes must match.
 fn stale(android: &Path, arts: &[&Art]) -> Result<Vec<String>, String> {
     let mut failed = Vec::new();
     for art in arts {
-        let (width, height) = png_size(&root().join(art.source))?;
-        let expected = target(width, height, art.size);
         let name = drawable(art.name);
-        let Some(actual) = webp_size(&android.join(&name))? else {
+        let Ok(committed) = fs::read(android.join(&name)) else {
             failed.push(format!("missing: {name}"));
             continue;
         };
-        if actual != expected {
-            let (aw, ah) = actual;
-            let (ew, eh) = expected;
-            failed.push(format!("{name}: {aw}x{ah}, expected {ew}x{eh}"));
+        let (_, fresh) = render(art)?;
+        if committed != fresh {
+            failed.push(format!(
+                "{name}: not what export writes ({} bytes, export writes {})",
+                committed.len(),
+                fresh.len()
+            ));
         }
     }
     Ok(failed)
-}
-
-/// A WebP's pixel size, or `None` when the file does not exist.
-fn webp_size(path: &Path) -> Result<Option<(u32, u32)>, String> {
-    if !path.exists() {
-        return Ok(None);
-    }
-    let bytes = fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let features =
-        webp::BitstreamFeatures::new(&bytes).ok_or(format!("{}: not a WebP", path.display()))?;
-    Ok(Some((features.width(), features.height())))
 }
 
 /// The master as [`Look`] asks for it.

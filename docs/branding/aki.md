@@ -19,7 +19,7 @@ exact public paths bypass sign-in; member APIs and unknown paths remain
 protected. the desktop face is packaged locally in AnkiQuest-Desktop's `addon/aki_face.png` so
 branding works offline.
 
-the Android app ships WebP copies of the Aki and Ankilope art in `drawable-nodpi`. after changing a PNG in `static/`, run `cargo run -p ankiquest-xtask -- export-android-art <android-checkout>` to rewrite them, and `--check` to confirm every drawable exists at its size.
+the Android app ships WebP copies of the Aki and Ankilope art in `drawable-nodpi`. after changing a PNG in `static/`, run `cargo run -p ankiquest-xtask -- export-android-art <android-checkout>` to rewrite them, and `--check` to confirm every drawable is byte for byte what export writes (export on Linux; CI checks there).
 
 the desktop add-on ships 256 px palette PNGs of the poses it shows in `addon/art` of AnkiQuest-Desktop, and its two faces in `addon/*_face.png`; that checkout's `art-exports.json` lists them. `cargo run -p ankiquest-xtask -- export-addon-art <desktop-checkout>` rewrites those whose picture changed, keeps the replaced files in the checkout's `assets/retired/`, and records their SHA-256, and `--check` fails while one is missing, edited, or differs from a fresh export of its master. Which pose shows for today's streak is one rule for both clients, pinned by `tests/fixtures/streak_moods.json`.
 
