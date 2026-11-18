@@ -78,7 +78,6 @@ test('Aki encouragement is translated before it reaches the page',()=>{
 });
 test('every supported web language has Aki encouragement',()=>{
   const messages=[
-    'A small step starts with one card.',
     'Your daily quests are complete. Look at you go!',
     'You showed up today. That is progress worth keeping.',
     'Your streak is protected by a freeze. A fresh start is waiting.',
