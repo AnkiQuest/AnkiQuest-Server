@@ -456,6 +456,9 @@ struct Login {
     password: String,
     #[serde(default)]
     device: Option<String>,
+    /// The second factor, sent once the server has answered `"second_factor": true`.
+    #[serde(default)]
+    code: Option<String>,
 }
 
 /// Checks an account password off the async runtime; unknown users cost the same as wrong passwords.
@@ -484,7 +487,8 @@ fn dummy_hash() -> &'static str {
     DUMMY.get_or_init(|| hash_password("not an account").unwrap_or_default())
 }
 
-/// Signs a client in: trades the account password for a new device token.
+/// Signs a client in: trades the account password, and the second factor if the account has
+/// one, for a new device token.
 pub async fn login(
     State(app): State<Arc<App>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -503,12 +507,13 @@ pub async fn login(
         );
     }
     let user = normalize_user(&request.user);
-    if !password_matches(&app, &user, &request.password).await {
-        app.access.failure(client, now);
-        return refuse(
-            StatusCode::UNAUTHORIZED,
-            "Username or password not recognized.",
-        );
+    let step =
+        crate::two_factor::sign_in(&app, &user, &request.password, request.code.as_deref()).await;
+    if step != crate::two_factor::SignInStep::SignedIn {
+        if step.failed() {
+            app.access.failure(client, now);
+        }
+        return step.refusal();
     }
     let display = app.display(&user);
     match app.issue_token(&user, &clean_device(request.device.as_deref())) {

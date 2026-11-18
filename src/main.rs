@@ -50,6 +50,7 @@ mod subscriptions;
 mod synced_settings;
 #[cfg(test)]
 mod test_support;
+mod two_factor;
 mod web_util;
 mod weekly_challenges;
 mod wins;
@@ -253,6 +254,7 @@ fn router(app: Arc<App>) -> Router {
         .merge(conquests::routes())
         .merge(social::routes())
         .merge(privacy::routes())
+        .merge(two_factor::routes())
         .merge(dev::routes())
         .merge(oauth::routes())
         .merge(competition::routes())
