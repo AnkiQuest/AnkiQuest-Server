@@ -1433,11 +1433,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_account_without_a_password_sets_one_and_configured_players_cannot() {
-        let (app, path) = fixture(true);
+    async fn a_provider_account_signs_in_again_before_its_first_password() {
+        let (app, path) = fixture_with_github();
         create(&app.store.lock().unwrap().conn, "ana", "Ana", "", now_ms()).unwrap();
         app.accounts.insert("ana", "Ana");
+        link_github(&app, "ana");
         let token = app.issue_token("ana", "Phone").unwrap();
+        assert_eq!(methods(&app, "ana", &token).await["sign_in"], "provider");
         assert!(
             sign_in(&app, "ana", "a new long password", "Check")
                 .await
@@ -1495,16 +1497,126 @@ mod tests {
             StatusCode::BAD_REQUEST,
             "now the current one is needed"
         );
+        cleanup(app, path);
+    }
 
+    /// [`fixture`] with registration, Alice's display name and GitHub offered.
+    fn fixture_with_github() -> (Arc<App>, PathBuf) {
+        crate::test_support::app_with(serde_json::json!({
+            "registration": true,
+            "users": {"alice": {"display": "Alice A.", "token": "alice-token"}},
+            "oauth": {"github": {"client_id": "github-app", "client_secret": "github-secret"}}
+        }))
+    }
+
+    fn link_github(app: &App, user: &str) {
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .execute(
+                "insert into sign_in_links (provider, subject, user, created_at) values ('github', ?1, ?1, 0)",
+                [user],
+            )
+            .unwrap();
+    }
+
+    /// `GET /api/sign-in/{user}` with `token`.
+    async fn methods(app: &Arc<App>, user: &str, token: &str) -> serde_json::Value {
+        let bearer = format!("Bearer {token}");
+        let (status, methods) = call(
+            app,
+            "GET",
+            &format!("/api/sign-in/{user}"),
+            &[("authorization", bearer.as_str())],
+            "",
+            "192.0.2.1",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{methods}");
+        methods
+    }
+
+    #[tokio::test]
+    async fn a_configured_player_sets_a_password_and_keeps_their_token() {
+        let (app, path) = fixture_with_github();
+        let before = methods(&app, "alice", "alice-token").await;
+        assert_eq!(before["sign_in"], "token_only");
+        assert_eq!(before["account"], false);
+
+        // The first password needs no current one and no provider: the token is all she has.
+        let first = serde_json::json!({"action": "password", "password": "a new long password"});
+        let (status, after) = post(
+            &app,
+            "/api/sign-in/alice",
+            &with_token("alice-token"),
+            first.clone(),
+            "192.0.2.1",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{after}");
+        assert_eq!(after["account"], true);
+        assert_eq!(after["password"], true);
+        assert_eq!(after["sign_in"], "password");
+        assert!(
+            sign_in(&app, "alice", "a new long password", "Laptop")
+                .await
+                .is_some()
+        );
+        let listed = list(&app, "alice", &with_token("alice-token")).await;
+        assert_eq!(listed["devices"][0]["name"], ADOPTED_DEVICE, "{listed}");
+        assert_eq!(listed["devices"][0]["current"], true);
         let (status, _) = post(
             &app,
             "/api/sign-in/alice",
             &with_token("alice-token"),
+            first,
+            "192.0.2.1",
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "now the current one is needed"
+        );
+
+        // Without her in the configuration, her token, name and display name still work.
+        let config = serde_json::from_value(serde_json::json!({"registration": true})).unwrap();
+        let later = Arc::new(crate::test_support::app_from(
+            crate::store::Store::open(&path).unwrap(),
+            config,
+        ));
+        assert_eq!(
+            methods(&later, "alice", "alice-token").await["sign_in"],
+            "password"
+        );
+        assert_eq!(later.display("alice"), "Alice A.");
+        drop(later);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn an_account_with_only_a_token_sets_a_first_password_with_it() {
+        let (app, path) = fixture_with_github();
+        create(&app.store.lock().unwrap().conn, "ana", "Ana", "", now_ms()).unwrap();
+        app.accounts.insert("ana", "Ana");
+        let token = app.issue_token("ana", ADOPTED_DEVICE).unwrap();
+        assert_eq!(methods(&app, "ana", &token).await["sign_in"], "token_only");
+        let (status, after) = post(
+            &app,
+            "/api/sign-in/ana",
+            &with_token(&token),
             serde_json::json!({"action": "password", "password": "a new long password"}),
             "192.0.2.1",
         )
         .await;
-        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(status, StatusCode::OK, "{after}");
+        assert_eq!(after["sign_in"], "password");
+        assert!(
+            sign_in(&app, "ana", "a new long password", "Laptop")
+                .await
+                .is_some()
+        );
         cleanup(app, path);
     }
 
@@ -1548,6 +1660,10 @@ mod tests {
         let (_, gone) = methods(app.clone()).await;
         assert_eq!(gone["providers"], serde_json::json!([]));
         assert_eq!(gone["linked_unavailable"], true);
+        assert_eq!(
+            gone["sign_in"], "token_only",
+            "a provider the server no longer offers cannot sign in"
+        );
         cleanup(app, path);
     }
 

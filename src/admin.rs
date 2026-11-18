@@ -329,6 +329,7 @@ pub enum Command {
     RemoveAccount(String),
     SetPassword(String),
     AdoptPlayers,
+    SignIns,
     GrantFreeze(String, Vec<String>, bool),
     PlayerStreakMinutes(String, Option<u32>),
     RemovePlayer(String),
@@ -721,6 +722,14 @@ pub fn adopt(state_dir: &Path, players: &[Configured], now_ms: i64) -> Result<St
             they have no password yet: give them one with set-password, or let them link a sign-in provider.
 ";
     Ok(out)
+}
+
+pub fn sign_ins(
+    _state_dir: &Path,
+    _configured: &[String],
+    _offered: &[crate::oauth::Provider],
+) -> Result<String, Error> {
+    Ok(String::new())
 }
 
 /// What [`people`] needs from the configuration besides the state.
@@ -1280,6 +1289,38 @@ mod tests {
             parse(&words(&["adopt-players"])).unwrap(),
             Command::AdoptPlayers
         );
+    }
+
+    #[test]
+    fn sign_ins_say_who_still_needs_a_configured_token() {
+        let dir = state("sign-ins");
+        {
+            let store = Store::open(&dir).unwrap();
+            crate::accounts::create(&store.conn, "bo", "Bo", "a-hash", 0).unwrap();
+            crate::accounts::create(&store.conn, "cy", "Cy", "", 0).unwrap();
+            crate::accounts::create(&store.conn, "dee", "Dee", "", 0).unwrap();
+            crate::accounts::create(&store.conn, "eva", "Eva", "", 0).unwrap();
+            store
+                .conn
+                .execute_batch(
+                    "insert into sign_in_links (provider, subject, user, created_at) values ('github', '1', 'cy', 0);
+                     insert into sign_in_links (provider, subject, user, created_at) values ('gitlab', '2', 'eva', 0);",
+                )
+                .unwrap();
+        }
+        let configured = ["cy", "bo", "ana"].map(String::from);
+        let out = sign_ins(&dir, &configured, &[crate::oauth::Provider::Github]).unwrap();
+        assert_eq!(
+            out,
+            "ana: token only, keep in the configuration
+bo: password, can leave the configuration
+cy: provider, can leave the configuration
+dee: token only, account
+eva: token only, account
+2 of 3 configured players can leave the configuration.
+"
+        );
+        assert_eq!(parse(&words(&["sign-ins"])).unwrap(), Command::SignIns);
     }
 
     #[test]
