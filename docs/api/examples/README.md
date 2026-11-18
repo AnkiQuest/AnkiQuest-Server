@@ -64,7 +64,7 @@ Random values are replaced, numbered in order of appearance: device tokens by `e
 | `two_factor_disable.json` | `POST /api/two-factor/{user}` `{"action": "disable", "password", "code"}` with a recovery code |
 | `reminders.json` | `GET /api/community/reminders/{user}`: the defaults, every reminder off |
 | `reminders_save.json` | `POST /api/community/reminders/{user}` with every setting |
-| `unlocks_save.json` | `POST /api/unlocks/{user}` `{"unlock": "cow"}`, for a player who has the cow |
+| `unlocks_save.json` | `POST /api/unlocks/{user}` `{"unlock": "cow"}`, for a player who has the cow. A found chibi is asked for the same way, `{"unlock": "anki_tan_chibi"}`, and answers the same shape; it has no example while she is planned (`400`) |
 | `unlocks.json` | `GET /api/unlocks/{user}`: the cow unlocked, with the progress toward Ankilope |
 | `notifications_companion.json` | `GET /api/notifications/{user}` after 10 hours of study: the moment `companion:cow` with its win |
 | `community.json` | `GET /api/community?year=2026&month=10`: the competition calendar, weeks and seasons |

@@ -13,6 +13,7 @@
     "hurt": "sad",
     "abandoned": "neglected",
     "dead": "neglected",
-    "leech_defeated": "happy"
+    "leech_defeated": "happy",
+    "winner": "happy"
   }
 }
