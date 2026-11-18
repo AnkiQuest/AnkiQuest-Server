@@ -404,10 +404,7 @@ impl App {
     fn become_account(&self, user: &str, hash: &str) -> Result<(), Error> {
         let token = self
             .config
-            .users
-            .get(user)
-            .and_then(|configured| configured.token.as_deref())
-            .filter(|token| !token.is_empty())
+            .token(user)
             .ok_or("the configuration gives this player no token")?;
         let display = self.display(user);
 

@@ -91,11 +91,7 @@ impl Access {
         if config.private_site
             && password.is_none()
             && !config.registration
-            && !config.users.values().any(|user| {
-                user.token
-                    .as_ref()
-                    .is_some_and(|token| !token.trim().is_empty())
-            })
+            && !config.tokens().any(|(_, token)| !token.trim().is_empty())
         {
             return Err(
                 "private_site needs a nonempty site_password_file or at least one player token"
@@ -319,28 +315,18 @@ fn constant_eq(expected: &str, given: &str) -> bool {
 }
 
 fn member_token(app: &App, given: &str) -> bool {
-    app.config
-        .users
-        .values()
-        .filter_map(|user| user.token.as_deref())
-        .fold(false, |matched, expected| {
-            constant_eq(expected, given) | matched
-        })
-        || app.accounts.token_owner(given).is_some()
+    app.config.tokens().fold(false, |matched, (_, expected)| {
+        constant_eq(expected, given) | matched
+    }) || app.accounts.token_owner(given).is_some()
 }
 
 // A duplicated configured token cannot select a member identity implicitly.
 fn token_owner(app: &App, given: &str) -> Option<String> {
     let matches: Vec<_> = app
         .config
-        .users
-        .iter()
-        .filter_map(|(name, user)| {
-            user.token
-                .as_deref()
-                .filter(|expected| !expected.is_empty() && constant_eq(expected, given))
-                .map(|_| name.clone())
-        })
+        .tokens()
+        .filter(|(_, expected)| constant_eq(expected, given))
+        .map(|(name, _)| name.to_string())
         .collect();
     match matches.len() {
         1 => Some(matches[0].clone()),
@@ -355,14 +341,9 @@ pub(crate) fn token_hash_owner(app: &App, hash: &str) -> Option<String> {
     app.accounts.hash_owner(hash).or_else(|| {
         let matches: Vec<_> = app
             .config
-            .users
-            .iter()
-            .filter(|(_, user)| {
-                user.token.as_deref().is_some_and(|token| {
-                    !token.is_empty() && constant_eq(&crate::accounts::token_hash(token), hash)
-                })
-            })
-            .map(|(name, _)| name.clone())
+            .tokens()
+            .filter(|(_, token)| constant_eq(&crate::accounts::token_hash(token), hash))
+            .map(|(name, _)| name.to_string())
             .collect();
         (matches.len() == 1).then(|| matches[0].clone())
     })
@@ -1189,10 +1170,7 @@ mod tests {
         Arc::get_mut(&mut app)
             .unwrap()
             .config
-            .users
-            .get_mut("alice")
-            .unwrap()
-            .token = Some("shared-master".into());
+            .set_token("alice", "shared-master");
         let master = session_header(&sign_in(&app, "shared-master").await);
         assert!(!authorized(
             &app,
@@ -1202,10 +1180,7 @@ mod tests {
         Arc::get_mut(&mut app)
             .unwrap()
             .config
-            .users
-            .get_mut("alice")
-            .unwrap()
-            .token = Some("bob-token".into());
+            .set_token("alice", "bob-token");
         let ambiguous = session_header(&sign_in(&app, "bob-token").await);
         let headers = HeaderMap::from_iter([(header::COOKIE, ambiguous.parse().unwrap())]);
         assert!(member(&app, &headers).is_none());

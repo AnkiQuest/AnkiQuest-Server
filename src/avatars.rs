@@ -469,10 +469,7 @@ mod tests {
         Arc::get_mut(&mut app)
             .unwrap()
             .config
-            .users
-            .get_mut("hill")
-            .unwrap()
-            .token = Some("cerro-secret".into());
+            .set_token("hill", "cerro-secret");
         for user in ["cerro", "hill"] {
             for method in ["POST", "DELETE"] {
                 assert_eq!(
