@@ -2,8 +2,9 @@
 //! `tests/fixtures/companion_poses.json` and every other per-companion
 //! picture the clients show, for each companion, as a Markdown table.
 //!
-//! A pose's master is `static/<folder>/<pose>.png`, or the older name
-//! [`RENAMES`] gives when that file is absent. A missing extension shows
+//! A pose's master is the file `static/<folder>/poses.json` lists for it
+//! (Anki-tan's pack art), else `static/<folder>/<pose>.png`, or the older
+//! name [`RENAMES`] gives when that file is absent. A missing extension shows
 //! the first pose its fallback chain reaches that exists. Anki-tan's chibi
 //! masters stay below the same character's licensed folder. Runtime
 //! mappings are not inferred. Read-only.
@@ -17,6 +18,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use ankiquest_art::listed;
 use serde_json::Value;
 
 use super::root;
@@ -41,6 +43,16 @@ const COMPANIONS: &[(&str, &str)] = &[
     ("anki_tan", "anki-tan"),
     ("anki_tan_chibi", "anki-tan/chibi"),
     ("leech_tan", "leech-tan"),
+];
+
+/// The names players and hill use for each companion id.
+const NAMES: &[(&str, &str)] = &[
+    ("aki", "Aki"),
+    ("ankilope", "Ankilope"),
+    ("cow", "Bluma"),
+    ("anki_tan", "Anki-tan"),
+    ("anki_tan_chibi", "Anki-tan chibi"),
+    ("leech_tan", "Leech-kun"),
 ];
 
 /// Poses whose masters may still have the file name they had before the
@@ -234,6 +246,14 @@ fn companions(root: &Path) -> Result<Vec<Companion>, String> {
         .collect())
 }
 
+/// The display name for a companion id.
+fn name(id: &str) -> &str {
+    NAMES
+        .iter()
+        .find(|(known, _)| *known == id)
+        .map_or(id, |(_, name)| name)
+}
+
 /// The poses `folder` has no master for, core first.
 fn missing<'a>(folder: &Path, poses: &'a Poses) -> Vec<&'a str> {
     poses.names().filter(|pose| !has(folder, pose)).collect()
@@ -255,7 +275,8 @@ fn backlog(root: &Path, companions: &[Companion], poses: &Poses) -> String {
             Stage::Planned => " (planned)",
         };
         out += &format!(
-            "- {}{stage}: {} missing: {list}\n",
+            "- {} (`{}`){stage}: {} missing: {list}\n",
+            name(companion.id),
             companion.id,
             missing.len()
         );
@@ -292,8 +313,15 @@ fn old_name(kind: &str) -> Option<&str> {
         .map(|(_, file)| *file)
 }
 
-/// Whether `folder` has a named master for `kind`.
+/// Whether `folder` has a master for `kind`: the file the folder's
+/// `poses.json` lists for it, else a PNG named after it or its older name.
 fn has(folder: &Path, kind: &str) -> bool {
+    // A broken list fails `pose_lists_name_masters`; here it lists nothing.
+    if let Ok(Some(files)) = listed(folder)
+        && let Some(file) = files.get(kind)
+    {
+        return file.is_file();
+    }
     let png = |name: &str| folder.join(format!("{name}.png")).is_file();
     png(kind) || old_name(kind).is_some_and(png)
 }
@@ -387,6 +415,7 @@ fn cell(status: &Status) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ankiquest_art::LISTED;
 
     fn fixture() -> Poses {
         poses(&root().join(FIXTURE)).unwrap()
@@ -503,6 +532,20 @@ mod tests {
         );
     }
 
+    #[test]
+    fn anki_tan_pack_art_counts() {
+        // The pack art static/anki-tan/README.md maps to poses, kept in the
+        // folders' poses.json, covers both versions' core.
+        let poses = fixture();
+        for folder in ["static/anki-tan", "static/anki-tan/chibi"] {
+            let folder = root().join(folder);
+            for pose in &poses.core {
+                let status = status(&folder, &poses, pose);
+                assert_eq!(Status::Present, status, "{}: {pose}", folder.display());
+            }
+        }
+    }
+
     /// A checkout in a temporary folder with the given masters, an unlock
     /// fixture making `cow` live and `anki_tan` planned.
     fn checkout(masters: &[&str]) -> tempfile::TempDir {
@@ -585,9 +628,9 @@ mod tests {
         assert_eq!(
             backlog(root.path(), &companions, &poses),
             "Poses without a master (AGENTS.md, Companion art)\n\n\
-             - aki: 0 missing: none\n\
-             - cow: 2 missing: happy, winner\n\
-             - anki_tan (planned): 3 missing: happy, sad, winner\n"
+             - Aki (`aki`): 0 missing: none\n\
+             - Bluma (`cow`): 2 missing: happy, winner\n\
+             - Anki-tan (`anki_tan`) (planned): 3 missing: happy, sad, winner\n"
         );
     }
 
@@ -602,6 +645,48 @@ mod tests {
         ));
         assert!(mode(&args(&["--since"])).is_none());
         assert!(mode(&args(&["--other"])).is_none());
+    }
+
+    #[test]
+    fn listed_files_are_masters() {
+        let poses = list(&["face", "happy"], &[("welcome", "happy")]);
+        let root = checkout(&["aki/emoji/smile.png", "aki/happy.png"]);
+        let folder = root.path().join("static/aki");
+        let json = r#"{"poses": {"face": "emoji/smile.png", "welcome": "emoji/wave.png"}}"#;
+        fs::write(folder.join(LISTED), json).unwrap();
+
+        // Listed and present, named after the pose, listed but absent.
+        assert_eq!(Status::Present, status(&folder, &poses, "face"));
+        assert_eq!(Status::Present, status(&folder, &poses, "happy"));
+        assert_eq!(
+            Status::Fallback("happy".into()),
+            status(&folder, &poses, "welcome")
+        );
+    }
+
+    #[test]
+    fn pose_lists_name_masters() {
+        let poses = fixture();
+        for (companion, folder) in COMPANIONS {
+            let folder = root().join("static").join(folder);
+            let Some(files) = listed(&folder).unwrap() else {
+                continue;
+            };
+            for (pose, file) in files {
+                assert!(
+                    poses.names().any(|known| known == pose),
+                    "{companion}: {pose}"
+                );
+                assert!(file.is_file(), "{companion}: {}", file.display());
+            }
+        }
+    }
+
+    #[test]
+    fn names_every_companion() {
+        for (id, _) in COMPANIONS {
+            assert!(NAMES.iter().any(|(known, _)| known == id), "{id}");
+        }
     }
 
     #[test]
