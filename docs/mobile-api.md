@@ -334,6 +334,7 @@ A client may judge one thing itself: today, with reviews it holds but has not up
 - unsent reviews are those with an id after `last_review_id`; of them, only ids from `today.starts_at` up to `day_ends_at` count toward today, each with its revlog time, uncapped beyond what Anki records;
 - today is met when `streak_state` is `studied`, or when there is at least one review and `today.time_ms` plus the unsent reviews' time reaches `today.streak_minutes` minutes;
 - the streak is `streak` plus one when today becomes met and `streak_state` was not `studied`; otherwise `streak`, and while not met the state stays `streak_state`. An unsent review from an earlier day can change that day's verdict, so the streak and, while today is not met, its state are then unknown until the upload lands.
+- the day's words (`label` in the fixture) are `studied` when today is met; `unknown` when an unsent review from an earlier day leaves today open; `short` when today has reviews, even while `streak_state` is `protected`; `protected` when it is `protected` with no reviews today; otherwise `pending`. A protected streak with reviews today is short, not unstudied.
 
 `tests/fixtures/day_verdicts.json` holds cases worked out by the server (`src/day_verdicts.rs`); clients test their copy of the rule against it.
 
