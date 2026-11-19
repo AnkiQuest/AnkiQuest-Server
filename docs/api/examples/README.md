@@ -58,6 +58,8 @@ Random values are replaced, numbered in order of appearance: device tokens by `e
 | `records.json` | `GET /api/records` |
 | `study.json` | `GET /api/study/{user}`: three study days and a day off |
 | `sign_in_methods.json` | `GET /api/sign-in/{user}`: a password and a linked GitHub |
+| `sign_in_methods_token_only.json` | `GET /api/sign-in/{user}` for a player from the configuration: `"sign_in": "token_only"` |
+| `password_set_token_only.json` | `POST /api/sign-in/{user}` `{"action": "password", "password", "sign_out_others": false}` from that player's token: now an account with a password |
 | `account.json` | `GET /api/accounts/{user}` |
 | `password_change.json` | `POST /api/sign-in/{user}` `{"action": "password", "current", "password", "sign_out_others": false}` |
 | `devices_sign_out.json` | `POST /api/devices/{user}` `{"action": "sign_out_others"}` |

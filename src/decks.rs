@@ -2115,30 +2115,20 @@ pub(crate) mod tests {
         let (mut app, path) = fixture();
         let config = &mut Arc::get_mut(&mut app).unwrap().config;
         config.ntfy = Some("http://localhost:9999".into());
-        config.users.insert(
-            "push-only".into(),
-            UserConfig {
-                ntfy_topic: Some("friend-topic".into()),
-                ..UserConfig::default()
-            },
-        );
-        config.users.insert(
-            "empty-token".into(),
-            UserConfig {
-                token: Some(String::new()),
-                ..UserConfig::default()
-            },
-        );
+        config
+            .users
+            .entry("push-only".into())
+            .or_default()
+            .ntfy_topic = Some("friend-topic".into());
+        config.set_token("empty-token", "");
         config
             .users
             .insert("display-only".into(), UserConfig::default());
-        config.users.insert(
-            "empty-topic".into(),
-            UserConfig {
-                ntfy_topic: Some(String::new()),
-                ..UserConfig::default()
-            },
-        );
+        config
+            .users
+            .entry("empty-topic".into())
+            .or_default()
+            .ntfy_topic = Some(String::new());
         let offered = |app: &App| {
             deck_settings(app, &app.store.lock().unwrap(), "cerro")
                 .unwrap()

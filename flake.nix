@@ -70,6 +70,7 @@
         private_site = cfg.privateSite;
         registration = cfg.registration;
         devs = cfg.devs;
+        configured_tokens = cfg.configuredTokens;
         privacy = lib.filterAttrs (_: value: value != null) cfg.privacy;
         oauth =
           lib.mapAttrs (name: c:
@@ -129,7 +130,7 @@
           tokenFile = lib.mkOption {
             type = lib.types.nullOr lib.types.str;
             default = null;
-            description = "File holding the bearer token this player's AnkiDroid uploads reviews with.";
+            description = "File holding a token this player signs in with. Needs configuredTokens = \"enabled\".";
           };
         };
       };
@@ -273,6 +274,15 @@
           default = {};
           description = "Players, keyed by name.";
         };
+        configuredTokens = lib.mkOption {
+          type = lib.types.enum ["disabled" "enabled"];
+          default = "disabled";
+          description = ''
+            Whether players in `users` sign in with a `tokenFile`: a user base declared in
+            this configuration. Off by default; players then make accounts and sign in with
+            a password or a provider.
+          '';
+        };
       };
 
       config = lib.mkIf cfg.enable {
@@ -280,6 +290,10 @@
           {
             assertion = !cfg.privateSite || cfg.sitePasswordFile != null || withToken != {} || cfg.registration;
             message = "services.ankiquest.privateSite needs sitePasswordFile, a user tokenFile, or registration.";
+          }
+          {
+            assertion = withToken == {} || cfg.configuredTokens == "enabled";
+            message = "services.ankiquest.users.<name>.tokenFile is set for ${lib.concatStringsSep ", " (lib.attrNames withToken)}, but configuredTokens is \"disabled\". Set services.ankiquest.configuredTokens = \"enabled\" to keep these sign-ins, or remove the tokenFile entries.";
           }
           {
             assertion = withOAuth == {} || cfg.domain != null;

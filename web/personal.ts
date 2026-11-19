@@ -35,7 +35,8 @@ import {failure, refused, request as call, send} from "./http";
   /** `/api/deck-subscriptions/{user}` (`ReceivingSettings` in src/decks.rs). */
   interface Subscriptions { enabled: boolean; senders: Person[]; unsubscribed_senders: string[]; sharing_senders: string[]; muted_senders?: string[] }
   interface Account { created_at: number; password?: boolean; confirmed_until?: number | null }
-  interface SignIn { account: boolean; password: boolean; providers: {provider: string; name: string; linked: boolean}[] }
+  /** `sign_in` is absent from older servers. */
+  interface SignIn { account: boolean; password: boolean; providers: {provider: string; name: string; linked: boolean}[]; sign_in?: "password" | "provider" | "token_only" }
   interface Device { id: string; kind: "app" | "web"; name: string | null; created_at: number; last_used_at?: number | null; current: boolean }
   interface Group { id: number; name: string; owner: boolean; invite: string | null; members: Person[] }
   interface Social { groups: Group[]; friends: Person[]; incoming: Person[]; outgoing: Person[]; public: boolean; muted: Person[] }
@@ -654,14 +655,16 @@ import {failure, refused, request as call, send} from "./http";
   }
   function signInCard() {
     const methods = state.signIn;
-    if (!methods || (!methods.providers.length && !methods.account)) return "";
+    // A player who signs in only with a token sets a first password with that token.
+    const tokenOnly = methods?.sign_in === "token_only";
+    if (!methods || (!methods.providers.length && !methods.account && !tokenOnly)) return "";
     const last = methods.account && !methods.password && methods.providers.filter(item => item.linked).length === 1;
     const rows = methods.providers.map(item => html`<div class="sign-in-row"><strong>${esc(item.name)}</strong>${item.linked
       ? html`<button type="button" data-unlink="${esc(item.provider)}" ${last ? "disabled" : ""}>${tr("Unlink")}</button>`
       : confirmed() ? html`<a class="button-link" href="/auth/oauth/${esc(item.provider)}?link=1">${tr("Link")}</a>`
       : html`<button type="button" disabled>${tr("Link")}</button>`}</div>`).join("");
     const token = methods.account && methods.providers.length ? html`<div class="setting-actions"><button type="button" id="new-device-token">${tr("New device token")}</button></div><p class="settings-hint">${tr("For Anki and AnkiDroid: sign in there with your username and this token.")}</p><code id="device-token" class="device-token" hidden></code>` : "";
-    return html`<article class="card"><h2>${tr("Sign-in methods")}</h2>${rows}${last ? html`<p class="settings-hint">${tr("Link another sign-in before unlinking this one.")}</p>` : ""}${token}<p id="sign-in-status" class="status" role="status"></p>${methods.account ? confirmed() ? passwordForm(methods.password) : reauthBlock() : ""}</article>`;
+    return html`<article class="card"><h2>${tr("Sign-in methods")}</h2>${rows}${last ? html`<p class="settings-hint">${tr("Link another sign-in before unlinking this one.")}</p>` : ""}${token}<p id="sign-in-status" class="status" role="status"></p>${tokenOnly ? passwordForm(false) : methods.account ? confirmed() ? passwordForm(methods.password) : reauthBlock() : ""}</article>`;
   }
   function passwordForm(has: boolean) {
     const current = has ? html`<label class="field"><span>${tr("Current password")}</span><input name="current" type="password" required autocomplete="current-password" maxlength="256"></label>` : "";

@@ -134,11 +134,7 @@ impl App {
     }
 
     fn configured_with_token(&self, user: &str) -> bool {
-        self.config
-            .users
-            .get(user)
-            .and_then(|config| config.token.as_deref())
-            .is_some_and(|token| !token.is_empty())
+        self.config.token(user).is_some()
     }
 
     /// Players who can sign in: configured users with a token, and every account.

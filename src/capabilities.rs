@@ -75,6 +75,7 @@ mod tests {
     async fn capabilities_are_public_cached_and_list_stable_names() {
         let (app, path) = crate::test_support::app_with(json!({
             "private_site": true,
+            "configured_tokens": "enabled",
             "users": {"alice": {"token": "alice-token"}}
         }));
         let response = crate::router(app.clone())
