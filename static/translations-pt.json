@@ -1430,5 +1430,9 @@
   "New recovery codes": "Novos códigos de recuperação",
   "Turn off two-factor authentication": "Desativar a autenticação de dois fatores",
   "Two-factor authentication is on.": "A autenticação de dois fatores está ativada.",
-  "Two-factor authentication is off.": "A autenticação de dois fatores está desativada."
+  "Two-factor authentication is off.": "A autenticação de dois fatores está desativada.",
+  "Observed": "Observado",
+  "Includes answers read from AnkiDroid without review times": "Inclui respostas lidas do AnkiDroid sem tempos de revisão",
+  "Studied today · time not known": "Estudei hoje · tempo desconhecido",
+  "Time not known": "Tempo desconhecido"
 }

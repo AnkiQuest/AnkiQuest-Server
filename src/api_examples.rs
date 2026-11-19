@@ -307,6 +307,23 @@ async fn examples_match_the_handlers() {
         .await,
     ));
 
+    // A countdown list, synced as one value: an exam with a deck to finish and an event without.
+    examples.push((
+        "settings_countdowns",
+        f.call(
+            "PUT",
+            "/api/settings/hill",
+            Some("hill-secret"),
+            json!({"settings": {
+                "countdowns": {"value": [
+                    {"name": "Spanish exam", "date": "2026-11-09", "deck": "Spanish::A1"},
+                    {"name": "Driving theory", "date": "2026-12-01", "deck": null}
+                ], "updated_at": STUDY_TIME - 60_000}
+            }}),
+        )
+        .await,
+    ));
+
     f.call(
         "PUT",
         "/api/goal/hill",
@@ -1339,6 +1356,46 @@ async fn examples_match_the_handlers() {
     ));
     drop(converted.app);
     std::fs::remove_dir_all(&converted.path).unwrap();
+
+    // A player on AnkiQuest Lite, which reads stock AnkiDroid: two answered cards, one of them
+    // seen before, and a day's count with a card no state covers. On a server of its own, so the
+    // examples above keep only exact review rows.
+    let lite = Fixture::new();
+    let secs = |ms: i64| ms / 1000;
+    let clock = json!({"offset_west_min": 0, "rollover_hour": 4});
+    let today = Clock::default().day(STUDY_TIME);
+    lite.call(
+        "POST",
+        "/api/observations/cerro",
+        Some("cerro-secret"),
+        json!({"clock": clock, "read_at_ms": STUDY_TIME - 900_000, "cards": [
+            {"cid": 1_700_000_000_001i64, "reps": 4, "type": 2, "interval": 9,
+             "last_review_time_secs": secs(STUDY_TIME - 9 * 86_400_000)}
+        ]}),
+    )
+    .await;
+    examples.push((
+        "observations",
+        lite.call(
+            "POST",
+            "/api/observations/cerro",
+            Some("cerro-secret"),
+            json!({"clock": clock, "read_at_ms": STUDY_TIME - 60_000, "cards": [
+                {"cid": 1_700_000_000_001i64, "reps": 5, "type": 2, "interval": 21,
+                 "last_review_time_secs": secs(STUDY_TIME - 300_000)},
+                {"cid": 1_700_000_000_002i64, "reps": 2, "type": 1, "interval": 0,
+                 "last_review_time_secs": secs(STUDY_TIME - 240_000)}
+            ], "days": [{"day": today, "cards": 3}]}),
+        )
+        .await,
+    ));
+    examples.push((
+        "leaderboard_observed",
+        lite.call("GET", "/api/leaderboard", Some("cerro-secret"), Value::Null)
+            .await,
+    ));
+    drop(lite.app);
+    std::fs::remove_dir_all(&lite.path).unwrap();
 
     let update = std::env::var_os("UPDATE_API_EXAMPLES").is_some_and(|v| v == "1");
     let dir = examples_dir();

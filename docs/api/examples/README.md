@@ -17,6 +17,8 @@ Random values are replaced, numbered in order of appearance: device tokens by `e
 | `sign_in.json` | `POST /api/accounts/tokens` |
 | `devices.json` | `GET /api/devices/{user}` |
 | `upload.json` | `POST /api/reviews/{user}` |
+| `observations.json` | `POST /api/observations/{user}`: two cards from AnkiQuest Lite, one seen before, and a day's count with a card no state covers |
+| `leaderboard_observed.json` | `GET /api/leaderboard` for that player: `xp_source` is `observed` |
 | `share_to_friends.json` | `POST /api/share/{user}` `{"win", "to": "friends"}` |
 | `share_to_link.json` | `POST /api/share/{user}` `{"win", "to": "link"}` |
 | `share_moment.json` | `POST /api/share/{user}` `{"moment": {"conquest"}, "to": {"friends"}, "note"}` |
@@ -41,6 +43,7 @@ Random values are replaced, numbered in order of appearance: device tokens by `e
 | `companion.json` | `GET /api/companion/{user}` |
 | `settings.json` | `GET /api/settings/{user}` |
 | `settings_save.json` | `PUT /api/settings/{user}`, with a key the server does not know and keeps |
+| `settings_countdowns.json` | `PUT /api/settings/{user}` with a `countdowns` list: an exam with a deck and an event without |
 | `streak_freezes.json` | `GET /api/streak-freezes/{user}` |
 | `challenges.json` | `GET /api/community/challenges/{user}`: an invitation for the player, a goal in progress, one reached, one ended early, and the weekly suggestion |
 | `challenge_create.json` | `POST /api/community/challenges/{user}` with a `request_id` |

@@ -14,7 +14,7 @@ import {failure, refused, request as call, send} from "./http";
   interface Win { id: number; kind: string; created_at: number; title: string; body: string; policy: Policy; shared_with_friends: boolean; link: {url: string; image: string} | null }
   interface Profile { user: string; display: string; level: number; streak: number; today: {reviews: number; xp: number; minutes?: number; streak_minutes?: number}; quests: Quest[]; day_ends_at?: number; goal?: GoalProgress | null; closing_week?: ClosingWeek; next_week?: NextWeek }
   /** `state` and `streak_minutes` are the server's verdict on the day; older servers leave them out. */
-  interface StudyDay { date: string; reviews: number; time_ms: number; xp: number; new_cards: number; streak: number; frozen: boolean; streak_minutes?: number; state?: "met" | "short" | "frozen" | "skipped" | "none" }
+  interface StudyDay { date: string; reviews: number; time_ms: number; xp: number; new_cards: number; streak: number; frozen: boolean; streak_minutes?: number; state?: "met" | "unverified" | "short" | "frozen" | "skipped" | "none" }
   interface StudySession { started_at: number; ended_at: number; reviews: number; time_ms: number; new_cards: number }
   interface StudyHistory { year: number; years: number[]; days: StudyDay[]; last_review_at: number | null; last_received_at: number | null; latest_session: StudySession | null }
   interface Challenges { challenges: {id: number; title: string; status: string; members: {user: string; status: string}[]}[] }
@@ -436,8 +436,8 @@ import {failure, refused, request as call, send} from "./http";
     for(let day=1;day<=count;day++) {
       const key = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
       const item = map.get(key), reviews = Number(item?.reviews||0), verdict = dayState(item);
-      // Only a day that met the streak minimum gets a study colour; the server says which did.
-      const level = reviews && verdict === "met" ? Math.min(4,1+Math.floor(reviews/Math.max(1,max)*3.99)) : 0;
+      // Only a day that counted toward the streak gets a study colour; the server says which did.
+      const level = reviews && (verdict === "met" || verdict === "unverified") ? Math.min(4,1+Math.floor(reviews/Math.max(1,max)*3.99)) : 0;
       const frozen = verdict === "frozen" || verdict === "skipped";
       const short = verdict === "short" ? ` · ${esc(shortOf(item!))}` : "";
       const future = new Date(key+"T12:00:00Z").getTime() > Date.now()+12*3600000;
@@ -456,7 +456,7 @@ import {failure, refused, request as call, send} from "./http";
   function dayDetail() {
     if (!state.selected) return html`<article class="card" id="day-detail"><h2>${tr("Choose a day")}</h2><p class="section-intro">${tr("Select a square to see what happened that day.")}</p></article>`;
     const day = state.study!.days.find(item => item.date === state.selected) || {date:state.selected,reviews:0,time_ms:0,xp:0,new_cards:0,streak:0,frozen:false};
-    return html`<article class="card" id="day-detail" tabindex="-1"><div class="card-head"><div><div class="eyebrow">${tr("Your Anki day")}</div><h2>${esc(date(day.date))}</h2></div>${day.frozen ? html`<span class="chip blue">${tr("Streak protected")}</span>` : dayState(day) === "short" ? html`<span class="chip">${esc(shortOf(day))}</span>` : ""}</div><div class="personal-summary"><div><strong>${number(day.reviews)}</strong><span>${tr("reviews")}</span></div><div><strong>${number(Math.floor(Number(day.time_ms)/60000))}</strong><span>${tr("minutes studied")}</span></div><div><strong>${number(day.xp)}</strong><span>${tr("XP earned")}</span></div><div><strong>${number(day.new_cards)}</strong><span>${tr("new cards")}</span></div><div><strong>${number(day.streak)}</strong><span>${tr("day streak")}</span></div></div><p class="settings-hint">${day.reviews ? tr("These totals reflect reviews uploaded to AnkiQuest.") : tr("No reviews recorded for this day.")}</p></article>`;
+    return html`<article class="card" id="day-detail" tabindex="-1"><div class="card-head"><div><div class="eyebrow">${tr("Your Anki day")}</div><h2>${esc(date(day.date))}</h2></div>${day.frozen ? html`<span class="chip blue">${tr("Streak protected")}</span>` : dayState(day) === "short" ? html`<span class="chip">${esc(shortOf(day))}</span>` : dayState(day) === "unverified" ? html`<span class="chip">${tr("Time not known")}</span>` : ""}</div><div class="personal-summary"><div><strong>${number(day.reviews)}</strong><span>${tr("reviews")}</span></div><div><strong>${number(Math.floor(Number(day.time_ms)/60000))}</strong><span>${tr("minutes studied")}</span></div><div><strong>${number(day.xp)}</strong><span>${tr("XP earned")}</span></div><div><strong>${number(day.new_cards)}</strong><span>${tr("new cards")}</span></div><div><strong>${number(day.streak)}</strong><span>${tr("day streak")}</span></div></div><p class="settings-hint">${day.reviews ? tr("These totals reflect reviews uploaded to AnkiQuest.") : tr("No reviews recorded for this day.")}</p></article>`;
   }
   function renderHistory() {
     const days = state.study!.days || [], year = state.study!.year, map = new Map(days.map(day=>[day.date,day]));
