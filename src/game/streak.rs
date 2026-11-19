@@ -172,7 +172,7 @@ impl DayState {
         frozen: bool,
         skipped: bool,
     ) -> Self {
-        if reviews > 0 && time_ms >= needed_ms {
+        if ankiquest_rules::meets_minimum(reviews, time_ms, needed_ms) {
             DayState::Met
         } else if observed > 0 {
             DayState::Unverified
@@ -194,16 +194,8 @@ pub(super) fn streak_milestone(streak: u64) -> bool {
         || (streak > 365 && streak.is_multiple_of(365))
 }
 
-#[derive(Serialize, Clone, Copy, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum StreakState {
-    /// Today reached the streak minimum.
-    Studied,
-    /// Today counts on observed answers whose duration is not known; see [`DayState::Unverified`].
-    Unverified,
-    Pending,
-    Protected,
-}
+/// Today's verdict, shared with the clients through crates/rules.
+pub use ankiquest_rules::StreakState;
 
 #[cfg(test)]
 mod tests {

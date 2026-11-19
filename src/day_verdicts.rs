@@ -6,15 +6,17 @@
 //! review time of its unsent reviews to `today.time_ms` and compares the sum with
 //! `today.streak_minutes`, exactly as the server will once they arrive. These cases are worked out by
 //! the server's own [`compute_with_rules`] and written to `tests/fixtures/day_verdicts.json`, which the
-//! clients test their copy of the rule against. Each case also names the words clients show for the
-//! day (`label`). Observed answers (AnkiQuest Lite, see `game::observed`) have no review time: a
-//! day they keep counting short of the minimum is `unverified`. Regenerate with
+//! clients test their copy of the rule against. The rule itself is `ankiquest_rules::today_verdict`
+//! (crates/rules), which the clients can call through its bindings. Each case also names the words
+//! clients show for the day (`label`). Observed answers (AnkiQuest Lite, see `game::observed`) have
+//! no review time: a day they keep counting short of the minimum is `unverified`. Regenerate with
 //! `UPDATE_FIXTURES=1 cargo test day_verdicts`.
 
 use crate::game::{
     Clock, ClockHistory, DAY_MS, FreezePolicy, Observed, ObservedAnswer, Review, StreakChange,
     StreakRule, Timing, Week, compute_with_rules, date_string,
 };
+use ankiquest_rules::{DayVerdict, PendingReview, ServerDay, today_verdict};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -329,36 +331,6 @@ const CASES: &[Case] = &[
     },
 ];
 
-/// The words a client shows for today.
-#[derive(Clone, Copy)]
-enum Label {
-    /// Today counts, or will once unsent reviews arrive.
-    Studied,
-    /// Today counts on observed answers whose duration is not known, short of the minimum.
-    Unverified,
-    /// A freeze or grant kept yesterday and nothing has been studied today.
-    Protected,
-    /// Reviews today, short of the minimum.
-    Short,
-    /// No reviews today.
-    Pending,
-    /// An unsent review from an earlier day leaves today open.
-    Unknown,
-}
-
-impl Label {
-    fn name(self) -> &'static str {
-        match self {
-            Label::Studied => "studied",
-            Label::Unverified => "unverified",
-            Label::Protected => "protected",
-            Label::Short => "short",
-            Label::Pending => "pending",
-            Label::Unknown => "unknown",
-        }
-    }
-}
-
 fn observed_answer(at: i64) -> ObservedAnswer {
     let at = TODAY * DAY_MS + NOON + at;
     ObservedAnswer {
@@ -378,6 +350,7 @@ fn review(at: i64, time_ms: i64) -> Review {
         cid: id,
         last_ivl: 0,
         ivl: Some(1),
+        ease: None,
         time_ms,
         kind: 1,
     }
@@ -402,82 +375,18 @@ fn server_view(profile: &Value) -> Value {
     })
 }
 
-/// The rule a client follows, as `docs/mobile-api.md` states it. Null when the server's answer is
-/// from a day that has ended. A field the client cannot know is null: the streak, and while today
-/// is short its state, once an unsent review belongs to an earlier day. Pending entries without
-/// `time_ms` are observed answers (AnkiQuest Lite): they count, but their duration is unknown.
+/// The rule a client follows, as `docs/mobile-api.md` states it, from crates/rules: the clients
+/// run the same code through its bindings. Null when the server's answer is from a day that has
+/// ended. A field the client cannot know is null: the streak, and while today is short its state,
+/// once an unsent review belongs to an earlier day. Pending entries without `time_ms` are observed
+/// answers (AnkiQuest Lite): they count, but their duration is not known.
 fn client(server: &Value, pending: &[Value], now: i64) -> Value {
-    let today = &server["today"];
-    let starts = today["starts_at"].as_i64().unwrap();
-    let ends = server["day_ends_at"].as_i64().unwrap();
-    if now >= ends {
-        return Value::Null;
+    let server: ServerDay = serde_json::from_value(server.clone()).unwrap();
+    let pending: Vec<PendingReview> = serde_json::from_value(json!(pending)).unwrap();
+    match today_verdict(server, pending, now) {
+        DayVerdict::Ended => Value::Null,
+        DayVerdict::Today { verdict } => serde_json::to_value(verdict).unwrap(),
     }
-    let last = server["last_review_id"].as_i64().unwrap();
-    let unsent: Vec<&Value> = pending
-        .iter()
-        .filter(|r| r.get("time_ms").is_none() || r["id"].as_i64().unwrap() > last)
-        .collect();
-    let counted: Vec<&&Value> = unsent
-        .iter()
-        .filter(|r| (starts..ends).contains(&r["id"].as_i64().unwrap()))
-        .collect();
-    let earlier = unsent.iter().any(|r| r["id"].as_i64().unwrap() < starts);
-    let reviews = today["reviews"].as_u64().unwrap() + counted.len() as u64;
-    let observed = today["observed"].as_u64().unwrap()
-        + counted
-            .iter()
-            .filter(|r| r.get("time_ms").is_none())
-            .count() as u64;
-    let time_ms = today["time_ms"].as_i64().unwrap()
-        + counted
-            .iter()
-            .filter_map(|r| r.get("time_ms")?.as_i64())
-            .sum::<i64>();
-    let needed = today["streak_minutes"].as_i64().unwrap();
-    let was = server["streak_state"].as_str().unwrap();
-
-    // Exact minutes meet the minimum; observed answers keep the day counting without them.
-    let exact = was == "studied" || (reviews > 0 && time_ms >= needed * MINUTE);
-    let met = exact || was == "unverified" || observed > 0;
-    let counted_before = was == "studied" || was == "unverified";
-    let streak = server["streak"].as_u64().unwrap() + u64::from(met && !counted_before);
-
-    // The words for the day: reviews today outrank a protected streak, which only says that
-    // nothing has been studied yet.
-    let label = if exact {
-        Label::Studied
-    } else if met {
-        Label::Unverified
-    } else if earlier {
-        Label::Unknown
-    } else if reviews > 0 {
-        Label::Short
-    } else if was == "protected" {
-        Label::Protected
-    } else {
-        Label::Pending
-    };
-    json!({
-        "met": met,
-        "streak_state": if exact {
-            json!("studied")
-        } else if met {
-            json!("unverified")
-        } else if earlier {
-            Value::Null
-        } else {
-            json!(was)
-        },
-        "streak": if earlier { Value::Null } else { json!(streak) },
-        "reviews": reviews,
-        "observed": observed,
-        "time_ms": time_ms,
-        "minutes": time_ms.max(0) / MINUTE,
-        "streak_minutes": needed,
-        "unsent": counted.len(),
-        "label": label.name(),
-    })
 }
 
 fn fixture_path() -> PathBuf {

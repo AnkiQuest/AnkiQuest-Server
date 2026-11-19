@@ -483,6 +483,7 @@ mod tests {
                 kind,
                 last_ivl: 1,
                 ivl: None,
+                ease: None,
                 time_ms: 30_000,
             });
             store

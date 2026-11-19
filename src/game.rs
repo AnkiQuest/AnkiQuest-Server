@@ -36,6 +36,8 @@ pub const HOUR_MS: i64 = 3_600_000;
 /// Milliseconds in a UTC day.
 pub const DAY_MS: i64 = 86_400_000;
 const MATURE_IVL: i64 = 21;
+/// The revlog `ease` of the Again button.
+const AGAIN: u8 = 1;
 const QUEST_XP: u64 = 50;
 const ALL_QUESTS_XP: u64 = 100;
 const RECENT_DAYS: usize = 14;
@@ -67,6 +69,10 @@ pub struct Review {
     pub ivl: Option<i64>,
     pub time_ms: i64,
     pub kind: u8,
+    /// The button pressed, from the revlog: 1 Again, 2 Hard, 3 Good, 4 Easy.
+    /// Clients that predate it leave it out.
+    #[serde(default)]
+    pub ease: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
@@ -1361,9 +1367,12 @@ pub fn compute_with_rules(
             freezes = 0;
         }
         let stats = days.get(&day);
-        let needed_ms = i64::from(streak_rule.minutes_at(clock.day_start_ms(day))) * 60_000;
+        let needed_ms =
+            i64::from(streak_rule.minutes_at(clock.day_start_ms(day))) * ankiquest_rules::MINUTE_MS;
         // A day with observed answers counts: their duration is not known.
-        let counts = stats.is_some_and(|s| s.time_ms >= needed_ms || s.observed > 0);
+        let counts = stats.is_some_and(|s| {
+            ankiquest_rules::meets_minimum(s.reviews, s.time_ms, needed_ms) || s.observed > 0
+        });
         let (year, month_of_year, date) = civil(day);
         if (year, month_of_year) != month {
             month = (year, month_of_year);
@@ -1656,9 +1665,13 @@ pub fn compute_with_rules(
     let today_start = clock.day_start_ms(today);
     let studied_today = days.contains_key(&today);
     let streak_minutes = u64::from(streak_rule.minutes_at(today_start));
-    let today_met = days
-        .get(&today)
-        .is_some_and(|s| s.time_ms >= streak_minutes as i64 * 60_000);
+    let today_met = days.get(&today).is_some_and(|s| {
+        ankiquest_rules::meets_minimum(
+            s.reviews,
+            s.time_ms,
+            streak_minutes as i64 * ankiquest_rules::MINUTE_MS,
+        )
+    });
     let today_counts = today_met || days.get(&today).is_some_and(|s| s.observed > 0);
     for window in 0..Records::NAMES.len() {
         let entries = if window == 0 { &reviewed } else { &everything };
@@ -1873,11 +1886,13 @@ pub struct Conquest {
 
 /// Hard cards learned at last, oldest first.
 ///
-/// A lapse is a review answered into relearning: a negative new interval, or, from
-/// clients that do not send it, a relearning step right after the review. A card is
+/// A lapse is a review answered Again. From clients that do not send the button, it is a
+/// review answered into relearning: a negative new interval, or, from clients that do not
+/// send that either, a relearning step right after the review. A card is
 /// conquered when an answer gives it a mature interval after its latest lapse; without
 /// the new interval, when a review finds it after a mature interval and it is not failed.
-/// Lapses without relearning steps cannot be told from a pass, so they go uncounted.
+/// Without the button, lapses without relearning steps cannot be told from a pass, so they
+/// go uncounted, and forks that log intraday review intervals count their passes as lapses.
 pub fn conquests(reviews: &[Review], now_ms: i64) -> Vec<Conquest> {
     let mut cards: HashMap<i64, Vec<&Review>> = HashMap::new();
     for r in reviews {
@@ -1890,9 +1905,10 @@ pub fn conquests(reviews: &[Review], now_ms: i64) -> Vec<Conquest> {
         for (i, r) in rows.iter().enumerate() {
             let next = rows.get(i + 1);
             let failed = r.kind == 1
-                && match r.ivl {
-                    Some(ivl) => ivl < 0,
-                    None => next.is_some_and(|n| n.kind == 2),
+                && match (r.ease, r.ivl) {
+                    (Some(ease), _) => ease == AGAIN,
+                    (None, Some(ivl)) => ivl < 0,
+                    (None, None) => next.is_some_and(|n| n.kind == 2),
                 };
             if failed {
                 lapses += 1;
@@ -2061,6 +2077,59 @@ mod tests {
     }
 
     #[test]
+    fn the_button_decides_a_lapse_when_the_client_sends_it() {
+        // Rows as a client uploads them, one card answered a day apart:
+        // (kind, last_ivl, ivl, ease), where ease 0 means the client left it out.
+        let upload = |cid: i64, answers: &[(u8, i64, i64, u8)]| -> Vec<Review> {
+            answers
+                .iter()
+                .enumerate()
+                .map(|(i, &(kind, last_ivl, ivl, ease))| {
+                    let mut row = serde_json::json!({
+                        "id": (cid * 1000 + i as i64) * DAY_MS,
+                        "cid": cid,
+                        "last_ivl": last_ivl,
+                        "ivl": ivl,
+                        "time_ms": 5000,
+                        "kind": kind,
+                    });
+                    if ease > 0 {
+                        row["ease"] = ease.into();
+                    }
+                    serde_json::from_value(row).unwrap()
+                })
+                .collect()
+        };
+        let now = i64::MAX / 2;
+
+        // Forks with intraday review intervals log a pass under 12 hours as negative
+        // seconds. Eight such passes, then a mature interval: no lapse, so no leech.
+        let mut passes = vec![(0, 0, 1, 3)];
+        passes.extend([(1, 1, -3600, 3); 8]);
+        passes.push((1, 1, 25, 3));
+        let intraday = upload(1, &passes);
+        assert!(conquests(&intraday, now).is_empty(), "passes are no lapses");
+        let at = intraday.last().unwrap().id;
+        let profile = compute("hill", "hill", &intraday, &utc(), &Week::default(), at);
+        assert_eq!(profile.lifetime.conquered, 0);
+        assert_eq!(profile.lifetime.leeches_tamed, 0);
+
+        // Again is a lapse, also without relearning steps, where the new interval is days.
+        let mut again = vec![(0, 0, 1, 3)];
+        again.extend([(1, 3, 1, 1); 4]);
+        again.push((1, 1, 25, 3));
+        let found = conquests(&upload(2, &again), now);
+        assert_eq!(found.iter().map(|c| c.lapses).collect::<Vec<_>>(), [4]);
+
+        // Rows without the button keep the interval rule.
+        let mut older = vec![(0, 0, 1, 0)];
+        older.extend([(1, 1, -3600, 0); 4]);
+        older.push((1, 1, 25, 0));
+        let found = conquests(&upload(3, &older), now);
+        assert_eq!(found.iter().map(|c| c.lapses).collect::<Vec<_>>(), [4]);
+    }
+
+    #[test]
     fn recent_conquests_are_announced_and_listed_newest_first() {
         let mut answers = vec![(0, 0, Some(1))];
         for _ in 0..4 {
@@ -2116,6 +2185,7 @@ mod tests {
             cid: ms,
             last_ivl: 0,
             ivl: None,
+            ease: None,
             time_ms: 5_000,
             kind: 1,
         };
@@ -2206,6 +2276,7 @@ mod tests {
                     cid: cid + i,
                     last_ivl: 0,
                     ivl: None,
+                    ease: None,
                     time_ms: 5_000,
                     kind: 1,
                 })
@@ -2273,6 +2344,7 @@ mod tests {
                     cid: 500 + index as i64,
                     last_ivl: 0,
                     ivl: None,
+                    ease: None,
                     time_ms: 5_000,
                     kind: 1,
                 })
@@ -2601,9 +2673,18 @@ mod tests {
                     review.last_ivl,
                     review.ivl,
                     review.time_ms,
-                    i64::from(review.kind)
+                    i64::from(review.kind),
+                    review.ease.map(i64::from)
                 ),
-                (row[0], row[1], row[2], Some(row[3]), row[4], row[5])
+                (
+                    row[0],
+                    row[1],
+                    row[2],
+                    Some(row[3]),
+                    row[4],
+                    row[5],
+                    Some(row[6])
+                )
             );
         }
     }

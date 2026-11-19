@@ -126,7 +126,8 @@ impl Fixture {
                     "last_ivl": 1,
                     "ivl": 3,
                     "time_ms": 8_000,
-                    "kind": 1
+                    "kind": 1,
+                    "ease": 3
                 })
             })
             .collect();
@@ -624,7 +625,8 @@ async fn examples_match_the_handlers() {
                     "last_ivl": 1,
                     "ivl": 3,
                     "time_ms": 9_000,
-                    "kind": 1
+                    "kind": 1,
+                    "ease": 3
                 })
             })
         })
@@ -820,23 +822,24 @@ async fn examples_match_the_handlers() {
     ));
     // One card hill forgot four times over the past weeks before it earned a 25-day interval
     // yesterday: a review failed into relearning, then the relearning step, four times. He says
-    // what the card was.
-    let answers: Vec<(i64, i64, i64)> = std::iter::once((0, 0, 1))
-        .chain((0..4).flat_map(|_| [(1, 3, -600), (2, -600, 1)]))
-        .chain([(1, 1, 8), (1, 8, 25)])
+    // what the card was. Rows: (kind, last_ivl, ivl, ease), ease 1 being Again.
+    let answers: Vec<(i64, i64, i64, i64)> = std::iter::once((0, 0, 1, 3))
+        .chain((0..4).flat_map(|_| [(1, 3, -600, 1), (2, -600, 1, 3)]))
+        .chain([(1, 1, 8, 3), (1, 8, 25, 3)])
         .collect();
     let first = NOW_MS - answers.len() as i64 * 86_400_000;
     let card: Vec<Value> = answers
         .iter()
         .enumerate()
-        .map(|(index, &(kind, last_ivl, ivl))| {
+        .map(|(index, &(kind, last_ivl, ivl, ease))| {
             json!({
                 "id": first + index as i64 * 86_400_000,
                 "cid": 9_000,
                 "last_ivl": last_ivl,
                 "ivl": ivl,
                 "time_ms": 7_000,
-                "kind": kind
+                "kind": kind,
+                "ease": ease
             })
         })
         .collect();
@@ -1098,7 +1101,7 @@ async fn examples_match_the_handlers() {
         "/api/reviews/cerro",
         Some("cerro-secret"),
         json!({
-            "reviews": [{"id": NOW_MS - 60_000, "cid": 9_000, "last_ivl": 1, "ivl": 3, "time_ms": 36_000_000, "kind": 1}],
+            "reviews": [{"id": NOW_MS - 60_000, "cid": 9_000, "last_ivl": 1, "ivl": 3, "time_ms": 36_000_000, "kind": 1, "ease": 3}],
             "clock": {"offset_west_min": 0, "rollover_hour": 4}
         }),
     )

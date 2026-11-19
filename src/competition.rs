@@ -1219,6 +1219,7 @@ mod tests {
                 cid: at(day, 12) + index,
                 last_ivl: 10,
                 ivl: None,
+                ease: None,
                 time_ms: 10_000,
                 kind: 1,
             })
@@ -1771,6 +1772,7 @@ mod tests {
             cid: id,
             last_ivl: 10,
             ivl: None,
+            ease: None,
             time_ms: 10_000,
             kind: 1,
         };
@@ -2168,6 +2170,7 @@ mod tests {
                 cid: at + index,
                 last_ivl: 10,
                 ivl: None,
+                ease: None,
                 time_ms: 10_000,
                 kind: 1,
             })

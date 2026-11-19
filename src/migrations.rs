@@ -23,6 +23,7 @@ const STEPS: &[Step] = &[
     share_receipts,
     quest_companions,
     group_invitations,
+    review_ease,
 ];
 
 /// Brings the database up to the latest step, then turns foreign keys on for the connection.
@@ -289,6 +290,11 @@ fn quest_companions(conn: &Connection) -> Result<(), Error> {
 /// Invitations to a group reach the invitee's inbox as rows that name the group.
 fn group_invitations(conn: &Connection) -> Result<(), Error> {
     add_column(conn, "notifications", "group_id", "integer")
+}
+
+/// Reviews keep the answer button, so a lapse is judged by Again rather than by the interval.
+fn review_ease(conn: &Connection) -> Result<(), Error> {
+    add_column(conn, "reviews", "ease", "integer")
 }
 
 #[cfg(test)]
@@ -601,6 +607,31 @@ mod tests {
         let store = Store::open(&dir).unwrap();
         assert_eq!(version(&store.conn), STEPS.len());
         assert!(has_column(&store.conn, "win_deliveries", "send_until").unwrap());
+        cleanup(store, dir);
+    }
+
+    #[test]
+    fn stored_reviews_gain_the_button_and_keep_their_rows() {
+        let dir = temp_dir("review-ease");
+        drop(Store::open(&dir).unwrap());
+        {
+            // A database from before reviews kept the button.
+            let conn = Connection::open(dir.join("ankiquest.db")).unwrap();
+            conn.execute_batch(&format!(
+                "alter table reviews drop column ease;
+                 insert into reviews (user, id, cid, last_ivl, ivl, time_ms, kind)
+                     values ('hill', 1, 10, 3, -600, 5000, 1);
+                 pragma user_version = {};",
+                STEPS.len() - 1
+            ))
+            .unwrap();
+        }
+        let store = Store::open(&dir).unwrap();
+        assert_eq!(version(&store.conn), STEPS.len());
+        let reviews = store.reviews("hill").unwrap();
+        assert_eq!(reviews.len(), 1);
+        assert_eq!(reviews[0].ivl, Some(-600));
+        assert_eq!(reviews[0].ease, None);
         cleanup(store, dir);
     }
 

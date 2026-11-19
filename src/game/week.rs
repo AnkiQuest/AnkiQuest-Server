@@ -152,6 +152,7 @@ mod tests {
             cid: id,
             last_ivl: 0,
             ivl: None,
+            ease: None,
             time_ms: 5_000,
             kind: 1,
         };
@@ -231,6 +232,7 @@ mod tests {
             cid: id,
             last_ivl: 0,
             ivl: None,
+            ease: None,
             time_ms: 5_000,
             kind: 1,
         };
@@ -298,6 +300,7 @@ mod tests {
                 cid: 1,
                 last_ivl: 0,
                 ivl: None,
+                ease: None,
                 time_ms: 5_000,
                 kind: 1,
             };

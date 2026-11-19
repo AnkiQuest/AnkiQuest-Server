@@ -14,6 +14,7 @@ pub(super) fn card(cid: i64, answers: &[(u8, i64, Option<i64>)]) -> Vec<Review> 
             cid,
             last_ivl,
             ivl,
+            ease: None,
             time_ms: 5000,
             kind,
         })
@@ -36,6 +37,7 @@ pub(super) fn reviews_on(day: i64, count: i64, cid_base: i64) -> Vec<Review> {
             cid: cid_base + i,
             last_ivl: 0,
             ivl: None,
+            ease: None,
             time_ms: 5_000,
             kind: 1,
         })
@@ -93,6 +95,7 @@ pub(super) fn perfect_day(prior: &[Review], day: i64, clock: &Clock) -> Vec<Revi
                 cid: id,
                 last_ivl: MATURE_IVL,
                 ivl: None,
+                ease: None,
                 time_ms: 60_000,
                 kind: 0,
             }
@@ -140,6 +143,7 @@ pub(super) fn moment(at: i64, cid: i64) -> Review {
         cid,
         last_ivl: 0,
         ivl: None,
+        ease: None,
         time_ms: 5_000,
         kind: 1,
     }
@@ -175,6 +179,7 @@ pub(super) fn minutes_on(day: i64, minutes: i64) -> Vec<Review> {
                 cid: id,
                 last_ivl: 0,
                 ivl: None,
+                ease: None,
                 time_ms: 60_000,
                 kind: 1,
             }

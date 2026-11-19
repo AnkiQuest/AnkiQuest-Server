@@ -664,6 +664,7 @@ mod tests {
             cid: 1,
             last_ivl: 0,
             ivl: Some(1),
+            ease: None,
             time_ms: 1_000,
             kind: 0,
         }

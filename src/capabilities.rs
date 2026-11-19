@@ -29,6 +29,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "mute",
     crate::observations::FEATURE,
     "reactions",
+    "review_ease",
     "review_offsets",
     "settings_sync",
     "share_cards",

@@ -90,6 +90,7 @@ mod tests {
             cid: 1,
             last_ivl: 30,
             ivl: None,
+            ease: None,
             time_ms: 4_000,
             kind: 1,
         };
@@ -103,6 +104,7 @@ mod tests {
             cid: 1,
             last_ivl: 30,
             ivl: None,
+            ease: None,
             time_ms: 200,
             kind: 1,
         };
@@ -116,6 +118,7 @@ mod tests {
             cid,
             last_ivl: 0,
             ivl: None,
+            ease: None,
             time_ms: 5_000,
             kind: 1,
         };
@@ -139,6 +142,7 @@ mod tests {
                     cid: 7,
                     last_ivl: 0,
                     ivl: None,
+                    ease: None,
                     time_ms: 5_000,
                     kind,
                 })
@@ -157,6 +161,7 @@ mod tests {
             cid,
             last_ivl: 0,
             ivl: None,
+            ease: None,
             time_ms: 5_000,
             kind: 1,
         };
@@ -201,6 +206,7 @@ mod tests {
             cid: 7,
             last_ivl,
             ivl: None,
+            ease: None,
             time_ms: 5_000,
             kind,
         };

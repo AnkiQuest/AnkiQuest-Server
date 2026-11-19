@@ -109,6 +109,8 @@ impl ObservedAnswer {
             ivl: self.ivl,
             time_ms: 0,
             kind: self.kind,
+            // AnkiDroid's provider does not say which button was pressed.
+            ease: None,
         }
     }
 }
@@ -331,6 +333,7 @@ pub fn merge(exact: &[Review], observed: &Observed, clock: &ClockHistory) -> Vec
                     ivl: None,
                     time_ms: 0,
                     kind: 0,
+                    ease: None,
                 },
                 source: Source::Counted,
             });

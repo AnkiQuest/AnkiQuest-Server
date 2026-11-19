@@ -766,6 +766,7 @@ mod tests {
                 cid: 1,
                 last_ivl: 1,
                 ivl: None,
+                ease: None,
                 time_ms: 10_000,
                 kind: 1,
             }],
