@@ -1,0 +1,19 @@
+{
+  "_about": "The file that shows each of Anki-tan chibi's poses, relative to this folder (AGENTS.md, Companion art). Shigeyuki's pack art where it fits (../README.md); frozen is the generated master. art-coverage reads this list; a pose missing here has no master.",
+  "poses": {
+    "face": "../emoji/Ankitan_00_smile.png",
+    "asleep": "../emoji/Ankitan_35_sleeping.png",
+    "happy": "../emoji/Ankitan_10_party.png",
+    "streak": "../emoji/Ankitan_09_fire_eyes.png",
+    "sad": "../emoji/Ankitan_02_cry.png",
+    "hopeful": "../emoji/Ankitan_06_pleading.png",
+    "frozen": "frozen.png",
+    "neglected": "../emoji/Ankitan_49_lost_streaks.png",
+    "welcome": "../emoji/Ankitan_21_saluting.png",
+    "review": "../sticker/press_spacebar.png",
+    "streak_legend": "../emoji/Ankitan_43_crown.png",
+    "streak_milestone": "../emoji/Ankitan_48_perfect_streaks.png",
+    "hurt": "../emoji/Ankitan_28_spiral_eyes.png",
+    "dead": "../emoji/Ankitan_39_crossed_out_eyes.png"
+  }
+}

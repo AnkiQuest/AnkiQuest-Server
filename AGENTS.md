@@ -78,9 +78,12 @@ Companion art means every picture of a character: poses, moment and card picture
 
 - Masters live only in `static/<companion>/` in AnkiQuest-Server. Every other copy (share cards, add-on, Android, docs) is generated from them by the exporters and hash-checked in CI; never commit a hand-made copy.
 - Never delete companion art, even when nothing uses it any more. Remove the references, keep the files, so they can be reused or merged later.
-- Each character needs a core set of poses before it goes live in the apps: face, asleep, happy, streak (on fire), sad, hopeful, frozen and neglected. A character without the full core set stays hidden.
-- Every other pose is an extension: streak tiers, milestones, frozen days 2 and 3, hurt, dead, welcome, a defeated leech, and poses for other rare moments. Extensions are optional. A missing extension falls back to its core pose (a streak tier to streak, frozen 3 to frozen, a defeated leech to happy).
-- The core set, the extensions and their fallbacks are defined once, in [`tests/fixtures/companion_poses.json`](https://github.com/AnkiQuest/AnkiQuest-Server/blob/master/tests/fixtures/companion_poses.json) in AnkiQuest-Server; both clients use that list.
+- Every live companion has every pose listed in [`tests/fixtures/companion_poses.json`](https://github.com/AnkiQuest/AnkiQuest-Server/blob/master/tests/fixtures/companion_poses.json) in AnkiQuest-Server; both clients use that list.
+- A new companion goes live only with every pose drawn.
+- A PR that adds a pose to the list adds its art for every live companion. CI fails a PR that adds a pose without it.
+- No placeholder pictures: no stand-in, recoloured or borrowed art for a missing pose.
+- One exception (hill, 2026-11-19): Anki-tan goes live before her missing extensions are drawn (`streak_hot`, `streak_blazing`, `frozen_2`, `frozen_3`, `abandoned`, `leech_defeated`, `winner`); they show their fallbacks until then. Drawing them comes first in AnkiQuest/AnkiQuest-Server#57. No other companion goes live with missing poses.
+- Until the missing poses are drawn (AnkiQuest/AnkiQuest-Server#57), the clients keep the current fallbacks: a missing extension shows the fallback the list gives it (a streak tier shows streak, frozen 3 shows frozen), and Bluma shows Ankilope's art recoloured where hers is missing. These are temporary. Once every live companion has every pose, remove them from the list and both clients.
 
 ## Writing
 
