@@ -189,7 +189,7 @@ jobs:
             done
             echo
             echo "Byte-identical across two clean builds."
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -281,10 +281,10 @@ jobs:
             echo "| ${{ matrix.name }} | ${{ matrix.lib }} | $bytes |"
             echo
             echo "Byte-identical across two clean builds."
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
           if [ "${{ runner.os }}" = Linux ]; then
             glibc=$(objdump -T "desktop/${{ matrix.lib }}" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
-            echo "Newest glibc symbol: $glibc" >> "$GITHUB_STEP_SUMMARY"
+            echo "Newest glibc symbol: $glibc" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
 
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
