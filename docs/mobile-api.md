@@ -8,7 +8,7 @@ these additions preserve bearer authentication and the existing notification arr
 `GET /api/capabilities` needs no sign-in, also on a private site, and may be cached for five minutes (`Cache-Control: max-age=300`). It answers what this server supports, so a client can turn a feature on when the server has it instead of waiting for a deploy:
 
 ```json
-{ "version": 1, "features": ["activity", "app_sign_in", "companion_art", "companion_milestones", "companion_unlocks", "cookie_session", "deck_share", "devices", "global_leaderboard_hide", "goal_backlog_days", "group_invites", "messages", "mute", "reactions", "review_ease", "review_offsets", "settings_sync", "share_cards", "share_moments", "share_undo_send", "upload_first", "wins"], "public_url": "https://anki.example.test" }
+{ "version": 1, "features": ["activity", "app_sign_in", "companion_art", "companion_milestones", "companion_unlocks", "cookie_session", "countdowns", "deck_share", "devices", "global_leaderboard_hide", "goal_backlog_days", "group_invites", "messages", "mute", "reactions", "review_ease", "review_offsets", "settings_sync", "share_cards", "share_moments", "share_undo_send", "upload_first", "wins"], "public_url": "https://anki.example.test" }
 ```
 
 `public_url` is the server's main address, without a trailing slash, and is present only when the server has `public_url` configured. A client that saved another address for the same server (an old address that proxies to it) may move to this one: it checks that its saved token works there with one signed-in request that needs it, such as `GET /api/devices/{user}` (the profile also answers without a token), and only then saves the new address and moves anything it keeps per address. Clients only move to an `https` address, keep the saved one when the check fails or they are offline, and ignore the field otherwise.
@@ -20,6 +20,7 @@ these additions preserve bearer authentication and the existing notification arr
 | `companion_art` | the inbox leaves out a companion's unlock moment unless the request names that companion in `X-AnkiQuest-Companion-Art` (below, study companion) |
 | `companion_milestones` | the server grants companions at milestones and answers `progress` in `GET /api/unlocks/{user}`; Ankilope is locked too (below, study companion) |
 | `companion_unlocks` | `/api/unlocks/{user}` and the companion `cow` (below, study companion) |
+| `countdowns` | the synced setting `countdowns`, a player's events and exams (below, synced settings). Older servers keep it as an unknown key only up to 1024 bytes |
 | `cookie_session` | the web dashboard works with the session cookie alone when the native app hands it only `{user}`, no token |
 | `deck_share` | telling chosen friends about a deck just finished, `POST /api/decks/{user}/share` (see [sharing.md](sharing.md)) |
 | `devices` | password change and the device list and sign-out (`/api/devices/{user}`, see `docs/server.md`) |
@@ -133,6 +134,12 @@ Both need the player's token. Send only the keys that changed, each with the tim
 Clients keep, for each key they have, the time of the last local change (`0` for a value chosen before sync existed). On sign-in, on start, on their regular refresh and after the player changes a synced setting, they read the server's settings and, per key, apply the server's value when its `updated_at` is at least the local time, or send the local value when it is newer or the server has none. A value chosen before sync existed is sent with `updated_at` 0 only when it differs from the default, so any real change elsewhere wins over it. Clients ignore keys they don't have and values they cannot use.
 
 **Sync settings** (default on) is a device setting, never synced. While it is off a client neither sends nor applies synced settings; it still records the time of each local change, so turning it on again merges by the same rule. Clients only sync with a server that lists `settings_sync`.
+
+### countdowns
+
+The synced setting `countdowns` is the player's list of events and exams, sent and merged as one value: a change on one device replaces the whole list on the others, so two devices editing the list at the same time keep the later edit only. Each event is `{"name", "date", "deck"}`: a name (not blank, at most 60 code points), a date `YYYY-MM-DD`, and the full name of an Anki deck to finish by then (`Spanish::A1`, at most 200 code points) or `null`. A player keeps at most 20 events. The limits are the key's entry in [`tests/fixtures/synced_settings.json`](../tests/fixtures/synced_settings.json); a list that breaks them, has another field, or a date that does not exist is refused with `400`. Clients send `countdowns` only to a server that lists `countdowns`: an older server would refuse a list over 1024 bytes. Example: [settings_countdowns.json](api/examples/settings_countdowns.json).
+
+Countdowns are private: only the player's own token reads them, they never appear on profiles, boards or friends' pages, and they are part of the data download. The server does not interpret them. Both clients show the nearest event that is not over ("Spanish exam in 12 days") and, when a deck is linked, the cards a day needed to finish it ("~25 cards a day to finish Spanish › A1 by then"), by the cases in [`tests/fixtures/countdowns.json`](../tests/fixtures/countdowns.json): days counted from the Anki day (the collection's day start hour), the nearest event, the list order, the Anki search for the cards left and the cards a day.
 
 ## two-factor authentication
 

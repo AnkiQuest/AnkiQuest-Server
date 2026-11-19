@@ -1,0 +1,227 @@
+{
+  "_about": "Countdowns to a player's events and exams. The list is the synced setting `countdowns` (synced_settings.json holds its limits); the server only checks that it is well formed. Both clients compute what they show from the cases here. `days`: an Anki day starts at the collection's day start hour (Anki's \"next day starts at\"), so today is the local date of `now` minus `day_start_hour` hours; `days` is the event's date minus today, and `state` names it. `nearest`: the event Home and Today show, the one with the fewest days that is not past; on a tie the first in the list. `order`: the list in settings, by date and on a tie in stored order, past ones included until the player removes them. `search`: the Anki search for the cards a linked deck still has before the event (subdecks included, suspended cards left out): new, learning, and review cards due before the event day. `pace`: cards a day from today up to the day before the event, rounded up; `remaining` null means no deck is linked or the collection has no such deck. `wording`: the English text; each client translates it. `pace_one` and `pace_other` are the plural forms of one message.",
+  "wording": {
+    "section": "Countdowns",
+    "empty": "Add an exam or event to count down to it.",
+    "add": "Add countdown",
+    "edit": "Edit countdown",
+    "manage": "Edit countdowns",
+    "name": "Name",
+    "date": "Date",
+    "deck": "Deck (optional)",
+    "no_deck": "No deck",
+    "save": "Save",
+    "delete": "Delete",
+    "name_missing": "Enter a name.",
+    "full": "You have the most countdowns you can keep. Delete one to add another.",
+    "private": "Only you see your countdowns.",
+    "upcoming": "{name} in {days} days",
+    "tomorrow": "{name} tomorrow",
+    "today": "{name} today",
+    "past": "{name} is over",
+    "pace_one": "~{cards} card a day to finish {deck} by then",
+    "pace_other": "~{cards} cards a day to finish {deck} by then",
+    "done": "Nothing left in {deck} before then"
+  },
+  "days": [
+    {
+      "name": "an exam twelve days away",
+      "now": "2026-11-19T10:00",
+      "day_start_hour": 4,
+      "date": "2026-12-01",
+      "expected": {"state": "upcoming", "days": 12}
+    },
+    {
+      "name": "the day before",
+      "now": "2026-11-19T10:00",
+      "day_start_hour": 4,
+      "date": "2026-11-20",
+      "expected": {"state": "tomorrow", "days": 1}
+    },
+    {
+      "name": "the day itself",
+      "now": "2026-11-19T10:00",
+      "day_start_hour": 4,
+      "date": "2026-11-19",
+      "expected": {"state": "today", "days": 0}
+    },
+    {
+      "name": "the day after",
+      "now": "2026-11-19T10:00",
+      "day_start_hour": 4,
+      "date": "2026-11-18",
+      "expected": {"state": "past", "days": -1}
+    },
+    {
+      "name": "before the day start it is still the day before",
+      "now": "2026-11-20T03:59",
+      "day_start_hour": 4,
+      "date": "2026-11-20",
+      "expected": {"state": "tomorrow", "days": 1}
+    },
+    {
+      "name": "at the day start the new day begins",
+      "now": "2026-11-20T04:00",
+      "day_start_hour": 4,
+      "date": "2026-11-20",
+      "expected": {"state": "today", "days": 0}
+    },
+    {
+      "name": "a day start at midnight",
+      "now": "2026-11-20T00:00",
+      "day_start_hour": 0,
+      "date": "2026-11-20",
+      "expected": {"state": "today", "days": 0}
+    },
+    {
+      "name": "the latest day start",
+      "now": "2026-11-20T22:30",
+      "day_start_hour": 23,
+      "date": "2026-11-20",
+      "expected": {"state": "tomorrow", "days": 1}
+    },
+    {
+      "name": "after midnight but before the day start the event day goes on",
+      "now": "2026-11-21T03:00",
+      "day_start_hour": 4,
+      "date": "2026-11-20",
+      "expected": {"state": "today", "days": 0}
+    },
+    {
+      "name": "across the end of a year",
+      "now": "2026-12-30T12:00",
+      "day_start_hour": 4,
+      "date": "2027-01-02",
+      "expected": {"state": "upcoming", "days": 3}
+    },
+    {
+      "name": "across a leap day",
+      "now": "2028-02-28T12:00",
+      "day_start_hour": 4,
+      "date": "2028-03-01",
+      "expected": {"state": "upcoming", "days": 2}
+    },
+    {
+      "name": "across a clock change, counted in local dates",
+      "now": "2026-10-24T12:00",
+      "day_start_hour": 4,
+      "date": "2026-10-26",
+      "expected": {"state": "upcoming", "days": 2}
+    },
+    {
+      "name": "a year away",
+      "now": "2026-11-19T10:00",
+      "day_start_hour": 4,
+      "date": "2027-11-19",
+      "expected": {"state": "upcoming", "days": 365}
+    }
+  ],
+  "nearest": [
+    {
+      "name": "the nearest upcoming event",
+      "today": "2026-11-19",
+      "events": [
+        {"name": "Driving theory", "date": "2026-12-01", "deck": null},
+        {"name": "Spanish exam", "date": "2026-11-25", "deck": "Spanish::A1"}
+      ],
+      "expected": "Spanish exam"
+    },
+    {
+      "name": "an event today comes before later ones",
+      "today": "2026-11-19",
+      "events": [
+        {"name": "Driving theory", "date": "2026-11-25", "deck": null},
+        {"name": "Spanish exam", "date": "2026-11-19", "deck": null}
+      ],
+      "expected": "Spanish exam"
+    },
+    {
+      "name": "past events are skipped",
+      "today": "2026-11-19",
+      "events": [
+        {"name": "Biology test", "date": "2026-11-18", "deck": null},
+        {"name": "Spanish exam", "date": "2026-11-30", "deck": null}
+      ],
+      "expected": "Spanish exam"
+    },
+    {
+      "name": "on the same day the first in the list wins",
+      "today": "2026-11-19",
+      "events": [
+        {"name": "Spanish exam", "date": "2026-11-25", "deck": null},
+        {"name": "Driving theory", "date": "2026-11-25", "deck": null}
+      ],
+      "expected": "Spanish exam"
+    },
+    {
+      "name": "only past events: nothing to show",
+      "today": "2026-11-19",
+      "events": [
+        {"name": "Biology test", "date": "2026-11-18", "deck": null}
+      ],
+      "expected": null
+    },
+    {
+      "name": "no events: nothing to show",
+      "today": "2026-11-19",
+      "events": [],
+      "expected": null
+    }
+  ],
+  "order": [
+    {
+      "name": "by date, past ones first",
+      "events": [
+        {"name": "Driving theory", "date": "2026-12-01", "deck": null},
+        {"name": "Biology test", "date": "2026-11-18", "deck": null},
+        {"name": "Spanish exam", "date": "2026-11-25", "deck": "Spanish::A1"}
+      ],
+      "expected": ["Biology test", "Spanish exam", "Driving theory"]
+    },
+    {
+      "name": "on the same day in stored order",
+      "events": [
+        {"name": "Spanish oral", "date": "2026-11-25", "deck": null},
+        {"name": "Spanish written", "date": "2026-11-25", "deck": null},
+        {"name": "Biology test", "date": "2026-11-20", "deck": null}
+      ],
+      "expected": ["Biology test", "Spanish oral", "Spanish written"]
+    }
+  ],
+  "search": [
+    {
+      "name": "a deck twelve days ahead",
+      "deck": "Spanish::A1",
+      "days": 12,
+      "expected": "deck:\"Spanish::A1\" -is:suspended (is:new OR is:learn OR prop:due<12)"
+    },
+    {
+      "name": "the day before: only what is due today",
+      "deck": "Spanish",
+      "days": 1,
+      "expected": "deck:\"Spanish\" -is:suspended (is:new OR is:learn OR prop:due<1)"
+    },
+    {
+      "name": "quotes, backslashes and wildcards in the name are escaped",
+      "deck": "Math \"Calc\" 1_2*\\b",
+      "days": 3,
+      "expected": "deck:\"Math \\\"Calc\\\" 1\\_2\\*\\\\b\" -is:suspended (is:new OR is:learn OR prop:due<3)"
+    },
+    {
+      "name": "letters outside ASCII stay as they are",
+      "deck": "日本語::単語",
+      "days": 30,
+      "expected": "deck:\"日本語::単語\" -is:suspended (is:new OR is:learn OR prop:due<30)"
+    }
+  ],
+  "pace": [
+    {"name": "an even split", "days": 12, "remaining": 300, "expected": {"state": "per_day", "cards": 25}},
+    {"name": "rounded up", "days": 12, "remaining": 301, "expected": {"state": "per_day", "cards": 26}},
+    {"name": "one card a day", "days": 30, "remaining": 1, "expected": {"state": "per_day", "cards": 1}},
+    {"name": "everything on the day before", "days": 1, "remaining": 40, "expected": {"state": "per_day", "cards": 40}},
+    {"name": "nothing left", "days": 12, "remaining": 0, "expected": {"state": "done"}},
+    {"name": "no study day left on the day itself", "days": 0, "remaining": 50, "expected": {"state": "none"}},
+    {"name": "an event that is over", "days": -2, "remaining": 50, "expected": {"state": "none"}},
+    {"name": "no deck linked or the deck is gone", "days": 12, "remaining": null, "expected": {"state": "none"}}
+  ]
+}
