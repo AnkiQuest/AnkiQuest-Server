@@ -1,0 +1,291 @@
+name: Shared rules
+
+# Builds crates/rules for the clients (docs/shared-rules.md): the Kotlin
+# and Python bindings, the Android libraries per ABI and the desktop
+# library per OS. Each library is built twice from clean and must come
+# out byte-identical. The bindings run the fixture cases on the JVM and
+# on Python 3.9 (Anki 24.11) and 3.13 (newer Anki) on every desktop OS.
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: never
+  # The minSdk of the Android fork.
+  ANDROID_API: 24
+  # NDK r28c.
+  NDK_VERSION: 28.2.13676358
+  CARGO_NDK_VERSION: 4.1.2
+
+jobs:
+  bindings:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: crates/rules
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # rust-toolchain.toml in crates/rules names the toolchain.
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+
+      - name: Lint with the exports
+        run: cargo clippy --locked -p ankiquest-rules --all-targets --features bindgen -- -D warnings
+
+      - name: Test the fixture cases
+        run: cargo test --locked -p ankiquest-rules
+
+      # The bindings are read from the UniFFI metadata in an unstripped
+      # build; they do not depend on the target.
+      - name: Generate the Kotlin and Python bindings
+        run: |
+          cargo build --locked -p ankiquest-rules --features ffi
+          for language in kotlin python; do
+            cargo run --locked -p ankiquest-rules --features bindgen --bin uniffi-bindgen -- \
+              generate --no-format --library ../../target/debug/libankiquest_rules.so \
+              --language "$language" --out-dir "$RUNNER_TEMP/bindings/$language"
+          done
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ankiquest-rules-bindings
+          path: ${{ runner.temp }}/bindings
+          if-no-files-found: error
+
+      - name: Build the host library
+        run: cargo build --locked -p ankiquest-rules --features ffi --profile bindings
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: jetbrains
+          java-version: "21"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          gradle-version: "9.8.0"
+          cache-provider: basic
+
+      - name: Run the Kotlin bindings on the JVM
+        working-directory: crates/rules/bindings/kotlin
+        run: |
+          gradle --no-daemon run \
+            -Pbindings="$RUNNER_TEMP/bindings/kotlin" \
+            -Plibrary="$GITHUB_WORKSPACE/target/bindings" \
+            -Pfixture="$GITHUB_WORKSPACE/tests/fixtures/day_verdicts.json"
+
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: bindings
+    defaults:
+      run:
+        working-directory: crates/rules
+    env:
+      ABIS: arm64-v8a armeabi-v7a x86 x86_64
+      # No build id, 16 KB pages, and no machine paths in the library.
+      RUSTFLAGS: >-
+        -C link-arg=-Wl,--build-id=none
+        -C link-arg=-Wl,-z,max-page-size=16384
+        --remap-path-prefix=${{ github.workspace }}=.
+        --remap-path-prefix=/home/runner/.cargo=/cargo
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned toolchain and Android targets
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
+      - name: Install the NDK and cargo-ndk
+        working-directory: .
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          cargo install cargo-ndk --version "$CARGO_NDK_VERSION" --locked
+
+      # Builds every ABI into $1/<abi>.
+      - name: Build twice and compare
+        run: |
+          build() {
+            rm -rf ../../target
+            targets=()
+            for abi in $ABIS; do targets+=(-t "$abi"); done
+            cargo ndk "${targets[@]}" -P "$ANDROID_API" \
+              build --locked -p ankiquest-rules --features ffi --profile bindings
+            for abi in $ABIS; do
+              case "$abi" in
+                arm64-v8a) triple=aarch64-linux-android ;;
+                armeabi-v7a) triple=armv7-linux-androideabi ;;
+                x86) triple=i686-linux-android ;;
+                x86_64) triple=x86_64-linux-android ;;
+              esac
+              mkdir -p "$1/$abi"
+              cp "../../target/$triple/bindings/libankiquest_rules.so" "$1/$abi/"
+            done
+          }
+          build "$RUNNER_TEMP/first"
+          build "$RUNNER_TEMP/android/jniLibs"
+          cd "$RUNNER_TEMP"
+          (cd first && sha256sum */*.so) > first.sha256
+          (cd android/jniLibs && sha256sum */*.so) > android/SHA256SUMS
+          cat android/SHA256SUMS
+          diff first.sha256 android/SHA256SUMS
+
+      - name: Check the libraries
+        working-directory: ${{ runner.temp }}/android/jniLibs
+        run: |
+          readelf="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          for lib in */libankiquest_rules.so; do
+            if "$readelf" -n "$lib" | grep -q "Build ID"; then
+              echo "$lib has a build id" >&2
+              exit 1
+            fi
+            if "$readelf" -S "$lib" | grep -q "\.symtab"; then
+              echo "$lib is not stripped" >&2
+              exit 1
+            fi
+          done
+          # 16 KB page alignment on the 64-bit ABIs.
+          for abi in arm64-v8a x86_64; do
+            "$readelf" -l "$abi/libankiquest_rules.so" | awk '$1 == "LOAD" && $NF != "0x4000" { bad = 1 } END { exit bad }'
+          done
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ankiquest-rules-bindings
+          path: ${{ runner.temp }}/bindings
+
+      - name: Add the Kotlin sources and report sizes
+        working-directory: ${{ runner.temp }}
+        run: |
+          cp -r bindings/kotlin android/kotlin
+          {
+            echo "### Android libraries"
+            echo
+            echo "| ABI | Bytes |"
+            echo "| --- | ---: |"
+            for abi in $ABIS; do
+              echo "| $abi | $(stat -c %s "android/jniLibs/$abi/libankiquest_rules.so") |"
+            done
+            echo
+            echo "Byte-identical across two clean builds."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ankiquest-rules-android
+          path: ${{ runner.temp }}/android
+          if-no-files-found: error
+
+  desktop:
+    needs: bindings
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            name: linux-x86_64
+            target: x86_64-unknown-linux-gnu
+            lib: libankiquest_rules.so
+            flags: -C link-arg=-Wl,--build-id=none
+          - os: windows-2025
+            name: windows-x86_64
+            target: x86_64-pc-windows-msvc
+            lib: ankiquest_rules.dll
+            flags: -C link-arg=/Brepro
+          # ld64 derives the UUID from the contents, so it needs no flag.
+          - os: macos-15
+            name: macos-arm64
+            target: aarch64-apple-darwin
+            lib: libankiquest_rules.dylib
+            flags: ""
+          - os: macos-15-intel
+            name: macos-x86_64
+            target: x86_64-apple-darwin
+            lib: libankiquest_rules.dylib
+            flags: ""
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: crates/rules
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: rustup toolchain install && rustup target add ${{ matrix.target }}
+
+      # No machine paths in the library.
+      - name: Build twice and compare
+        run: |
+          export RUSTFLAGS="${{ matrix.flags }} --remap-path-prefix=$GITHUB_WORKSPACE=. --remap-path-prefix=$HOME/.cargo=/cargo"
+          out="$RUNNER_TEMP/desktop"
+          build() {
+            rm -rf ../../target
+            cargo build --locked -p ankiquest-rules --features ffi --profile bindings --target ${{ matrix.target }}
+            mkdir -p "$1"
+            cp "../../target/${{ matrix.target }}/bindings/${{ matrix.lib }}" "$1/"
+          }
+          build "$RUNNER_TEMP/first"
+          build "$out"
+          first=$(cd "$RUNNER_TEMP/first" && shasum -a 256 ${{ matrix.lib }})
+          (cd "$out" && shasum -a 256 ${{ matrix.lib }}) > "$RUNNER_TEMP/SHA256SUMS"
+          cat "$RUNNER_TEMP/SHA256SUMS"
+          [ "$first" = "$(cat "$RUNNER_TEMP/SHA256SUMS")" ]
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ankiquest-rules-bindings
+          path: ${{ runner.temp }}/bindings
+
+      - name: Add the Python module and report the size
+        working-directory: ${{ runner.temp }}
+        run: |
+          cp bindings/python/ankiquest_rules.py desktop/
+          mv SHA256SUMS desktop/
+          bytes=$(wc -c < "desktop/${{ matrix.lib }}" | tr -d ' ')
+          echo "| ${{ matrix.name }} | ${{ matrix.lib }} | $bytes |" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ runner.os }}" = Linux ]; then
+            glibc=$(objdump -T "desktop/${{ matrix.lib }}" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+            echo "Newest glibc symbol: $glibc" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+
+      # The bindings load the library with ctypes, so one library serves
+      # every Python version.
+      - name: Run the Python bindings
+        run: |
+          for python in 3.9 3.13; do
+            uv run --no-project --python "$python" python -I bindings/python/test_day_verdicts.py \
+              "$RUNNER_TEMP/desktop" "$GITHUB_WORKSPACE/tests/fixtures/day_verdicts.json"
+          done
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ankiquest-rules-${{ matrix.name }}
+          path: ${{ runner.temp }}/desktop
+          if-no-files-found: error
