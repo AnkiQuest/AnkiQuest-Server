@@ -183,6 +183,7 @@ impl Store {
         crate::wins::initialize(&conn)?;
         crate::synced_settings::initialize(&conn)?;
         crate::crash_reports::initialize(&conn)?;
+        crate::observations::initialize(&conn)?;
         initialize_sync_signatures(&conn)?;
         crate::migrations::run(&conn)?;
         Ok(Self { conn, scratch })

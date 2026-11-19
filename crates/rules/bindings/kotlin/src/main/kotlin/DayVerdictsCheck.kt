@@ -21,6 +21,7 @@ private fun server(v: JSONObject): ServerDay {
             ServerToday(
                 startsAt = today.getLong("starts_at"),
                 reviews = today.getInt("reviews").toUInt(),
+                observed = today.optInt("observed", 0).toUInt(),
                 timeMs = today.getLong("time_ms"),
                 minutes = today.getInt("minutes").toUInt(),
                 streakMinutes = today.getInt("streak_minutes").toUInt(),
@@ -39,6 +40,7 @@ private fun shape(verdict: DayVerdict): Any {
         .put("streak_state", v.streakState?.name?.lowercase() ?: JSONObject.NULL)
         .put("streak", v.streak?.toLong() ?: JSONObject.NULL)
         .put("reviews", v.reviews.toLong())
+        .put("observed", v.observed.toLong())
         .put("time_ms", v.timeMs)
         .put("minutes", v.minutes.toLong())
         .put("streak_minutes", v.streakMinutes.toLong())
@@ -56,7 +58,9 @@ fun main(args: Array<String>) {
         val reviews =
             (0 until pending.length()).map {
                 val r = pending.getJSONObject(it)
-                PendingReview(id = r.getLong("id"), timeMs = r.getLong("time_ms"))
+                // An observed answer (AnkiQuest Lite) has no time_ms.
+                val timeMs = if (r.has("time_ms")) r.getLong("time_ms") else null
+                PendingReview(id = r.getLong("id"), timeMs = timeMs)
             }
         val actual = shape(todayVerdict(server(case.getJSONObject("server")), reviews, case.getLong("now_ms")))
         val expected = case.get("expected")

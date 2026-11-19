@@ -8,10 +8,15 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 #[cfg(test)]
 mod fixtures;
+mod observed;
 mod streak;
 mod week;
 mod xp;
 
+pub use observed::{
+    Baseline, CardState, Change, Observed, ObservedAnswer, Timing, XpSource, XpSources, observe,
+};
+use observed::{Source, merge};
 use streak::streak_milestone;
 pub use streak::{
     DayState, FreezePolicy, FreezePreference, MAX_FREEZES, PlayerStreakChange, StreakChange,
@@ -249,6 +254,8 @@ struct DayStats {
     first_seen: u64,
     longest_session_ms: i64,
     quests_completed_at: Option<i64>,
+    /// Answers whose duration is not known: observed by a client without the review log.
+    observed: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -663,6 +670,8 @@ pub struct AchievementView {
 pub struct HeatCell {
     pub date: String,
     pub reviews: u64,
+    /// Of `reviews`, those observed without the review log, whose duration is not known.
+    pub observed: u64,
     /// Review minutes that day, rounded down, as the streak minimum counts them.
     pub minutes: u64,
     /// The minutes the day needed to count toward the streak; 0 when any review counted.
@@ -869,6 +878,8 @@ pub struct Today {
     /// When today began (ms): reviews from then until `day_ends_at` count toward today.
     pub starts_at: i64,
     pub reviews: u64,
+    /// Of `reviews`, those observed without the review log, whose duration is not known.
+    pub observed: u64,
     /// Review time today, exact, which `minutes` rounds down. Clients add reviews that
     /// are not uploaded yet to it before comparing with `streak_minutes`.
     pub time_ms: i64,
@@ -884,7 +895,7 @@ pub struct Today {
 impl Today {
     /// Whether today already counts toward the streak.
     pub fn counts(&self) -> bool {
-        self.reviews > 0 && self.minutes >= self.streak_minutes
+        self.reviews > 0 && (self.minutes >= self.streak_minutes || self.observed > 0)
     }
 }
 
@@ -922,6 +933,8 @@ pub struct HistoryDay {
     pub date: String,
     pub xp: u64,
     pub reviews: u64,
+    /// Of `reviews`, those observed without the review log, whose duration is not known.
+    pub observed: u64,
     pub time_ms: i64,
     pub new_cards: u64,
     pub streak: u64,
@@ -941,6 +954,8 @@ pub struct Profile {
     pub xp_for_next: u64,
     pub week_xp: u64,
     pub periods: Periods,
+    /// Whether each period's XP includes observed answers.
+    pub xp_sources: XpSources,
     pub records: Records,
     pub streak: u64,
     pub streak_state: StreakState,
@@ -1085,23 +1100,31 @@ fn collect_days(
     clock: &Clock,
 ) -> (BTreeMap<i64, DayStats>, u64, Vec<(i64, f64)>) {
     collect_days_weighted(
-        reviews,
+        exact(reviews),
         &ClockHistory::single(*clock),
         0,
         ReviewWeighting::Flat,
     )
 }
 
-fn collect_days_with_quests(
-    reviews: &[Review],
+/// Review log rows as answers the game counts.
+fn exact(reviews: &[Review]) -> impl Iterator<Item = (&Review, Source)> {
+    reviews.iter().map(|review| (review, Source::Exact))
+}
+
+fn collect_days_with_quests<'a>(
+    answers: impl Iterator<Item = (&'a Review, Source)>,
     clock: &ClockHistory,
     seed: u64,
 ) -> (BTreeMap<i64, DayStats>, u64, Vec<(i64, f64)>) {
-    collect_days_weighted(reviews, clock, seed, review_weighting())
+    collect_days_weighted(answers, clock, seed, review_weighting())
 }
 
-fn collect_days_weighted(
-    reviews: &[Review],
+/// Each day's stats, the combo at the last answer, and the XP of every answer. Only exact
+/// answers have a duration and spacing, so only they make sessions and combos; an answer whose
+/// time of day is not known counts toward no quest or achievement about the time of day.
+fn collect_days_weighted<'a>(
+    study: impl Iterator<Item = (&'a Review, Source)>,
     clock: &ClockHistory,
     seed: u64,
     weighting: ReviewWeighting,
@@ -1117,7 +1140,7 @@ fn collect_days_weighted(
     let mut quests = Vec::new();
     let mut answers: HashMap<i64, i32> = HashMap::new();
     let mut walk = DayWalk::new(clock);
-    for r in reviews {
+    for (r, source) in study {
         let day = walk.day(r.id);
         let hour = clock.hour(r.id);
         if counted_day != Some(day) {
@@ -1132,25 +1155,31 @@ fn collect_days_weighted(
             counted_day = Some(day);
         }
         let s = days.entry(day).or_default();
-        let continues = prev.is_some_and(|(d, id)| d == day && r.id - id < SESSION_GAP_MS);
-        if continues {
-            combo += 1;
-            session_ms += r.time_ms;
-        } else {
-            combo = 1;
-            session_ms = r.time_ms;
-            s.sessions += 1;
-        }
-        prev = Some((day, r.id));
         s.reviews += 1;
-        s.time_ms += r.time_ms;
-        s.max_combo = s.max_combo.max(combo);
-        s.longest_session_ms = s.longest_session_ms.max(session_ms);
+        let answer_combo = if source == Source::Exact {
+            let continues = prev.is_some_and(|(d, id)| d == day && r.id - id < SESSION_GAP_MS);
+            if continues {
+                combo += 1;
+                session_ms += r.time_ms;
+            } else {
+                combo = 1;
+                session_ms = r.time_ms;
+                s.sessions += 1;
+            }
+            prev = Some((day, r.id));
+            s.time_ms += r.time_ms;
+            s.max_combo = s.max_combo.max(combo);
+            s.longest_session_ms = s.longest_session_ms.max(session_ms);
+            combo
+        } else {
+            s.observed += 1;
+            0
+        };
         s.max_ivl = s.max_ivl.max(r.last_ivl);
         if r.kind == 2 {
             s.relearns += 1;
         }
-        if seen.insert(r.cid) {
+        if source != Source::Counted && seen.insert(r.cid) {
             s.first_seen += 1;
             if r.kind == 0 {
                 s.new_cards += 1;
@@ -1160,24 +1189,27 @@ fn collect_days_weighted(
             s.mature += 1;
         }
         let morning = hour >= clock.at(r.id).rollover_hour;
-        if morning && hour < 12 {
+        if source.timed() && morning && hour < 12 {
             s.before_noon += 1;
         }
-        if morning && hour < 7 {
+        if source.timed() && morning && hour < 7 {
             s.early = true;
         }
-        if hour >= 23 || !morning {
+        if source.timed() && (hour >= 23 || !morning) {
             s.late = true;
         }
         let decay = match weighting {
             ReviewWeighting::Flat => 1.0,
+            ReviewWeighting::Diminishing if source == Source::Counted => 1.0,
             ReviewWeighting::Diminishing => {
                 let again = answers.entry(r.cid).or_insert(0);
                 *again += 1;
                 REPEAT_DECAY.powi(*again - 1)
             }
         };
-        let xp = review_base_xp_with(r, weighting) * decay * (1.0 + combo.min(100) as f64 / 200.0);
+        let xp = review_base_xp_with(r, weighting)
+            * decay
+            * (1.0 + answer_combo.min(100) as f64 / 200.0);
         s.review_xp += xp;
         earned.push((r.id, xp));
         if s.quests_completed_at.is_none() && quests.iter().all(|q| q.progress(s) >= q.target) {
@@ -1240,10 +1272,35 @@ pub fn compute_with_history(
     now_ms: i64,
     freeze_policy: &FreezePolicy,
 ) -> Profile {
+    compute_observed(
+        user,
+        display,
+        reviews,
+        &Observed::default(),
+        clock,
+        week,
+        now_ms,
+        freeze_policy,
+    )
+}
+
+/// [`compute_with_history`] with the study a client observed without the review log.
+#[allow(clippy::too_many_arguments)]
+pub fn compute_observed(
+    user: &str,
+    display: &str,
+    reviews: &[Review],
+    observed: &Observed,
+    clock: &ClockHistory,
+    week: &Week,
+    now_ms: i64,
+    freeze_policy: &FreezePolicy,
+) -> Profile {
     compute_with_rules(
         user,
         display,
         reviews,
+        observed,
         clock,
         week,
         now_ms,
@@ -1258,13 +1315,24 @@ pub fn compute_with_rules(
     user: &str,
     display: &str,
     reviews: &[Review],
+    observed: &Observed,
     clock: &ClockHistory,
     week: &Week,
     now_ms: i64,
     freeze_policy: &FreezePolicy,
     streak_rule: &StreakRule,
 ) -> Profile {
-    let (days, last_combo, earned) = collect_days_with_quests(reviews, clock, seed_of(user));
+    // Observed study joins the review log rows it does not duplicate. Players without any
+    // keep their rows as they are, without a copy.
+    let merged = (!observed.is_empty()).then(|| merge(reviews, observed, clock));
+    let (days, last_combo, earned) = match &merged {
+        Some(merged) => collect_days_with_quests(
+            merged.iter().map(|answer| (&answer.review, answer.source)),
+            clock,
+            seed_of(user),
+        ),
+        None => collect_days_with_quests(exact(reviews), clock, seed_of(user)),
+    };
     let today = clock.day(now_ms);
     let legacy_until = freeze_policy.legacy_until.map(|at| clock.day(at));
     let seed = seed_of(user);
@@ -1301,8 +1369,10 @@ pub fn compute_with_rules(
         let stats = days.get(&day);
         let needed_ms =
             i64::from(streak_rule.minutes_at(clock.day_start_ms(day))) * ankiquest_rules::MINUTE_MS;
-        let counts =
-            stats.is_some_and(|s| ankiquest_rules::meets_minimum(s.reviews, s.time_ms, needed_ms));
+        // A day with observed answers counts: their duration is not known.
+        let counts = stats.is_some_and(|s| {
+            ankiquest_rules::meets_minimum(s.reviews, s.time_ms, needed_ms) || s.observed > 0
+        });
         let (year, month_of_year, date) = civil(day);
         if (year, month_of_year) != month {
             month = (year, month_of_year);
@@ -1423,6 +1493,7 @@ pub fn compute_with_rules(
             date: date_string(day),
             xp,
             reviews: s.reviews,
+            observed: s.observed,
             time_ms: s.time_ms,
             new_cards: s.new_cards,
             streak,
@@ -1432,6 +1503,7 @@ pub fn compute_with_rules(
                 s.reviews,
                 s.time_ms,
                 needed_ms,
+                s.observed,
                 frozen.contains(&day),
                 skipped.contains(&day),
             ),
@@ -1481,12 +1553,15 @@ pub fn compute_with_rules(
 
     let heatmap = (today - HEATMAP_DAYS + 1..=today)
         .map(|day| {
-            let (reviews, time_ms) = days.get(&day).map_or((0, 0), |s| (s.reviews, s.time_ms));
+            let (reviews, time_ms, observed) = days
+                .get(&day)
+                .map_or((0, 0, 0), |s| (s.reviews, s.time_ms, s.observed));
             // Before the first study day nothing was needed: no day had begun to count.
             let needed_ms = day_needed.get(&day).copied().unwrap_or(0);
             HeatCell {
                 date: date_string(day),
                 reviews,
+                observed,
                 minutes: (time_ms.max(0) / 60_000) as u64,
                 streak_minutes: (needed_ms / 60_000) as u64,
                 xp: day_xp.get(&day).copied().unwrap_or(0),
@@ -1495,6 +1570,7 @@ pub fn compute_with_rules(
                     reviews,
                     time_ms,
                     needed_ms,
+                    observed,
                     frozen.contains(&day),
                     skipped.contains(&day),
                 ),
@@ -1532,6 +1608,47 @@ pub fn compute_with_rules(
         all: xp_total,
     };
 
+    // Which periods' XP includes observed answers, so boards can mark it.
+    let observed_days: BTreeSet<i64> = days
+        .iter()
+        .filter(|(_, s)| s.observed > 0)
+        .map(|(day, _)| *day)
+        .collect();
+    let observed_in = |days_back: i64, matches: &dyn Fn(i64) -> bool| -> XpSource {
+        if observed_days
+            .range(today - days_back..=today)
+            .any(|day| matches(*day))
+        {
+            XpSource::Observed
+        } else {
+            XpSource::Exact
+        }
+    };
+    let observed_hour = merged.iter().flatten().any(|answer| {
+        answer.source != Source::Exact
+            && answer.review.id > now_ms - 3_600_000
+            && answer.review.id <= now_ms
+    });
+    let xp_sources = XpSources {
+        hour: if observed_hour {
+            XpSource::Observed
+        } else {
+            XpSource::Exact
+        },
+        day: observed_in(0, &|_| true),
+        week: observed_in(9, &|day| monday_of(day) == board_monday),
+        month: observed_in(40, &|day| {
+            let (year, month, _) = civil(day);
+            (year, month) == (this_year, this_month)
+        }),
+        year: observed_in(400, &|day| civil(day).0 == this_year),
+        all: if observed_days.is_empty() {
+            XpSource::Exact
+        } else {
+            XpSource::Observed
+        },
+    };
+
     // The hour counts reviews only: a day's bonus would land in it as one lump.
     let reviewed: Vec<(i64, f64, u64)> = earned.iter().map(|(at, xp)| (*at, *xp, 1)).collect();
     let everything = timeline(&earned, &day_xp, clock);
@@ -1548,13 +1665,14 @@ pub fn compute_with_rules(
     let today_start = clock.day_start_ms(today);
     let studied_today = days.contains_key(&today);
     let streak_minutes = u64::from(streak_rule.minutes_at(today_start));
-    let today_counts = days.get(&today).is_some_and(|s| {
+    let today_met = days.get(&today).is_some_and(|s| {
         ankiquest_rules::meets_minimum(
             s.reviews,
             s.time_ms,
             streak_minutes as i64 * ankiquest_rules::MINUTE_MS,
         )
     });
+    let today_counts = today_met || days.get(&today).is_some_and(|s| s.observed > 0);
     for window in 0..Records::NAMES.len() {
         let entries = if window == 0 { &reviewed } else { &everything };
         let history_long_enough = entries
@@ -1644,8 +1762,10 @@ pub fn compute_with_rules(
             starts_at: week.end_after(now_ms),
         })),
     };
-    let streak_state = if today_counts {
+    let streak_state = if today_met {
         StreakState::Studied
+    } else if today_counts {
+        StreakState::Unverified
     } else if frozen.contains(&(today - 1)) {
         // Freezes cover ended days. Today's unstudied day is still open.
         StreakState::Protected
@@ -1661,6 +1781,7 @@ pub fn compute_with_rules(
         xp_for_next,
         week_xp,
         periods,
+        xp_sources,
         records,
         streak,
         streak_state,
@@ -1683,6 +1804,7 @@ pub fn compute_with_rules(
         today: Today {
             starts_at: today_start,
             reviews: now.reviews,
+            observed: now.observed,
             time_ms: now.time_ms,
             minutes: (now.time_ms / 60_000) as u64,
             streak_minutes,

@@ -24,6 +24,7 @@ def server(v):
         today=rules.ServerToday(
             starts_at=today["starts_at"],
             reviews=today["reviews"],
+            observed=today.get("observed", 0),
             time_ms=today["time_ms"],
             minutes=today["minutes"],
             streak_minutes=today["streak_minutes"],
@@ -41,6 +42,7 @@ def shape(verdict):
         "streak_state": v.streak_state.name.lower() if v.streak_state else None,
         "streak": v.streak,
         "reviews": v.reviews,
+        "observed": v.observed,
         "time_ms": v.time_ms,
         "minutes": v.minutes,
         "streak_minutes": v.streak_minutes,
@@ -56,7 +58,7 @@ class DayVerdicts(unittest.TestCase):
         self.assertTrue(cases)
         for case in cases:
             with self.subTest(case["name"]):
-                pending = [rules.PendingReview(id=r["id"], time_ms=r["time_ms"]) for r in case["pending"]]
+                pending = [rules.PendingReview(id=r["id"], time_ms=r.get("time_ms")) for r in case["pending"]]
                 verdict = rules.today_verdict(server(case["server"]), pending, case["now_ms"])
                 self.assertEqual(shape(verdict), case["expected"])
 

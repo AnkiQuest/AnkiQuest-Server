@@ -25,6 +25,7 @@ fn small(v: &Value) -> u32 {
 fn state(v: &Value) -> StreakState {
     match v.as_str().unwrap() {
         "studied" => StreakState::Studied,
+        "unverified" => StreakState::Unverified,
         "pending" => StreakState::Pending,
         "protected" => StreakState::Protected,
         other => panic!("unknown streak_state {other}"),
@@ -34,6 +35,7 @@ fn state(v: &Value) -> StreakState {
 fn state_name(s: StreakState) -> &'static str {
     match s {
         StreakState::Studied => "studied",
+        StreakState::Unverified => "unverified",
         StreakState::Pending => "pending",
         StreakState::Protected => "protected",
     }
@@ -42,6 +44,7 @@ fn state_name(s: StreakState) -> &'static str {
 fn label_name(l: DayLabel) -> &'static str {
     match l {
         DayLabel::Studied => "studied",
+        DayLabel::Unverified => "unverified",
         DayLabel::Protected => "protected",
         DayLabel::Short => "short",
         DayLabel::Pending => "pending",
@@ -59,6 +62,7 @@ fn server(v: &Value) -> ServerDay {
         today: ServerToday {
             starts_at: int(&today["starts_at"]),
             reviews: small(&today["reviews"]),
+            observed: small(&today["observed"]),
             time_ms: int(&today["time_ms"]),
             minutes: small(&today["minutes"]),
             streak_minutes: small(&today["streak_minutes"]),
@@ -72,7 +76,7 @@ fn pending(v: &Value) -> Vec<PendingReview> {
         .iter()
         .map(|r| PendingReview {
             id: int(&r["id"]),
-            time_ms: int(&r["time_ms"]),
+            time_ms: r.get("time_ms").map(int),
         })
         .collect()
 }
@@ -87,6 +91,7 @@ fn shape(verdict: DayVerdict) -> Value {
         streak_state,
         streak,
         reviews,
+        observed,
         time_ms,
         minutes,
         streak_minutes,
@@ -98,6 +103,7 @@ fn shape(verdict: DayVerdict) -> Value {
         "streak_state": streak_state.map(state_name),
         "streak": streak,
         "reviews": reviews,
+        "observed": observed,
         "time_ms": time_ms,
         "minutes": minutes,
         "streak_minutes": streak_minutes,

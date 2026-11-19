@@ -42,6 +42,7 @@ mod messages;
 mod migrations;
 mod notifications;
 mod oauth;
+mod observations;
 mod privacy;
 mod reciprocity;
 mod reminders;
@@ -274,6 +275,7 @@ fn router(app: Arc<App>) -> Router {
         .merge(inbox::routes())
         .merge(messages::routes())
         .merge(study::routes())
+        .merge(observations::routes())
         .merge(boards::routes())
         .merge(cards::routes())
         .merge(capabilities::routes())

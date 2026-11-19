@@ -18,12 +18,13 @@ crates/rules (Rust, in AnkiQuest-Server)
 Phase 1 is a pilot with one rule: today's day verdict (`tests/fixtures/day_verdicts.json`).
 
 - `today_verdict(server: ServerDay, pending: Vec<PendingReview>, now_ms: i64) -> DayVerdict`:
-  what the server's profile said about today, with the reviews the client has not uploaded.
+  what the server's profile said about today, with the reviews the client has not uploaded. A
+  `PendingReview` without `time_ms` is an observed answer from AnkiQuest Lite.
   `DayVerdict` is `Ended` (the answer is about a day that has ended) or `Today { verdict }`.
-  `TodayVerdict` has the fixture's fields: `met`, `streak_state`, `streak`, `reviews`, `time_ms`,
-  `minutes`, `streak_minutes`, `unsent`, `label`.
-- `StreakState` (`studied`, `pending`, `protected`) and `DayLabel` (`studied`, `protected`,
-  `short`, `pending`, `unknown`).
+  `TodayVerdict` has the fixture's fields: `met`, `streak_state`, `streak`, `reviews`, `observed`,
+  `time_ms`, `minutes`, `streak_minutes`, `unsent`, `label`.
+- `StreakState` (`studied`, `unverified`, `pending`, `protected`) and `DayLabel` (`studied`,
+  `unverified`, `protected`, `short`, `pending`, `unknown`).
 - `meets_minimum(reviews, time_ms, needed_ms)`: whether a day counts toward the streak. Rust only;
   the server uses it for every day it judges.
 

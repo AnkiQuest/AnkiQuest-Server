@@ -146,6 +146,9 @@ impl FreezePolicy {
 pub enum DayState {
     /// The day reached the streak minimum and counts toward the streak.
     Met,
+    /// Reviews short of the minimum, some of them observed without the review log, so their
+    /// duration is not known. The day counts toward the streak.
+    Unverified,
     /// Reviews short of the minimum. Today stays short until it is met or ends.
     Short,
     /// A freeze or an admin's grant kept the streak through the day, reviewed or not.
@@ -158,12 +161,21 @@ pub enum DayState {
 }
 
 impl DayState {
-    /// The verdict on a day with `reviews` taking `time_ms`, which needed `needed_ms` to
-    /// count, and was `frozen` (or `skipped`) after it ended. A covered day reads as
-    /// covered even with reviews: it did not count on its own.
-    pub fn of(reviews: u64, time_ms: i64, needed_ms: i64, frozen: bool, skipped: bool) -> Self {
+    /// The verdict on a day with `reviews` taking `time_ms`, `observed` of them without a known
+    /// duration, which needed `needed_ms` to count, and was `frozen` (or `skipped`) after it
+    /// ended. A covered day reads as covered even with reviews: it did not count on its own.
+    pub fn of(
+        reviews: u64,
+        time_ms: i64,
+        needed_ms: i64,
+        observed: u64,
+        frozen: bool,
+        skipped: bool,
+    ) -> Self {
         if ankiquest_rules::meets_minimum(reviews, time_ms, needed_ms) {
             DayState::Met
+        } else if observed > 0 {
+            DayState::Unverified
         } else if skipped && frozen {
             DayState::Skipped
         } else if frozen {
@@ -1026,11 +1038,26 @@ mod tests {
         assert_eq!(p.today.time_ms, 4 * 60_000);
         assert_eq!(p.today.starts_at, 12 * DAY_MS + 4 * 3_600_000);
         assert_eq!(
-            DayState::of(2, 0, 0, true, true),
+            DayState::of(2, 0, 0, 0, true, true),
             DayState::Met,
             "a day that counted is met even when the clock skipped over its number"
         );
-        assert_eq!(DayState::of(0, 0, 0, true, true), DayState::Skipped);
+        assert_eq!(DayState::of(0, 0, 0, 0, true, true), DayState::Skipped);
+
+        // Observed answers whose duration is not known keep a short day counting.
+        assert_eq!(
+            DayState::of(3, 120_000, 600_000, 1, false, false),
+            DayState::Unverified
+        );
+        assert_eq!(
+            DayState::of(3, 600_000, 600_000, 1, false, false),
+            DayState::Met,
+            "exact minutes reaching the minimum make the day met"
+        );
+        assert_eq!(
+            DayState::of(3, 120_000, 600_000, 0, false, false),
+            DayState::Short
+        );
     }
 
     #[test]

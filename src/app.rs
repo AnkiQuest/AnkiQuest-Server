@@ -10,6 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(crate) struct Player {
     pub(crate) reviews: Arc<Vec<Review>>,
+    /// Study a client observed without the review log; see [`game::Observed`].
+    pub(crate) observed: Arc<game::Observed>,
     pub(crate) clock: Clock,
     /// Every clock they have kept, so old reviews keep the days they fell in.
     pub(crate) clock_history: ClockHistory,
@@ -99,6 +101,28 @@ impl App {
         Ok(changed)
     }
 
+    /// Rereads `user`'s observed study into the cached player after an observation upload.
+    /// Returns whether it or the player's clock changed.
+    pub(crate) fn apply_observed(&self, store: &Store, user: &str) -> Result<bool, Error> {
+        let observed = crate::observations::load(&store.conn, user)?;
+        let clock = store.clock(user)?;
+        let clock_history = store.clock_history(user)?;
+        let mut players = self.players.write().unwrap();
+        let Some(player) = players.get_mut(user) else {
+            drop(players);
+            self.reload_player(store, user)?;
+            return Ok(true);
+        };
+        let changed = *player.observed != observed || clock_history != player.clock_history;
+        player.observed = Arc::new(observed);
+        player.clock = clock;
+        player.clock_history = clock_history;
+        if changed {
+            player.revision = next_revision();
+        }
+        Ok(changed)
+    }
+
     pub(crate) fn recipient(&self, user: String) -> decks::Recipient {
         decks::Recipient {
             display: self.display(&user),
@@ -162,10 +186,11 @@ impl App {
         fresh.sort_by_key(|r| r.id);
         fresh.dedup_by_key(|r| r.id);
         let merged = [player.reviews.as_slice(), &fresh].concat();
-        Some(game::compute_with_history(
+        Some(game::compute_observed(
             user,
             &self.display(user),
             &merged,
+            &player.observed,
             &player.clock_history,
             &self.week,
             now_ms(),
@@ -197,10 +222,11 @@ impl App {
             .reviews
             .last()
             .is_some_and(|r| r.id > now - 3_600_000);
-        let mut profile = game::compute_with_history(
+        let mut profile = game::compute_observed(
             user,
             &self.display(user),
             &player.reviews,
+            &player.observed,
             &player.clock_history,
             &self.week,
             now,
@@ -380,6 +406,7 @@ fn merge_upload(old: &[Review], new: &[Review], deleted: &[i64]) -> Option<Vec<R
 pub(crate) fn load_player(store: &Store, user: &str) -> Result<Player, Error> {
     Ok(Player {
         reviews: Arc::new(store.reviews(user)?),
+        observed: Arc::new(crate::observations::load(&store.conn, user)?),
         clock: store.clock(user)?,
         clock_history: store.clock_history(user)?,
         freeze_policy: store.freeze_policy(user)?,

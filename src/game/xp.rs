@@ -167,7 +167,7 @@ mod tests {
         };
         let run = |reviews: &[Review]| {
             collect_days_weighted(
-                reviews,
+                exact(reviews),
                 &ClockHistory::single(utc()),
                 0,
                 ReviewWeighting::Diminishing,
@@ -212,7 +212,7 @@ mod tests {
         };
         let run = |reviews: &[Review]| {
             collect_days_weighted(
-                reviews,
+                exact(reviews),
                 &ClockHistory::single(utc()),
                 0,
                 ReviewWeighting::Diminishing,

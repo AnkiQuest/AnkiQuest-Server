@@ -171,6 +171,7 @@ pub(crate) fn with_reviews(app: &App, user: &str, count: i64) {
         user.into(),
         Player {
             reviews: Arc::new(reviews_at(now_ms() - 600_000, count)),
+            observed: Default::default(),
             clock: Clock::default(),
             clock_history: ClockHistory::default(),
             freeze_policy: game::FreezePolicy::default(),
