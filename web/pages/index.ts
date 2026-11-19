@@ -22,6 +22,8 @@ interface Standing extends Person {
   week_xp?: number;
   /** XP in the requested period. */
   xp: number;
+  /** Whether `xp` includes answers AnkiQuest Lite observed without review times; older servers leave it out. */
+  xp_source?: "exact" | "observed";
   period: string;
   periods?: Record<Period, number>;
   streak: number;
@@ -45,7 +47,7 @@ interface PersonalBest { xp: number; reviews: number; at: number; until: number;
 interface Quest { title: string; progress: number; target: number; done: boolean; reward: number; }
 interface Achievement { id: string; title: string; description: string; reward: number; progress: number; target: number; unlocked: string | null; }
 /** The server's verdict on a day (`DayState` in src/game.rs); older servers leave it out. */
-type DayState = "met" | "short" | "frozen" | "skipped" | "none";
+type DayState = "met" | "unverified" | "short" | "frozen" | "skipped" | "none";
 interface HeatCell { date: string; reviews: number; xp: number; frozen: boolean; minutes?: number; streak_minutes?: number; state?: DayState; }
 
 /** `/api/profile/{user}` (`Profile` in src/game.rs). */
@@ -307,10 +309,12 @@ function streakBadge(row: Standing) {
   const known = typeof row.today_reviews === "number";
   const needed = row.streak_minutes ?? 0;
   // The server's verdict; only a server too old to send one leaves it to today's reviews.
-  const counted = row.streak_state ? row.streak_state === "studied" : (row.today_reviews ?? 0) > 0;
+  // An unverified day counts on observed answers whose review time is not known.
+  const unverified = row.streak_state === "unverified";
+  const counted = row.streak_state ? row.streak_state === "studied" || unverified : (row.today_reviews ?? 0) > 0;
   const state = expired || !known ? "unknown" : counted ? "studied" : row.streak_state === "protected" ? "protected" : "pending";
   const progress = aqText`${num(Math.min(row.today_minutes ?? 0, needed))} of ${num(needed)} minutes today`;
-  const status = state === "studied" ? aqText("Studied today") : needed > 0 && state !== "unknown" ? progress : state === "protected" ? aqText("Streak protected · Not studied yet") : state === "pending" ? aqText("Not studied yet") : aqText("Refresh to see today's study status");
+  const status = state === "studied" && unverified ? aqText("Studied today · time not known") : state === "studied" ? aqText("Studied today") : needed > 0 && state !== "unknown" ? progress : state === "protected" ? aqText("Streak protected · Not studied yet") : state === "pending" ? aqText("Not studied yet") : aqText("Refresh to see today's study status");
   const label = aqText`${num(row.streak)} day streak · ${status}`;
   return aqHtml`<span class="streak" data-streak-state="${state}" role="img" tabindex="0" aria-label="${esc(label)}" title="${esc(label)}">${streakIcon(state)}${num(row.streak)}</span>`;
 }
@@ -351,7 +355,7 @@ function board(rows: Standing[], me: string, hideFor?: string, lock: Lock = null
         <div class="bar"><i style="width:${pct(r.xp, lead)}%"></i></div>
         ${hide ? aqHtml`<button type="button" class="hide-row" data-global-hide="${esc(r.user)}" aria-label="${esc(aqText`Hide ${r.display} for me`)}">Hide for me</button>` : ""}
       </div>
-      </div><div class="xp"><b>${num(r.xp)}</b>${r.today_reviews != null ? aqHtml`<span>${num(r.today_reviews)} today</span>` : ""}${r.closing_xp != null && (r.day_ends_at ?? 0) > Date.now() ? aqHtml`<span class="closing-xp">${esc(aqText`${num(r.closing_xp)} XP still counting for last week`)}</span>` : ""}${r.next_xp != null && weekEnds > Date.now() ? aqHtml`<span class="next-xp">${esc(aqText`${num(r.next_xp)} XP already counting for next week`)}</span>` : ""}</div>
+      </div><div class="xp"><b>${num(r.xp)}</b>${r.xp_source === "observed" ? aqHtml`<span class="observed-xp" title="${esc(aqText("Includes answers read from AnkiDroid without review times"))}">${esc(aqText("Observed"))}</span>` : ""}${r.today_reviews != null ? aqHtml`<span>${num(r.today_reviews)} today</span>` : ""}${r.closing_xp != null && (r.day_ends_at ?? 0) > Date.now() ? aqHtml`<span class="closing-xp">${esc(aqText`${num(r.closing_xp)} XP still counting for last week`)}</span>` : ""}${r.next_xp != null && weekEnds > Date.now() ? aqHtml`<span class="next-xp">${esc(aqText`${num(r.next_xp)} XP already counting for next week`)}</span>` : ""}</div>
     </li>`;
   }).join("")}
   </ol><p class="streak-legend">${[["studied",aqText("Studied today")],["pending",aqText("Not studied yet")],["protected",aqText("Streak protected")]].map(([state,label]) => aqHtml`<span data-streak-state="${state}">${streakIcon(state)}${label}</span>`).join("")}</p>`;
@@ -480,6 +484,7 @@ function heat(cells: HeatCell[]) {
     if (state === "frozen" || state === "skipped") return aqHtml`<i class="frozen" title="${c.date}: ${aqText("streak freeze")}"></i>`;
     if (state === "short") return aqHtml`<i class="short" title="${c.date}: ${aqText`${num(c.minutes ?? 0)} of ${num(c.streak_minutes ?? 0)} minutes`} · ${aqText("Short of the streak minimum")}"></i>`;
     if (state === "none") return aqHtml`<i class="l0" title="${c.date}: ${studied(c)}"></i>`;
+    if (state === "unverified") return aqHtml`<i class="${"l" + level(c.reviews)}" title="${c.date}: ${studied(c)} · ${aqText("Time not known")}"></i>`;
     return aqHtml`<i class="${"l" + level(c.reviews)}" title="${c.date}: ${studied(c)}"></i>`;
   }).join("");
 }
