@@ -35,8 +35,9 @@ impl Fixture {
                 "google": {"client_id": "example-google", "client_secret": "example"},
                 "github": {"client_id": "example-github", "client_secret": "example"}
             },
+            "configured_tokens": "enabled",
             "users": {
-                "hill": {"display": "Hill", "token": "hill-secret"},
+                "hill": {"display": "hill", "token": "hill-secret"},
                 "cerro": {"display": "Cerro", "token": "cerro-secret"},
                 "friend": {"display": "Friend", "token": "friend-secret"}
             }
@@ -54,11 +55,26 @@ impl Fixture {
     }
 
     async fn call(&self, method: &str, uri: &str, token: Option<&str>, body: Value) -> Value {
+        self.call_with(method, uri, token, body, &[]).await
+    }
+
+    /// [`Self::call`] with extra request `headers`.
+    async fn call_with(
+        &self,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+        headers: &[(&str, &str)],
+    ) -> Value {
         let mut request = Request::builder()
             .method(method)
             .uri(uri)
             .header("content-type", "application/json")
             .header("accept-language", "en");
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
         if let Some(token) = token {
             request = request.header("authorization", format!("Bearer {token}"));
         }
@@ -389,7 +405,7 @@ async fn examples_match_the_handlers() {
 
     // Friend goals come last, so their invitations change no example above. They start an hour
     // ago, so the reviews uploaded above count: one goal in progress, one reached, one ended early
-    // and one invitation waiting for Hill.
+    // and one invitation waiting for hill.
     crate::app::fix_now_ms(Some(NOW_MS - 60 * 60_000));
     let goal = |title: &str, kind: &str, cooperative: bool, target: u64, to: &[&str], key: &str| {
         json!({
@@ -549,7 +565,7 @@ async fn examples_match_the_handlers() {
                     to: "cerro",
                     from: "hill",
                     title: "Deck complete",
-                    body: "Hill has finished their Spanish studies for today.",
+                    body: "hill has finished their Spanish studies for today.",
                     kind: "completion",
                 },
                 &format!("deck-share:hill:1:{day}"),
@@ -574,7 +590,7 @@ async fn examples_match_the_handlers() {
     drop(deck.app);
     std::fs::remove_dir_all(&deck.path).unwrap();
 
-    // Records and study history come last: Hill's earlier study days, uploaded here, change no
+    // Records and study history come last: hill's earlier study days, uploaded here, change no
     // example above. Two and three days ago, so the history has more than today.
     let earlier: Vec<Value> = [(3, 4), (2, 6)]
         .iter()
@@ -664,7 +680,7 @@ async fn examples_match_the_handlers() {
     examples.push(("sign_in_browser", browser));
 
     // Community reminders, the competition calendar and a conquered card, which the app's own
-    // screens read. Hill keeps the defaults until saving his choice.
+    // screens read. hill keeps the defaults until saving his choice.
     examples.push((
         "reminders",
         f.call(
@@ -697,7 +713,7 @@ async fn examples_match_the_handlers() {
         )
         .await,
     ));
-    // Hill unlocked the cow before it was earned by study and keeps it; asking for it again
+    // hill unlocked the cow before it was earned by study and keeps it; asking for it again
     // answers the list, with the progress toward Ankilope.
     f.app
         .store
@@ -730,7 +746,7 @@ async fn examples_match_the_handlers() {
         )
         .await,
     ));
-    // One card Hill forgot four times over the past weeks before it earned a 25-day interval
+    // One card hill forgot four times over the past weeks before it earned a 25-day interval
     // yesterday: a review failed into relearning, then the relearning step, four times. He says
     // what the card was.
     let answers: Vec<(i64, i64, i64)> = std::iter::once((0, 0, 1))
@@ -842,7 +858,7 @@ async fn examples_match_the_handlers() {
 
     // The global leaderboard: profiles are public and listed by default, but Ana made hers
     // private. With no friends yet she sees public standings and her own full row, which nobody
-    // else sees until she turns the global leaderboard on. Then Hill sees her there as a
+    // else sees until she turns the global leaderboard on. Then hill sees her there as a
     // stranger: name, level, XP and streak only.
     f.call("POST", "/api/reviews/ana", Some(&ana), f.reviews(2))
         .await;
@@ -883,7 +899,7 @@ async fn examples_match_the_handlers() {
         )
         .await,
     ));
-    // Hiding a stranger keeps their place in the ranking and changes only Hill's view.
+    // Hiding a stranger keeps their place in the ranking and changes only hill's view.
     examples.push((
         "leaderboard_hide",
         f.call(
@@ -896,7 +912,7 @@ async fn examples_match_the_handlers() {
     ));
 
     // Friends and groups come after everything above, whose circles they would otherwise change.
-    // Hill is friends with Friend, waits for Cerro, has a request from Ana, owns a group Ana joined
+    // hill is friends with Friend, waits for Cerro, has a request from Ana, owns a group Ana joined
     // and belongs to one of Friend's.
     let befriend = |user: &str| json!({"action": "befriend", "user": user});
     for (user, token, other) in [
@@ -1033,11 +1049,13 @@ async fn examples_match_the_handlers() {
     }
     examples.push((
         "notifications_companion",
-        f.call(
+        // Only a client that names the cow among the companions it draws is told she joined.
+        f.call_with(
             "GET",
             "/api/notifications/cerro",
             Some("cerro-secret"),
             Value::Null,
+            &[("x-ankiquest-companion-art", "aki, ankilope, cow")],
         )
         .await,
     ));
@@ -1141,6 +1159,34 @@ async fn examples_match_the_handlers() {
         drop(extra.app);
         std::fs::remove_dir_all(&extra.path).unwrap();
     }
+
+    // Cerro, from the configuration, signs in only with his token until he sets a password.
+    // On a server of its own, so the examples above keep him configured.
+    let converted = Fixture::new();
+    examples.push((
+        "sign_in_methods_token_only",
+        converted
+            .call(
+                "GET",
+                "/api/sign-in/cerro",
+                Some("cerro-secret"),
+                Value::Null,
+            )
+            .await,
+    ));
+    examples.push((
+        "password_set_token_only",
+        converted
+            .call(
+                "POST",
+                "/api/sign-in/cerro",
+                Some("cerro-secret"),
+                json!({"action": "password", "password": PASSWORD, "sign_out_others": false}),
+            )
+            .await,
+    ));
+    drop(converted.app);
+    std::fs::remove_dir_all(&converted.path).unwrap();
 
     let update = std::env::var_os("UPDATE_API_EXAMPLES").is_some_and(|v| v == "1");
     let dir = examples_dir();

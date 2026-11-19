@@ -925,7 +925,7 @@ mod tests {
     #[tokio::test]
     async fn recipient_mutes_change_upload_delivery_without_changing_outgoing_settings() {
         let (app, path) = fixture();
-        // Hill and Friend have studied, so friends' completions can reach them.
+        // hill and Friend have studied, so friends' completions can reach them.
         with_reviews(&app, "hill", 1);
         with_reviews(&app, "friend", 1);
         crate::test_support::used_app(&app, &["cerro", "hill", "friend"]);

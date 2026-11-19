@@ -400,7 +400,7 @@ mod tests {
         let (store, path) = crate::test_support::temporary_store();
         let mut profile = game::compute_with_history(
             "hill",
-            "Hill",
+            "hill",
             &reviews_at(now_ms() - 600_000, 3),
             &ClockHistory::default(),
             &Week::default(),

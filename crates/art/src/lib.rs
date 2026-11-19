@@ -2,7 +2,8 @@
 //! tools: the pose list with its fallbacks (`tests/fixtures/companion_poses.json`)
 //! and the downscaler every exported copy of a master goes through.
 //!
-//! Masters are the PNGs in `static/<companion>/`. Every other copy is made
+//! Masters are the PNGs in `static/<companion>/`, named after their pose
+//! or listed in the folder's `poses.json` ([`listed`]). Every other copy is made
 //! from them with [`shrink`], so all exports resample the same way.
 
 use std::path::Path;
@@ -11,8 +12,10 @@ use image::codecs::png::{CompressionType, FilterType as PngFilter, PngEncoder};
 use image::imageops::{self, FilterType};
 use image::{ImageEncoder, Rgba32FImage, RgbaImage};
 
+mod listed;
 mod poses;
 
+pub use listed::{LISTED, listed};
 pub use poses::{Poses, pose_of, stem};
 
 /// The pose fixture, relative to the repository root.
@@ -45,11 +48,6 @@ pub fn companions_with(masters: &Path, pose: &str) -> Result<Vec<String>, String
 pub fn load(path: &Path) -> Result<RgbaImage, String> {
     let image = image::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(image.into_rgba8())
-}
-
-/// A PNG's pixel size, read from its header.
-pub fn png_size(path: &Path) -> Result<(u32, u32), String> {
-    image::image_dimensions(path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// The size that fits `width` by `height` into `size` square, never upscaled.

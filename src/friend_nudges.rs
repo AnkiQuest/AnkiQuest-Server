@@ -209,9 +209,11 @@ mod tests {
 
     #[tokio::test]
     async fn sender_routes_require_owner_auth_and_reject_self_or_unknown_recipients() {
-        let (app, path) = crate::test_support::app_with(serde_json::json!({"users": {
-            "cerro":{"token":"cerro-secret"},"hill":{"token":"hill-secret"}
-        }}));
+        let (app, path) =
+            crate::test_support::app_with(serde_json::json!({"configured_tokens": "enabled",
+                "users": {
+                "cerro":{"token":"cerro-secret"},"hill":{"token":"hill-secret"}
+            }}));
         for (owner, token, recipient, expected) in [
             ("cerro", "", "hill", StatusCode::UNAUTHORIZED),
             ("cerro", "hill-secret", "hill", StatusCode::UNAUTHORIZED),
@@ -260,7 +262,8 @@ mod tests {
     async fn changing_friend_nudges_does_not_disable_automatic_progress_nudges() {
         let (mut store, path) = crate::test_support::temporary_store();
         store.set_nudges("hill", true).unwrap();
-        let config = serde_json::from_value(serde_json::json!({"users": {
+        let config = serde_json::from_value(serde_json::json!({"configured_tokens": "enabled",
+            "users": {
             "cerro":{"token":"cerro-secret"},"hill":{"token":"hill-secret"}
         }}))
         .unwrap();
@@ -286,9 +289,11 @@ mod tests {
 
     #[tokio::test]
     async fn only_the_recipient_can_change_a_specific_friend_nudge_choice() {
-        let (app, path) = crate::test_support::app_with(serde_json::json!({"users": {
-            "cerro":{"token":"cerro-secret"},"hill":{"token":"hill-secret"}
-        }}));
+        let (app, path) =
+            crate::test_support::app_with(serde_json::json!({"configured_tokens": "enabled",
+                "users": {
+                "cerro":{"token":"cerro-secret"},"hill":{"token":"hill-secret"}
+            }}));
         for (owner, sender, token, expected) in [
             ("hill", "cerro", "cerro-secret", StatusCode::UNAUTHORIZED),
             ("hill", "hill", "hill-secret", StatusCode::BAD_REQUEST),

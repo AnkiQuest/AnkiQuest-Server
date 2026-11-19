@@ -21,7 +21,7 @@ async function visit(browser: Browser, owner: boolean, leech: boolean, shot = ''
     if (pathname === `/api/conquests/hill/${AT}`) {
       const conquest = {at: AT, lapses: leech ? 9 : 4, answers: 23, since: AT - 40 * 86_400_000, leech};
       const sharing = isTold ? {told: true, friends: 2, undo_until: Date.now() + 86_400_000} : {told: false, friends: 2};
-      return route.fulfill({json: {user: 'hill', display: 'Hill', conquest, ...(owner ? sharing : {})}});
+      return route.fulfill({json: {user: 'hill', display: 'hill', conquest, ...(owner ? sharing : {})}});
     }
     if (pathname === `/api/conquests/hill/${AT}/tell` && request.method() === 'POST') {
       told.push({csrf: request.headers()['x-ankiquest-csrf'] ?? null});
@@ -37,9 +37,17 @@ async function visit(browser: Browser, owner: boolean, leech: boolean, shot = ''
   });
   const page = await context.newPage(), errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
+  // Records the picture's text so the test can read the name drawn on it.
+  await page.addInitScript(() => {
+    const drawn: string[] = (window as unknown as {aqDrawn: string[]}).aqDrawn = [];
+    const fill = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function (text, ...rest) { drawn.push(String(text)); return fill.call(this, text, ...rest); };
+  });
   await page.goto(`http://ankiquest.test/conquered/hill/${AT}`);
   await page.locator('.conquest h1').waitFor();
   if (shot) await page.screenshot({path: shot, fullPage: true});
+  await page.waitForFunction(() => (window as unknown as {aqDrawn: string[]}).aqDrawn.some(text => /hill/i.test(text)));
+  const name = await page.evaluate(() => (window as unknown as {aqDrawn: string[]}).aqDrawn.find(text => /hill/i.test(text)));
   const result = {
     heading: await page.locator('.conquest h1').textContent(),
     tamed: await page.locator('.conquest.tamed').count(),
@@ -49,6 +57,7 @@ async function visit(browser: Browser, owner: boolean, leech: boolean, shot = ''
     untold,
     status: '',
     undone: '',
+    name,
     errors,
   };
   if (result.tell) {
@@ -69,9 +78,9 @@ test('a conquered card is a big companion card; only its owner can tell friends,
   const shots = process.env.CONQUERED_SCREENSHOTS;
   try {
     const mine = await visit(browser, true, false, shots ? path.join(shots, 'conquered.png') : '');
-    assert.deepEqual(mine, {heading: 'Card conquered!', tamed: 0, pose: 'celebrate', tell: 1, told: [{csrf: '1'}], untold: [{csrf: '1'}], status: '2 friends will see it in their activity.', undone: 'Taken back from friends who had not seen it yet.', errors: []});
+    assert.deepEqual(mine, {heading: 'Card conquered!', tamed: 0, pose: 'celebrate', tell: 1, told: [{csrf: '1'}], untold: [{csrf: '1'}], status: '2 friends will see it in their activity.', undone: 'Taken back from friends who had not seen it yet.', name: 'hill', errors: []});
     const theirs = await visit(browser, false, true, shots ? path.join(shots, 'tamed.png') : '');
-    assert.deepEqual(theirs, {heading: 'Leech tamed!', tamed: 1, pose: 'winner', tell: 0, told: [], untold: [], status: '', undone: '', errors: []});
+    assert.deepEqual(theirs, {heading: 'Leech tamed!', tamed: 1, pose: 'winner', tell: 0, told: [], untold: [], status: '', undone: '', name: 'hill', errors: []});
   } finally {
     await browser.close();
   }
@@ -93,7 +102,7 @@ test('the owner may show what the card was; a suggestion stays in the fragment u
       if (pathname === '/auth/status') return route.fulfill({json: {private_site: false, authenticated: true, member: {user: 'hill'}}});
       if (pathname === `/api/conquests/hill/${AT}`) {
         const conquest = {at: AT, lapses: 6, answers: 31, since: AT - 52 * 86_400_000, leech: false};
-        return route.fulfill({json: {user: 'hill', display: 'Hill', conquest, told: false, friends: 2, ...(label ? {label} : {})}});
+        return route.fulfill({json: {user: 'hill', display: 'hill', conquest, told: false, friends: 2, ...(label ? {label} : {})}});
       }
       if (pathname === `/api/conquests/hill/${AT}/label` && request.method() === 'POST') {
         saved.push({csrf: request.headers()['x-ankiquest-csrf'] ?? null, body: request.postDataJSON()});

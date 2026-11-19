@@ -21,10 +21,14 @@ async function visit(browser: Browser, dev: boolean, width = 390) {
     const request = route.request(), pathname = new URL(request.url()).pathname;
     if (pathname === '/dev') return route.fulfill({contentType: 'text/html', body: built('dev')});
     if (await fulfillAsset(route, pathname)) return;
-    if (pathname === '/auth/status') return route.fulfill({json: {private_site: false, registration: true, authenticated: true, member: {user: 'hill', display: 'Hill'}, ...(dev ? {dev: true} : {})}});
+    if (pathname === '/auth/status') return route.fulfill({json: {private_site: false, registration: true, authenticated: true, member: {user: 'hill', display: 'hill'}, ...(dev ? {dev: true} : {})}});
     if (pathname === '/api/dev/hill/stats') return route.fulfill({json: stats});
     if (pathname === '/api/dev/hill/groups') return route.fulfill({json: [{id: 1, name: 'Book club', members: 4}, {id: 2, name: 'Night owls', members: 2}]});
     if (pathname === '/api/dev/hill/errors') return route.fulfill({json: [{at: TODAY * DAY, user: null, message: 'tick failed: disk full'}]});
+    if (pathname === '/api/dev/hill/crash-reports') return route.fulfill({json: [
+      {signature: 'a'.repeat(64), count: 14, first_seen: (TODAY - 2) * DAY, last_seen: TODAY * DAY, app_version: '2.22.0-quest', app_versions: ['2.21.0-quest', '2.22.0-quest'], exception: 'java.lang.IllegalStateException: <boom>', reports: [7, 9]},
+      {signature: 'b'.repeat(64), count: 1, first_seen: (TODAY - 40) * DAY, last_seen: (TODAY - 3) * DAY, app_version: null, app_versions: [], exception: null, reports: []},
+    ]});
     if (pathname === '/api/dev/hill/announcements' && request.method() === 'POST') {
       const body = request.postDataJSON();
       posted.push({csrf: request.headers()['x-ankiquest-csrf'] ?? null, body});
@@ -44,6 +48,8 @@ async function visit(browser: Browser, dev: boolean, width = 390) {
     link: await page.locator('.site-dev').isVisible(),
     text: (await page.locator('main').innerText()).replace(/\s+/g, ' '),
     rows: await page.locator('#dev-days tbody tr').count(),
+    crashes: dev ? await page.locator('#dev-crashes > li').count() : 0,
+    samples: dev ? await page.locator('#dev-crashes a').evaluateAll(links => links.map(link => link.getAttribute('href'))) : [],
     posted,
     status: '',
     listed: '',
@@ -71,7 +77,9 @@ test('devs see totals and send announcements to chosen groups; others are told n
     const dev = await visit(browser, true);
     assert.equal(dev.link, true);
     assert.equal(dev.rows, 30);
-    for (const text of ['12', '3 configured · 8 accounts · 1 sync only', '50%', 'largest 4 · median 3', 'tick failed: disk full', 'None yet.']) assert.ok(dev.text.includes(text), text);
+    assert.equal(dev.crashes, 2);
+    assert.deepEqual(dev.samples, ['/api/dev/hill/crash-reports/7', '/api/dev/hill/crash-reports/9']);
+    for (const text of ['12', '3 configured · 8 accounts · 1 sync only', '50%', 'largest 4 · median 3', 'tick failed: disk full', 'None yet.', 'java.lang.IllegalStateException: <boom>', '14 reports · 2.22.0-quest · 2 versions', 'sample 1', 'sample 2', '1 report · unknown version', 'No stack trace', 'no sample kept']) assert.ok(dev.text.includes(text), text);
     assert.deepEqual(dev.posted, [{csrf: '1', body: {title: 'Update', body: 'New quests this week', groups: [1]}}]);
     assert.equal(dev.status, 'Sent to 4 players.');
     assert.ok(dev.listed.includes('Update New quests this week'), dev.listed);

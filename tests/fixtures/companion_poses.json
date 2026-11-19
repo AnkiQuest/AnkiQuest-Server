@@ -1,5 +1,5 @@
 {
-  "_about": "The poses a companion character needs. A character goes live in the apps only when it has every core pose. Extensions are optional; a missing extension shows its fallback, which is a core pose or another extension that eventually reaches one. See AGENTS.md, Companion art.",
+  "_about": "The poses every live companion needs (AGENTS.md, Companion art). A new companion goes live only with all of them, and a PR adding a pose here draws it for every live companion; CI checks that with `xtask art-coverage --since`. Until every live companion has every pose (AnkiQuest/AnkiQuest-Server#57), a missing extension shows its fallback, which is a core pose or another extension that eventually reaches one; then the fallbacks are removed.",
   "core": ["face", "asleep", "happy", "streak", "sad", "hopeful", "frozen", "neglected"],
   "extensions": {
     "streak_hot": "streak",

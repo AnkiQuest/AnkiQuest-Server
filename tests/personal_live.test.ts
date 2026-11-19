@@ -17,7 +17,7 @@ async function main() {
   fs.writeFileSync(passwordFile, password);
   server = await startServer(run, {
     private_site:true, site_password_file:passwordFile, week_timezone:'UTC', week_rollover_hour:4,
-    users:{alice:{display:'Alice',token}},
+    configured_tokens:'enabled', users:{alice:{display:'Alice',token}},
   });
   const {base} = server;
   assert.equal((await fetch(base + '/api/study/alice')).status, 401);

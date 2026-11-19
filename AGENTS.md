@@ -78,9 +78,12 @@ Companion art means every picture of a character: poses, moment and card picture
 
 - Masters live only in `static/<companion>/` in AnkiQuest-Server. Every other copy (share cards, add-on, Android, docs) is generated from them by the exporters and hash-checked in CI; never commit a hand-made copy.
 - Never delete companion art, even when nothing uses it any more. Remove the references, keep the files, so they can be reused or merged later.
-- Each character needs a core set of poses before it goes live in the apps: face, asleep, happy, streak (on fire), sad, hopeful, frozen and neglected. A character without the full core set stays hidden.
-- Every other pose is an extension: streak tiers, milestones, frozen days 2 and 3, hurt, dead, welcome, a defeated leech, and poses for other rare moments. Extensions are optional. A missing extension falls back to its core pose (a streak tier to streak, frozen 3 to frozen, a defeated leech to happy).
-- The core set, the extensions and their fallbacks are defined once, in [`tests/fixtures/companion_poses.json`](https://github.com/AnkiQuest/AnkiQuest-Server/blob/master/tests/fixtures/companion_poses.json) in AnkiQuest-Server; both clients use that list.
+- Every live companion has every pose listed in [`tests/fixtures/companion_poses.json`](https://github.com/AnkiQuest/AnkiQuest-Server/blob/master/tests/fixtures/companion_poses.json) in AnkiQuest-Server; both clients use that list.
+- A new companion goes live only with every pose drawn.
+- A PR that adds a pose to the list adds its art for every live companion. CI fails a PR that adds a pose without it.
+- No placeholder pictures: no stand-in, recoloured or borrowed art for a missing pose.
+- One exception (hill, 2026-11-19): Anki-tan goes live before her missing extensions are drawn (`streak_hot`, `streak_blazing`, `frozen_2`, `frozen_3`, `abandoned`, `leech_defeated`, `winner`); they show their fallbacks until then. Drawing them comes first in AnkiQuest/AnkiQuest-Server#57. No other companion goes live with missing poses.
+- Until the missing poses are drawn (AnkiQuest/AnkiQuest-Server#57), the clients keep the current fallbacks: a missing extension shows the fallback the list gives it (a streak tier shows streak, frozen 3 shows frozen), and Bluma shows Ankilope's art recoloured where hers is missing. These are temporary. Once every live companion has every pose, remove them from the list and both clients.
 
 ## Writing
 
@@ -96,5 +99,6 @@ AnkiQuest-Server holds the server, the website and everything both clients share
 - **Shared instructions.** Everything above "This repository" in this file is the source AnkiQuest-Desktop and AnkiQuest-Android copy; their CI compares their copy with this file on `master`. After changing it here, update both copies.
 - **API examples are a contract.** `docs/api/examples/*.json` and `tests/fixtures/*.json` are copied into the Android app at a pinned commit (AnkiQuest/AnkiQuest-Android#203); AnkiQuest-Desktop is to pin it the same way. Adding an example is fine: clients pick it up through their bump PRs. Never remove or reshape an example released apps read (#230); retire it only after Android stops reading it. Document API changes in `docs/mobile-api.md`.
 - **Released apps talk to the deployed server.** Keep old endpoints and fields working until no supported client uses them.
+- **Merging.** Pull requests merge through the merge queue on `master`, as merge commits. Every workflow with a required check also runs on `merge_group`. A job that cannot run in a merge group is skipped there by an `if:` on the job, which counts as passing; a path or branch filter on the workflow would leave the check pending and stall the queue. Queue settings: merge method Merge, build concurrency 5, group size 1 to 5, wait 5 minutes for the minimum group size, "Only merge non-failing pull requests", status check timeout 60 minutes. "Require branches to be up to date before merging" stays off: the queue tests every pull request on top of the latest `master` and the ones queued ahead of it.
 - **Deployment** is the NixOS module in `flake.nix`, used from a separate NixOS configuration. Secrets are files on the hosts (passed with systemd `LoadCredential`), never values in this repository.
 - **Checks to run** before pushing, for what you changed: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `npm run typecheck`, `npm run test:web`. Leave the full matrix to CI.
