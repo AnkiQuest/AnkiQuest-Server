@@ -55,7 +55,7 @@ npm run test:web
 Repository tools are in `crates/xtask` (`cargo run -p ankiquest-xtask -- <command>`), including the exporters that write companion art from `static/` into an Android or Desktop checkout. See [development](docs/server.md#development).
 
 - [Client API](docs/mobile-api.md) and recorded [API examples](docs/api/examples/). Clients copy the examples and fixtures at a pinned commit of this repository.
-- `tests/fixtures/*.json`: rules both clients compute (streak verdicts, heatmap, card labels, deck names, companion poses). The server and both clients test against these cases.
+- `tests/fixtures/*.json`: rules both clients compute (streak verdicts, heatmap, study time, card labels, deck names, companion poses). The server and both clients test against these cases.
 - The banner above shows the website. `npm run banner` renders the pages in `static/` with Playwright's Chromium into `docs/screenshots/web/`, answering every API call from `docs/api/examples/` with the clock pinned to the examples', then draws `docs/graphics/banner_readme.png` with `cargo run -p ankiquest-xtask -- banner`. `cargo test -p ankiquest-xtask` fails while the banner does not match the screenshots.
 
 ## License

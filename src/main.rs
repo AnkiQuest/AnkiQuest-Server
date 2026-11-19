@@ -48,6 +48,8 @@ mod shares;
 mod social;
 mod store;
 mod study;
+#[cfg(test)]
+mod study_time;
 mod subscriptions;
 mod synced_settings;
 #[cfg(test)]
