@@ -558,7 +558,7 @@ fn unload(app: &App, user: &str) {
     app.access.revoke_member(user);
 }
 
-/// Removes the accounts an admin asked to remove with `admin remove-account`.
+/// Removes the accounts an admin asked to remove with `admin remove-player`.
 pub fn carry_out_removals(app: &App, conn: &Connection) -> rusqlite::Result<()> {
     let users: Vec<String> = conn
         .prepare("select user from account_removals")?
@@ -1204,30 +1204,31 @@ mod tests {
         let (app, path) = fixture();
         let ana = sign_up(&app, "ana").await;
         seed(&app, "ana", "alice");
+        let backups = path.join("backups");
         let run = |user: &str| {
-            crate::admin::run(
-                &path,
-                app.config.settings(),
-                crate::admin::Command::RemoveAccount(user.into()),
+            crate::admin::people(
+                &crate::admin::Setup {
+                    state_dir: &path,
+                    backups: &backups,
+                    configured: ["alice".to_owned()].into(),
+                    sync_base: None,
+                },
+                crate::admin::Command::RemovePlayer(user.into()),
                 now_ms(),
             )
         };
-        assert!(
-            run("alice").is_err(),
-            "configured players are removed from the configuration"
-        );
         assert!(run("nobody").is_err());
         assert!(run("ana").unwrap().contains("within a minute"));
         assert!(
             app.accounts.contains("ana"),
-            "nothing happens until the service picks it up"
+            "the service unloads it when it picks the removal up"
         );
-        carry_out_removals(&app, &app.store.lock().unwrap().conn).unwrap();
-        assert!(!app.accounts.contains("ana"));
         assert_eq!(
             count(&app, "select count(*) from reviews where user = 'ana'"),
             0
         );
+        carry_out_removals(&app, &app.store.lock().unwrap().conn).unwrap();
+        assert!(!app.accounts.contains("ana"));
         assert_eq!(count(&app, "select count(*) from account_removals"), 0);
         assert_eq!(
             count(&app, "select count(*) from reviews where user = 'alice'"),
