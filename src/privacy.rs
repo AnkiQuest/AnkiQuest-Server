@@ -66,7 +66,10 @@ const EXPORT: &[(&str, &str)] = &[
     ("deck_recipients", "select deck_id, recipient from deck_recipients where owner = ?1"),
     ("deck_completions", "select deck_id, day from deck_completions where owner = ?1 order by day"),
     ("notifications_received", "select * from notifications where recipient = ?1 order by id"),
-    ("messages_sent", "select * from notifications where sender = ?1 order by id"),
+    // What the sender wrote, without delivery state, which would show who muted them.
+    ("messages_sent", "select id, recipient, kind, title, body, day, created_at, read_at, replied,
+         reply_to_title, reply_to_body, note, challenge_id, group_id, win_id
+         from notifications where sender = ?1 order by id"),
     ("deck_copies_sent", "select o.id, o.deck, o.created_at, length(o.package) as bytes, group_concat(r.recipient) as recipients
          from deck_copy_offers o left join deck_copy_recipients r on r.offer = o.id where o.sender = ?1 group by o.id"),
     ("deck_copies_received", "select o.id, o.sender, o.deck, o.created_at from deck_copy_offers o
@@ -76,6 +79,10 @@ const EXPORT: &[(&str, &str)] = &[
     ("challenge_requests", "select request_id, challenge, payload from community_requests where creator = ?1"),
     ("weekly_suggestions", "select * from community_weekly_suggestions where owner = ?1 or friend = ?1"),
     ("groups", "select g.id, g.name, m.owner, m.joined_at from group_members m join groups g on g.id = m.group_id where m.user = ?1"),
+    // Only the invitee sees whether they declined, as the app shows the owner no difference.
+    ("group_invitations", "select group_id, user, invited_by, created_at,
+         case when user = ?1 then state end as state from group_invitations
+         where user = ?1 or invited_by = ?1 order by created_at"),
     ("friendships", "select case when a = ?1 then b else a end as friend, requested_by, accepted, created_at
          from friendships where a = ?1 or b = ?1"),
     ("avatar", "select revision, image from avatars where user = ?1"),
@@ -167,6 +174,7 @@ const OWNED: &[(&str, &str)] = &[
     ("community_requests", "creator = ?1"),
     ("community_weekly_suggestions", "owner = ?1 or friend = ?1"),
     ("friendships", "a = ?1 or b = ?1 or requested_by = ?1"),
+    ("group_invitations", "user = ?1 or invited_by = ?1"),
     ("avatars", "user = ?1"),
     (
         "win_receipts",
@@ -237,6 +245,8 @@ pub(crate) const NAMED: &[(&str, &str)] = &[
     ("global_board_hides", "viewer"),
     ("global_board_hides", "target"),
     ("goals", "user"),
+    ("group_invitations", "invited_by"),
+    ("group_invitations", "user"),
     ("group_members", "user"),
     ("groups", "created_by"),
     ("incoming_muted_senders", "recipient"),
@@ -312,6 +322,7 @@ const NOT_NAMES: &[&str] = &[
     "decks.name",
     "freeze_grants.date",
     "goals.mode",
+    "group_invitations.state",
     "groups.invite",
     "groups.name",
     "languages.language",

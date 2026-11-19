@@ -1,0 +1,56 @@
+{
+  "action_count": 1,
+  "attention": [
+    {
+      "action_required": true,
+      "body": "hill invited you to Spanish club.",
+      "challenge_id": null,
+      "created_at": 1793183400,
+      "day": 20754,
+      "group": 1,
+      "id": 1,
+      "kind": "group_invite",
+      "read_at": null,
+      "replied": false,
+      "route": null,
+      "sender": "hill",
+      "title": "Group invitation"
+    }
+  ],
+  "items": [
+    {
+      "action_required": false,
+      "body": "Want to do the verbs together?",
+      "challenge_id": null,
+      "created_at": 1793183400,
+      "day": 20754,
+      "id": 2,
+      "kind": "message",
+      "read_at": null,
+      "replied": false,
+      "route": null,
+      "sender": "hill",
+      "title": "💬 hill"
+    },
+    {
+      "action_required": true,
+      "body": "hill invited you to Spanish club.",
+      "challenge_id": null,
+      "created_at": 1793183400,
+      "day": 20754,
+      "group": 1,
+      "id": 1,
+      "kind": "group_invite",
+      "read_at": null,
+      "replied": false,
+      "route": null,
+      "sender": "hill",
+      "title": "Group invitation"
+    }
+  ],
+  "latest_id": 2,
+  "next_before": null,
+  "retention_days": 90,
+  "unread_count": 2,
+  "window_days": 90
+}

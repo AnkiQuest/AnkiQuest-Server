@@ -22,6 +22,7 @@ const STEPS: &[Step] = &[
     earned_companions,
     share_receipts,
     quest_companions,
+    group_invitations,
 ];
 
 /// Brings the database up to the latest step, then turns foreign keys on for the connection.
@@ -283,6 +284,11 @@ fn quest_companions(conn: &Connection) -> Result<(), Error> {
         crate::companions::TABLE
     ))?;
     Ok(())
+}
+
+/// Invitations to a group reach the invitee's inbox as rows that name the group.
+fn group_invitations(conn: &Connection) -> Result<(), Error> {
+    add_column(conn, "notifications", "group_id", "integer")
 }
 
 #[cfg(test)]
