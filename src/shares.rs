@@ -405,11 +405,18 @@ pub(crate) fn send_wins(
     })
 }
 
-/// Reserve a receipt forever for this win, even after its deliveries are undone. Moving a
-/// collision earlier by one millisecond keeps the released deadline field within one day.
+/// Reserve a receipt for this win that none of its earlier sends had, even after their
+/// deliveries are undone. Moving a collision earlier by one millisecond keeps the released
+/// deadline field within one day. A receipt is always above the floor of deleted ones, so a
+/// clock that goes back cannot hand out an old receipt again; when the clock went back more
+/// than a day, none fits and the send is refused.
 fn receipt(conn: &Connection, win: i64, now: i64) -> Result<i64, Error> {
+    let floor = prune_receipts(conn, now)?;
     let mut until = now.checked_add(UNDO_MS).ok_or("invalid share time")?;
     loop {
+        if until <= now.max(floor) {
+            return Err("no Undo receipt available".into());
+        }
         let inserted = conn.execute(
             "insert or ignore into win_receipts (win, until, created_at) values (?1, ?2, ?3)",
             params![win, until, now],
@@ -418,10 +425,20 @@ fn receipt(conn: &Connection, win: i64, now: i64) -> Result<i64, Error> {
             return Ok(until);
         }
         until = until.checked_sub(1).ok_or("no Undo receipt available")?;
-        if until <= now {
-            return Err("no Undo receipt available".into());
-        }
     }
+}
+
+/// Deletes receipts whose deadline passed by `now`, since they can no longer take anything
+/// back, and raises the floor to `now`. Answers the floor: every receipt at or below it may
+/// have been deleted, so none of those is issued again.
+fn prune_receipts(conn: &Connection, now: i64) -> Result<i64, Error> {
+    conn.execute("delete from win_receipts where until <= ?1", [now])?;
+    conn.execute(
+        "insert into win_receipt_floor (id, until) values (1, ?1)
+         on conflict (id) do update set until = max(until, excluded.until)",
+        [now],
+    )?;
+    Ok(conn.query_row("select until from win_receipt_floor", [], |r| r.get(0))?)
 }
 
 /// The pre-upgrade delivery marker for a moment whose legacy route used a separate ledger.
@@ -2539,6 +2556,71 @@ mod tests {
         assert_eq!(undo_send(&app, &second).await.0, StatusCode::CONFLICT);
         assert_eq!(inbox(&app, "friend").len(), 1);
         assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    fn receipt_rows(app: &App) -> i64 {
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .query_row("select count(*) from win_receipts", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn expired_receipts_are_deleted_on_send() {
+        let at = 1_800_000_000_000;
+        let _clock = FixedClock::at(at);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        assert_eq!(receipt_rows(&app), 1);
+
+        // Once its deadline has passed, the next send deletes the first receipt.
+        let expiry = first["undo_until"].as_i64().unwrap();
+        crate::app::fix_now_ms(Some(expiry));
+        let second = send_to(&app, win, "friend").await;
+        assert_eq!(receipt_rows(&app), 1);
+        assert_eq!(undo_send(&app, &first).await.0, StatusCode::CONFLICT);
+        assert_eq!(undo_send(&app, &second).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn clock_return_after_expiry_keeps_old_undo() {
+        let at = 1_800_000_000_000;
+        let _clock = FixedClock::at(at);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+
+        // The clock passes the first receipt's deadline; a send deletes the receipt.
+        let expiry = first["undo_until"].as_i64().unwrap();
+        crate::app::fix_now_ms(Some(expiry + 1));
+        let second = send_to(&app, win, "friend").await;
+        assert_eq!(undo_send(&app, &second).await.1["retracted"], 1);
+
+        // Back to the first send's time, no receipt above the deleted ones fits in the day,
+        // so the send is refused rather than reusing the first receipt.
+        crate::app::fix_now_ms(Some(at));
+        let (status, _) = share_as_hill(
+            &app,
+            json!({"moment": {"win": win}, "to": {"friends": ["cerro"]}}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(inbox(&app, "cerro").is_empty());
+
+        // A smaller step back gets a receipt the first never had.
+        crate::app::fix_now_ms(Some(at + 2));
+        let third = send_to(&app, win, "cerro").await;
+        assert_ne!(third["undo_until"], first["undo_until"]);
+        crate::app::fix_now_ms(Some(at + 3));
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 0);
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert_eq!(undo_send(&app, &third).await.1["retracted"], 1);
         cleanup(app, path);
     }
 
