@@ -6,8 +6,8 @@
 //! review time of its unsent reviews to `today.time_ms` and compares the sum with
 //! `today.streak_minutes`, exactly as the server will once they arrive. These cases are worked out by
 //! the server's own [`compute_with_rules`] and written to `tests/fixtures/day_verdicts.json`, which the
-//! clients test their copy of the rule against. Regenerate with
-//! `UPDATE_FIXTURES=1 cargo test day_verdicts`.
+//! clients test their copy of the rule against. Each case also names the words clients show for the
+//! day (`label`). Regenerate with `UPDATE_FIXTURES=1 cargo test day_verdicts`.
 
 use crate::game::{
     Clock, ClockHistory, DAY_MS, FreezePolicy, Review, StreakChange, StreakRule, Week,
@@ -119,6 +119,36 @@ const CASES: &[Case] = &[
         now: MINUTE * 20,
     },
     Case {
+        name: "nothing studied today",
+        offset_west_min: 0,
+        rollover_hour: 4,
+        streak_minutes: 10,
+        granted: &[],
+        uploaded: &[(-DAY_MS, 600_000)],
+        pending: &[],
+        now: MINUTE * 20,
+    },
+    Case {
+        name: "a frozen yesterday with nothing studied today",
+        offset_west_min: 0,
+        rollover_hour: 4,
+        streak_minutes: 10,
+        granted: &[-1],
+        uploaded: &[(-2 * DAY_MS, 600_000)],
+        pending: &[],
+        now: MINUTE * 20,
+    },
+    Case {
+        name: "one review after a frozen yesterday is short, not unstudied",
+        offset_west_min: 0,
+        rollover_hour: 4,
+        streak_minutes: 10,
+        granted: &[-1],
+        uploaded: &[(-2 * DAY_MS, 600_000), (0, 30_000)],
+        pending: &[],
+        now: MINUTE * 20,
+    },
+    Case {
         name: "reviews sent again are not counted twice",
         offset_west_min: 0,
         rollover_hour: 4,
@@ -186,6 +216,33 @@ const CASES: &[Case] = &[
     },
 ];
 
+/// The words a client shows for today.
+#[derive(Clone, Copy)]
+enum Label {
+    /// Today counts, or will once unsent reviews arrive.
+    Studied,
+    /// A freeze or grant kept yesterday and nothing has been studied today.
+    Protected,
+    /// Reviews today, short of the minimum.
+    Short,
+    /// No reviews today.
+    Pending,
+    /// An unsent review from an earlier day leaves today open.
+    Unknown,
+}
+
+impl Label {
+    fn name(self) -> &'static str {
+        match self {
+            Label::Studied => "studied",
+            Label::Protected => "protected",
+            Label::Short => "short",
+            Label::Pending => "pending",
+            Label::Unknown => "unknown",
+        }
+    }
+}
+
 fn review(at: i64, time_ms: i64) -> Review {
     let id = TODAY * DAY_MS + NOON + at;
     Review {
@@ -246,6 +303,20 @@ fn client(server: &Value, pending: &[Value], now: i64) -> Value {
     let was = server["streak_state"].as_str().unwrap();
     let met = was == "studied" || (reviews > 0 && time_ms >= needed * MINUTE);
     let streak = server["streak"].as_u64().unwrap() + u64::from(met && was != "studied");
+
+    // The words for the day: reviews today outrank a protected streak, which only says that
+    // nothing has been studied yet.
+    let label = if met {
+        Label::Studied
+    } else if earlier {
+        Label::Unknown
+    } else if reviews > 0 {
+        Label::Short
+    } else if was == "protected" {
+        Label::Protected
+    } else {
+        Label::Pending
+    };
     json!({
         "met": met,
         "streak_state": if met { json!("studied") } else if earlier { Value::Null } else { json!(was) },
@@ -255,6 +326,7 @@ fn client(server: &Value, pending: &[Value], now: i64) -> Value {
         "minutes": time_ms.max(0) / MINUTE,
         "streak_minutes": needed,
         "unsent": counted.len(),
+        "label": label.name(),
     })
 }
 
@@ -332,6 +404,17 @@ fn day_verdicts_match_the_server() {
                 if !verdict[field].is_null() {
                     assert_eq!(verdict[field], full[field], "{}: {field}", case.name);
                 }
+            }
+
+            // A known short label is the server's own word for today once everything is uploaded.
+            let cell = full["heatmap"].as_array().unwrap().last().unwrap();
+            if verdict["label"] != "unknown" {
+                assert_eq!(
+                    verdict["label"] == "short",
+                    cell["state"] == "short",
+                    "{}: label",
+                    case.name
+                );
             }
         }
         cases.push(json!({

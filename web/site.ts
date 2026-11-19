@@ -1,6 +1,6 @@
 import "./i18n";
 import "./aki";
-import {escape, nativeAccount} from "./common";
+import {escape, initials, nativeAccount} from "./common";
 import {ownerHeaders, send} from "./http";
 
 /* Shared navigation, presentation components, and the browser access gate. */
@@ -15,8 +15,7 @@ import {ownerHeaders, send} from "./http";
     if (window.AnkiQuestAvatars) return AnkiQuestAvatars!.markup(user, display);
     let hash = 0;
     for (const char of String(user)) hash = (hash * 31 + char.charCodeAt(0)) | 0;
-    const initials = String(display || user).trim().split(/\s+/).map(part => Array.from(part)[0] || "").slice(0, 2).join("").toUpperCase();
-    return aqHtml`<span class="avatar" style="border-color:hsl(${Math.abs(hash) % 360} 55% 55%)" aria-hidden="true">${escape(initials)}</span>`;
+    return aqHtml`<span class="avatar" style="border-color:hsl(${Math.abs(hash) % 360} 55% 55%)" aria-hidden="true">${escape(initials(user, display))}</span>`;
   };
   const kpi = (label: string, value: unknown, detail: unknown, tone = "") => aqHtml`<div class="kpi ${escape(tone)}"><span class="kpi-label">${escape(label)}</span><strong>${escape(value)}</strong><span>${escape(detail)}</span></div>`;
   let statusPromise: Promise<Access | null> | undefined, lastIdentity: string | null | undefined, statusEpoch = 0;

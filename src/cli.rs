@@ -176,7 +176,7 @@ mod tests {
             "configured_tokens": "enabled",
             "users": {
                 "cerro": {"display": "Cerro", "token": "cerro-secret"},
-                "hill": {"display": "Hill", "token": "hill-secret"},
+                "hill": {"display": "hill", "token": "hill-secret"},
             }
         }))
         .unwrap();

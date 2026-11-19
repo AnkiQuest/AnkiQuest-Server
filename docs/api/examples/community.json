@@ -11,7 +11,7 @@
         {
           "best_streak": 1,
           "days_active": 1,
-          "display": "Hill",
+          "display": "hill",
           "freezes_used": 0,
           "new_cards": 0,
           "reviews": 4,
@@ -37,7 +37,7 @@
         {
           "best_streak": 2,
           "days_active": 1,
-          "display": "Hill",
+          "display": "hill",
           "freezes_used": 0,
           "new_cards": 0,
           "reviews": 6,
@@ -63,7 +63,7 @@
         {
           "best_streak": 0,
           "days_active": 0,
-          "display": "Hill",
+          "display": "hill",
           "freezes_used": 0,
           "new_cards": 0,
           "reviews": 0,
@@ -87,7 +87,7 @@
         {
           "best_streak": 1,
           "days_active": 1,
-          "display": "Hill",
+          "display": "hill",
           "freezes_used": 0,
           "new_cards": 0,
           "reviews": 5,
@@ -163,7 +163,7 @@
     "initialized_at": 1793183400000,
     "month": 10,
     "rollover_hour": 4,
-    "scoring_note": "Each full Anki day's XP counts toward the shared competition date containing that Anki day's start, matching the weekly leaderboard. Results accept syncs for 24 hours after the common cutoff, then remain fixed. Later syncs still count on the live leaderboard. Reconstructed results use the review history available when archived; coverage begins with the earliest retained history and may predate this server.",
+    "scoring_note": "Each full Anki day's XP counts toward that day's date on the player's own clock, matching the weekly leaderboard. Results accept syncs for 24 hours after the common cutoff, then remain fixed. Later syncs still count on the live leaderboard. Reconstructed results use the review history available when archived; coverage begins with the earliest retained history and may predate this server.",
     "start_date": "2026-10-25",
     "start_source": "available_history",
     "time_zone": "UTC",
@@ -230,7 +230,7 @@
     },
     {
       "day_wins": 2,
-      "display": "Hill",
+      "display": "hill",
       "longest_winning_streak": 2,
       "season_wins": 0,
       "shared_wins": 0,
@@ -272,7 +272,7 @@
   "records": [
     {
       "date": "2026-10-26",
-      "display": "Hill",
+      "display": "hill",
       "metric": "streak",
       "reconstructed": true,
       "scope": "server",
@@ -281,7 +281,7 @@
     },
     {
       "date": "2026-10-26",
-      "display": "Hill",
+      "display": "hill",
       "metric": "streak",
       "reconstructed": true,
       "scope": "personal",
@@ -290,7 +290,7 @@
     },
     {
       "date": "2026-10-26",
-      "display": "Hill",
+      "display": "hill",
       "metric": "daily_reviews",
       "reconstructed": true,
       "scope": "server",
@@ -299,7 +299,7 @@
     },
     {
       "date": "2026-10-26",
-      "display": "Hill",
+      "display": "hill",
       "metric": "daily_reviews",
       "reconstructed": true,
       "scope": "personal",
@@ -308,7 +308,7 @@
     },
     {
       "date": "2026-10-26",
-      "display": "Hill",
+      "display": "hill",
       "metric": "daily_xp",
       "reconstructed": true,
       "scope": "server",
@@ -317,7 +317,7 @@
     },
     {
       "date": "2026-10-26",
-      "display": "Hill",
+      "display": "hill",
       "metric": "daily_xp",
       "reconstructed": true,
       "scope": "personal",
@@ -326,7 +326,7 @@
     },
     {
       "date": "2026-10-25",
-      "display": "Hill",
+      "display": "hill",
       "metric": "streak",
       "reconstructed": true,
       "scope": "server",
@@ -335,7 +335,7 @@
     },
     {
       "date": "2026-10-25",
-      "display": "Hill",
+      "display": "hill",
       "metric": "streak",
       "reconstructed": true,
       "scope": "personal",
@@ -344,7 +344,7 @@
     },
     {
       "date": "2026-10-25",
-      "display": "Hill",
+      "display": "hill",
       "metric": "daily_reviews",
       "reconstructed": true,
       "scope": "server",
@@ -353,7 +353,7 @@
     },
     {
       "date": "2026-10-25",
-      "display": "Hill",
+      "display": "hill",
       "metric": "daily_reviews",
       "reconstructed": true,
       "scope": "personal",
@@ -362,7 +362,7 @@
     },
     {
       "date": "2026-10-25",
-      "display": "Hill",
+      "display": "hill",
       "metric": "daily_xp",
       "reconstructed": true,
       "scope": "server",
@@ -371,7 +371,7 @@
     },
     {
       "date": "2026-10-25",
-      "display": "Hill",
+      "display": "hill",
       "metric": "daily_xp",
       "reconstructed": true,
       "scope": "personal",
@@ -390,7 +390,7 @@
         {
           "best_streak": 2,
           "days_active": 3,
-          "display": "Hill",
+          "display": "hill",
           "freezes_used": 0,
           "new_cards": 0,
           "reviews": 15,
@@ -440,7 +440,7 @@
         {
           "best_streak": 1,
           "days_active": 1,
-          "display": "Hill",
+          "display": "hill",
           "freezes_used": 0,
           "new_cards": 0,
           "reviews": 4,
@@ -466,7 +466,7 @@
         {
           "best_streak": 2,
           "days_active": 2,
-          "display": "Hill",
+          "display": "hill",
           "freezes_used": 0,
           "new_cards": 0,
           "reviews": 11,
@@ -526,7 +526,7 @@
         },
         {
           "day_wins": 2,
-          "display": "Hill",
+          "display": "hill",
           "history_start": "2026-10-25",
           "month_wins": 0,
           "user": "hill",
@@ -558,7 +558,7 @@
         },
         {
           "day_wins": 0,
-          "display": "Hill",
+          "display": "hill",
           "history_start": "2026-10-25",
           "month_wins": 0,
           "user": "hill",

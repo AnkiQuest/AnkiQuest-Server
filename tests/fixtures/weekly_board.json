@@ -1,0 +1,77 @@
+{
+  "_about": "The weekly leaderboard's rules. The board switches weeks at one instant for everyone: Monday 00:00 in UTC-12, which is Monday 12:00 UTC. An Anki day counts toward the week its own date is in, on the player's clock (offset_west_min minutes west of UTC, rollover_hour). counts_toward says where the player's current Anki day counts at now_ms: board_week (the week the board shows, from board_starts_at to board_ends_at), closing_week (the week before it: a far-west Sunday still running after the reset; the profile's closing_week) or next_week (the week after it: the player's Monday began before the reset; the profile's next_week). own_week_ends_at is when the player's own week ends, the start of their next Monday. The server (src/game.rs, src/reminders.rs) checks it; the Android app and the desktop add-on keep copies.",
+  "cases": [
+    {
+      "name": "midweek counts for the board week",
+      "now_ms": 1795003200000,
+      "clock": {"offset_west_min": -60, "rollover_hour": 4},
+      "expected": {"board_starts_at": 1794830400000, "board_ends_at": 1795435200000, "counts_toward": "board_week", "own_week_ends_at": 1795402800000}
+    },
+    {
+      "name": "Berlin Monday before the rollover is still Sunday",
+      "now_ms": 1795401000000,
+      "clock": {"offset_west_min": -60, "rollover_hour": 4},
+      "expected": {"board_starts_at": 1794830400000, "board_ends_at": 1795435200000, "counts_toward": "board_week", "own_week_ends_at": 1795402800000}
+    },
+    {
+      "name": "Berlin Monday 09:00 counts for the new week",
+      "now_ms": 1795420800000,
+      "clock": {"offset_west_min": -60, "rollover_hour": 4},
+      "expected": {"board_starts_at": 1794830400000, "board_ends_at": 1795435200000, "counts_toward": "next_week", "own_week_ends_at": 1796007600000}
+    },
+    {
+      "name": "the board switches at Monday 12:00 UTC",
+      "now_ms": 1795435200000,
+      "clock": {"offset_west_min": -60, "rollover_hour": 4},
+      "expected": {"board_starts_at": 1795435200000, "board_ends_at": 1796040000000, "counts_toward": "board_week", "own_week_ends_at": 1796007600000}
+    },
+    {
+      "name": "UTC Monday 10:00 counts for the new week",
+      "now_ms": 1795428000000,
+      "clock": {"offset_west_min": 0, "rollover_hour": 4},
+      "expected": {"board_starts_at": 1794830400000, "board_ends_at": 1795435200000, "counts_toward": "next_week", "own_week_ends_at": 1796011200000}
+    },
+    {
+      "name": "UTC+14 Monday begins on Sunday in UTC",
+      "now_ms": 1795356000000,
+      "clock": {"offset_west_min": -840, "rollover_hour": 4},
+      "expected": {"board_starts_at": 1794830400000, "board_ends_at": 1795435200000, "counts_toward": "next_week", "own_week_ends_at": 1795960800000}
+    },
+    {
+      "name": "California Sunday night counts for the board week",
+      "now_ms": 1795431600000,
+      "clock": {"offset_west_min": 480, "rollover_hour": 4},
+      "expected": {"board_starts_at": 1794830400000, "board_ends_at": 1795435200000, "counts_toward": "board_week", "own_week_ends_at": 1795435200000}
+    },
+    {
+      "name": "California Monday begins with the board",
+      "now_ms": 1795435200000,
+      "clock": {"offset_west_min": 480, "rollover_hour": 4},
+      "expected": {"board_starts_at": 1795435200000, "board_ends_at": 1796040000000, "counts_toward": "board_week", "own_week_ends_at": 1796040000000}
+    },
+    {
+      "name": "UTC-12 midnight rollover one minute before the reset",
+      "now_ms": 1795435140000,
+      "clock": {"offset_west_min": 720, "rollover_hour": 0},
+      "expected": {"board_starts_at": 1794830400000, "board_ends_at": 1795435200000, "counts_toward": "board_week", "own_week_ends_at": 1795435200000}
+    },
+    {
+      "name": "UTC-12 midnight rollover begins Monday with the board",
+      "now_ms": 1795435200000,
+      "clock": {"offset_west_min": 720, "rollover_hour": 0},
+      "expected": {"board_starts_at": 1795435200000, "board_ends_at": 1796040000000, "counts_toward": "board_week", "own_week_ends_at": 1796040000000}
+    },
+    {
+      "name": "UTC-12 Sunday after the reset still counts for the closing week",
+      "now_ms": 1795438800000,
+      "clock": {"offset_west_min": 720, "rollover_hour": 4},
+      "expected": {"board_starts_at": 1795435200000, "board_ends_at": 1796040000000, "counts_toward": "closing_week", "own_week_ends_at": 1795449600000}
+    },
+    {
+      "name": "UTC-12 Monday after a 04:00 rollover",
+      "now_ms": 1795449600000,
+      "clock": {"offset_west_min": 720, "rollover_hour": 4},
+      "expected": {"board_starts_at": 1795435200000, "board_ends_at": 1796040000000, "counts_toward": "board_week", "own_week_ends_at": 1796054400000}
+    }
+  ]
+}

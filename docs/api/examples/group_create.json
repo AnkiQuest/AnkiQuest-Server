@@ -11,7 +11,7 @@
       "invite": "example-invite-1",
       "members": [
         {
-          "display": "Hill",
+          "display": "hill",
           "user": "hill"
         }
       ],

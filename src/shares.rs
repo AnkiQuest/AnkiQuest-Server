@@ -405,11 +405,18 @@ pub(crate) fn send_wins(
     })
 }
 
-/// Reserve a receipt forever for this win, even after its deliveries are undone. Moving a
-/// collision earlier by one millisecond keeps the released deadline field within one day.
+/// Reserve a receipt for this win that none of its earlier sends had, even after their
+/// deliveries are undone. Moving a collision earlier by one millisecond keeps the released
+/// deadline field within one day. A receipt is always above the floor of deleted ones, so a
+/// clock that goes back cannot hand out an old receipt again; when the clock went back more
+/// than a day, none fits and the send is refused.
 fn receipt(conn: &Connection, win: i64, now: i64) -> Result<i64, Error> {
+    let floor = prune_receipts(conn, now)?;
     let mut until = now.checked_add(UNDO_MS).ok_or("invalid share time")?;
     loop {
+        if until <= now.max(floor) {
+            return Err("no Undo receipt available".into());
+        }
         let inserted = conn.execute(
             "insert or ignore into win_receipts (win, until, created_at) values (?1, ?2, ?3)",
             params![win, until, now],
@@ -418,10 +425,20 @@ fn receipt(conn: &Connection, win: i64, now: i64) -> Result<i64, Error> {
             return Ok(until);
         }
         until = until.checked_sub(1).ok_or("no Undo receipt available")?;
-        if until <= now {
-            return Err("no Undo receipt available".into());
-        }
     }
+}
+
+/// Deletes receipts whose deadline passed by `now`, since they can no longer take anything
+/// back, and raises the floor to `now`. Answers the floor: every receipt at or below it may
+/// have been deleted, so none of those is issued again.
+fn prune_receipts(conn: &Connection, now: i64) -> Result<i64, Error> {
+    conn.execute("delete from win_receipts where until <= ?1", [now])?;
+    conn.execute(
+        "insert into win_receipt_floor (id, until) values (1, ?1)
+         on conflict (id) do update set until = max(until, excluded.until)",
+        [now],
+    )?;
+    Ok(conn.query_row("select until from win_receipt_floor", [], |r| r.get(0))?)
 }
 
 /// The pre-upgrade delivery marker for a moment whose legacy route used a separate ledger.
@@ -1062,32 +1079,34 @@ mod tests {
     #[test]
     fn a_celebration_is_shared_as_its_win_and_older_rows_as_a_quote() {
         let (mut store, _path) = crate::test_support::temporary_store();
-        let id = win_for(&mut store, "hill");
-        let win = store.notifications("hill", 2_000).unwrap()[0].win.unwrap();
+        let id = win_for(&mut store, "aldanita");
+        let win = store.notifications("aldanita", 2_000).unwrap()[0]
+            .win
+            .unwrap();
         assert!(matches!(
-            notification_win(&store, "hill", id).unwrap(),
+            notification_win(&store, "aldanita", id).unwrap(),
             Some(Notice::Win(found)) if found == win
         ));
         store
             .conn
             .execute("update notifications set win_id = null", [])
             .unwrap();
-        let quoted = quote(&store, "hill", id).unwrap();
+        let quoted = quote(&store, "aldanita", id).unwrap();
         assert_eq!(quoted.topic.as_deref(), Some("streak"));
-        let friends = strings(&["cerro", "aldanita"]);
+        let friends = strings(&["cerro", "hill"]);
         assert_eq!(
-            send(&mut store, "hill", "Hill", &friends, &quoted, 3_000).unwrap(),
+            send(&mut store, "aldanita", "Aldana", &friends, &quoted, 3_000).unwrap(),
             2
         );
         assert_eq!(
-            send(&mut store, "hill", "Hill", &friends, &quoted, 4_000).unwrap(),
+            send(&mut store, "aldanita", "Aldana", &friends, &quoted, 4_000).unwrap(),
             0,
             "a win reaches each friend once"
         );
         let got = &store.notifications("cerro", 4_000).unwrap()[0];
         assert_eq!(got.kind, "share");
-        assert_eq!(got.sender, "hill");
-        assert_eq!(got.title, "🎉 Hill shared a win");
+        assert_eq!(got.sender, "aldanita");
+        assert_eq!(got.title, "🎉 Aldana shared a win");
         assert_eq!(got.body, "Title streak:1:30: “Body”");
         assert_eq!(got.topic.as_deref(), Some("streak"));
     }
@@ -1125,7 +1144,7 @@ mod tests {
             send_wins(
                 store,
                 "hill",
-                "Hill",
+                "hill",
                 &friends,
                 std::slice::from_ref(&win),
                 Sending::ByHand(None),
@@ -1140,7 +1159,7 @@ mod tests {
         let mut got = store.notifications("cerro", 3_000).unwrap().remove(0);
         assert_eq!(
             (got.kind.as_str(), got.sender.as_str(), got.title.as_str()),
-            ("share", "hill", "🎉 Hill shared a win")
+            ("share", "hill", "🎉 hill shared a win")
         );
         assert_eq!(got.body, "Title streak:1:30: “Body”");
         assert_eq!(got.topic.as_deref(), Some("streak"));
@@ -1162,25 +1181,25 @@ mod tests {
         let (mut store, _path) = crate::test_support::temporary_store();
         wins::update_sharing(
             &store.conn,
-            "hill",
+            "aldanita",
             wins::SharingUpdate {
                 policies: Default::default(),
                 daily_cap: Some(1),
             },
         )
         .unwrap();
-        let first = moment(&store, "hill", "level:4");
-        let second = moment(&store, "hill", "achievement:x");
+        let first = moment(&store, "aldanita", "level:4");
+        let second = moment(&store, "aldanita", "achievement:x");
         let both = [
-            wins::win(&store.conn, "hill", first).unwrap(),
-            wins::win(&store.conn, "hill", second).unwrap(),
+            wins::win(&store.conn, "aldanita", first).unwrap(),
+            wins::win(&store.conn, "aldanita", second).unwrap(),
         ];
         let friends = strings(&["cerro"]);
         assert_eq!(
             send_wins(
                 &mut store,
-                "hill",
-                "Hill",
+                "aldanita",
+                "Aldana",
                 &friends,
                 &both,
                 Sending::Automatic,
@@ -1192,16 +1211,21 @@ mod tests {
         );
         let got = store.notifications("cerro", 3_000).unwrap();
         assert_eq!(got.len(), 1);
-        assert_eq!(got[0].title, "🎉 Hill: 2 wins");
+        assert_eq!(got[0].title, "🎉 Aldana: 2 wins");
         assert_eq!(got[0].body, "Title level:4 · Title achievement:x");
         assert_eq!(got[0].topic.as_deref(), Some("level"));
         assert_eq!(got[0].win, Some(first));
-        let third = [wins::win(&store.conn, "hill", moment(&store, "hill", "level:5")).unwrap()];
+        let third = [wins::win(
+            &store.conn,
+            "aldanita",
+            moment(&store, "aldanita", "level:5"),
+        )
+        .unwrap()];
         assert_eq!(
             send_wins(
                 &mut store,
-                "hill",
-                "Hill",
+                "aldanita",
+                "Aldana",
                 &friends,
                 &third,
                 Sending::Automatic,
@@ -1215,8 +1239,8 @@ mod tests {
         assert_eq!(
             send_wins(
                 &mut store,
-                "hill",
-                "Hill",
+                "aldanita",
+                "Aldana",
                 &friends,
                 &third,
                 Sending::ByHand(None),
@@ -1340,7 +1364,7 @@ mod tests {
         send_wins(
             &mut store,
             "hill",
-            "Hill",
+            "hill",
             &friends[..1],
             &[level.clone(), secured],
             Sending::ByHand(None),
@@ -1350,7 +1374,7 @@ mod tests {
         send_wins(
             &mut store,
             "hill",
-            "Hill",
+            "hill",
             &friends[1..],
             &[level],
             Sending::ByHand(None),
@@ -1358,14 +1382,14 @@ mod tests {
         )
         .unwrap();
         let mut digest = store.notifications("cerro", 3_000).unwrap().remove(0);
-        crate::i18n::notification(&mut digest, "es", "Hill");
+        crate::i18n::notification(&mut digest, "es", "hill");
         localize(&store.conn, &mut digest, "es").unwrap();
-        assert_eq!(digest.title, "🎉 Hill: 2 logros");
+        assert_eq!(digest.title, "🎉 hill: 2 logros");
         assert_eq!(digest.body, "Nivel 4 · ¡Racha asegurada!");
         let mut single = store.notifications("aldanita", 3_000).unwrap().remove(0);
-        crate::i18n::notification(&mut single, "de", "Hill");
+        crate::i18n::notification(&mut single, "de", "hill");
         localize(&store.conn, &mut single, "de").unwrap();
-        assert_eq!(single.title, "🎉 Hill hat einen Erfolg geteilt");
+        assert_eq!(single.title, "🎉 hill hat einen Erfolg geteilt");
         assert_eq!(
             single.body, "Level 4: “Ich habe Level 4 mit 900 XP erreicht.”",
             "a friend reads it in the sharer's words"
@@ -1461,7 +1485,7 @@ mod tests {
         send_wins(
             &mut store,
             "hill",
-            "Hill",
+            "hill",
             &strings(&["cerro"]),
             &[win],
             Sending::ByHand(None),
@@ -1470,7 +1494,7 @@ mod tests {
         .unwrap();
         let row = store.notifications("cerro", 3_000).unwrap()[0].id;
         assert_eq!(
-            react(&mut store.conn, "hill", "Hill", row, 4_000).unwrap(),
+            react(&mut store.conn, "hill", "hill", row, 4_000).unwrap(),
             None
         );
         assert_eq!(
@@ -1493,7 +1517,7 @@ mod tests {
         assert!(!cheers[0].reacted);
         assert_eq!(
             store
-                .reply("hill", "Hill", cheers[0].id, "thanks!", 6_000)
+                .reply("hill", "hill", cheers[0].id, "thanks!", 6_000)
                 .unwrap()
                 .as_deref(),
             Some("cerro")
@@ -1520,7 +1544,7 @@ mod tests {
             send(
                 &mut store,
                 "hill",
-                "Hill",
+                "hill",
                 &strings(&["cerro"]),
                 &win,
                 3_000
@@ -1531,14 +1555,14 @@ mod tests {
         assert!(store.notifications("cerro", 3_000).unwrap().is_empty());
     }
 
-    /// Hill, Cerro and Friend share the original community; accounts can sign up.
+    /// hill, Cerro and Friend share the original community; accounts can sign up.
     fn moments_app() -> (Arc<App>, PathBuf) {
         crate::test_support::app_with(json!({
             "registration": true,
             "configured_tokens": "enabled",
             "users": {
                 "cerro": {"display": "Cerro", "token": "cerro-secret"},
-                "hill": {"display": "Hill", "token": "hill-secret"},
+                "hill": {"display": "hill", "token": "hill-secret"},
                 "friend": {"token": "friend-secret"}
             }
         }))
@@ -1705,7 +1729,7 @@ mod tests {
                     &Outgoing {
                         to: "cerro",
                         from: "hill",
-                        title: "Hill shared a win",
+                        title: "hill shared a win",
                         body: "#1 on this week's leaderboard",
                         kind: "share",
                     },
@@ -2308,7 +2332,7 @@ mod tests {
         let id = moment(&app.store.lock().unwrap(), "hill", "level:7");
         sign_up(&app, "ana").await;
         sign_up(&app, "bea").await;
-        // Hill, Ana and Cerro are in the club; Bea has a group of her own.
+        // hill, Ana and Cerro are in the club; Bea has a group of her own.
         sql(
             &app,
             "insert into groups (id, name, invite, created_by, created_at)
@@ -2423,7 +2447,7 @@ mod tests {
         send_wins(
             &mut store,
             "hill",
-            "Hill",
+            "hill",
             &friends,
             &[win],
             Sending::Automatic,
@@ -2529,6 +2553,71 @@ mod tests {
         cleanup(app, path);
     }
 
+    fn receipt_rows(app: &App) -> i64 {
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .query_row("select count(*) from win_receipts", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn expired_receipts_are_deleted_on_send() {
+        let at = 1_800_000_000_000;
+        let clock = FixedClock::at(at);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        assert_eq!(receipt_rows(&app), 1);
+
+        // Once its deadline has passed, the next send deletes the first receipt.
+        let expiry = first["undo_until"].as_i64().unwrap();
+        clock.set(expiry);
+        let second = send_to(&app, win, "friend").await;
+        assert_eq!(receipt_rows(&app), 1);
+        assert_eq!(undo_send(&app, &first).await.0, StatusCode::CONFLICT);
+        assert_eq!(undo_send(&app, &second).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn clock_return_after_expiry_keeps_old_undo() {
+        let at = 1_800_000_000_000;
+        let clock = FixedClock::at(at);
+        let (app, path) = moments_app();
+        let win = moment(&app.store.lock().unwrap(), "hill", "level:7");
+        let first = send_to(&app, win, "cerro").await;
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 1);
+
+        // The clock passes the first receipt's deadline; a send deletes the receipt.
+        let expiry = first["undo_until"].as_i64().unwrap();
+        clock.set(expiry + 1);
+        let second = send_to(&app, win, "friend").await;
+        assert_eq!(undo_send(&app, &second).await.1["retracted"], 1);
+
+        // Back to the first send's time, no receipt above the deleted ones fits in the day,
+        // so the send is refused rather than reusing the first receipt.
+        clock.set(at);
+        let (status, _) = share_as_hill(
+            &app,
+            json!({"moment": {"win": win}, "to": {"friends": ["cerro"]}}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(inbox(&app, "cerro").is_empty());
+
+        // A smaller step back gets a receipt the first never had.
+        clock.set(at + 2);
+        let third = send_to(&app, win, "cerro").await;
+        assert_ne!(third["undo_until"], first["undo_until"]);
+        clock.set(at + 3);
+        assert_eq!(undo_send(&app, &first).await.1["retracted"], 0);
+        assert_eq!(inbox(&app, "cerro").len(), 1);
+        assert_eq!(undo_send(&app, &third).await.1["retracted"], 1);
+        cleanup(app, path);
+    }
+
     #[tokio::test]
     async fn collision_keeps_its_deadline() {
         let at = 1_800_000_000_000;
@@ -2556,7 +2645,7 @@ mod tests {
             send_wins(
                 store,
                 "hill",
-                "Hill",
+                "hill",
                 &strings(&["cerro"]),
                 std::slice::from_ref(&win),
                 Sending::ByHand(None),
@@ -2618,7 +2707,7 @@ mod tests {
             send_wins(
                 store,
                 "hill",
-                "Hill",
+                "hill",
                 &strings(&["cerro"]),
                 std::slice::from_ref(&win),
                 Sending::ByHand(None),

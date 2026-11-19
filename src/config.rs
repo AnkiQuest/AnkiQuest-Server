@@ -91,7 +91,7 @@ fn default_week_timezone() -> String {
 }
 
 fn default_week_rollover_hour() -> u32 {
-    4
+    Week::RESET_HOUR
 }
 
 fn default_addr() -> String {

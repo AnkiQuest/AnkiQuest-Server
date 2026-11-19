@@ -246,8 +246,8 @@
         };
         weekRolloverHour = lib.mkOption {
           type = lib.types.ints.between 0 23;
-          default = 4;
-          description = "Local hour in weekTimezone at which the leaderboard week turns over on Mondays.";
+          default = 12;
+          description = "Local hour in weekTimezone at which the leaderboard switches weeks on Mondays. The default, 12:00 UTC, is Monday 00:00 in UTC-12, the last time zone to reach Monday. A player's Anki days count toward the week of their own date either way.";
         };
         competitionStartDate = lib.mkOption {
           type = lib.types.nullOr lib.types.str;

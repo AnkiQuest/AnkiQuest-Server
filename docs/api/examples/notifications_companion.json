@@ -31,7 +31,7 @@
     "replied": false,
     "route": null,
     "sender": "hill",
-    "title": "🎉 Hill shared a win",
+    "title": "🎉 hill shared a win",
     "topic": "goal",
     "win": 1
   },
@@ -48,7 +48,7 @@
     "replied": false,
     "route": null,
     "sender": "hill",
-    "title": "🎉 Hill cheered",
+    "title": "🎉 hill cheered",
     "win": 2
   },
   {
@@ -113,7 +113,7 @@
   },
   {
     "action_required": false,
-    "body": "Hill has finished their Spanish studies for today.",
+    "body": "hill has finished their Spanish studies for today.",
     "challenge_id": null,
     "created_at": 1793183400,
     "day": 20754,

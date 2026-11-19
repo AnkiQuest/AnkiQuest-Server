@@ -343,13 +343,17 @@ impl<'a> DayWalk<'a> {
 }
 
 /// The leaderboard week shared by every player: Monday to Sunday in one time zone,
-/// turning over at the same hour for everyone.
+/// turning over at the same hour for everyone. The default board, [`Week::BOARD`], switches at
+/// Monday 00:00 in UTC-12, the last time zone to reach Monday, which is Monday 12:00 UTC.
+/// A player's own Anki days count toward the week of their own date; see [`monday_of`].
 #[derive(Clone, Copy, Debug)]
 pub struct Week {
     pub tz: Tz,
     pub rollover_hour: u32,
 }
 
+/// The week most tests are written against: UTC with a 04:00 rollover.
+#[cfg(test)]
 impl Default for Week {
     fn default() -> Self {
         Self {
@@ -360,6 +364,15 @@ impl Default for Week {
 }
 
 impl Week {
+    /// The UTC hour on Mondays at which the default board switches weeks.
+    pub const RESET_HOUR: u32 = 12;
+
+    /// The default board: Monday 12:00 UTC, which is Monday 00:00 in UTC-12.
+    pub const BOARD: Self = Self {
+        tz: Tz::UTC,
+        rollover_hour: Self::RESET_HOUR,
+    };
+
     /// The common competition date, independent of any player's Anki clock.
     pub fn competition_date(&self, ms: i64) -> NaiveDate {
         self.shifted(ms).date()
@@ -390,18 +403,10 @@ impl Week {
             - Duration::hours(i64::from(self.rollover_hour))
     }
 
-    fn of(&self, ms: i64) -> (i32, u32) {
-        let week = self.shifted(ms).date().iso_week();
-        (week.year(), week.week())
-    }
-
-    fn month_of(&self, ms: i64) -> (i32, u32) {
-        let date = self.shifted(ms).date();
-        (date.year(), date.month())
-    }
-
-    fn year_of(&self, ms: i64) -> i32 {
-        self.shifted(ms).date().year()
+    /// The Monday of the week the board shows at `ms`, as a day number like [`Clock::day`].
+    fn monday(&self, ms: i64) -> i64 {
+        let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+        monday_of((self.shifted(ms).date() - epoch).num_days())
     }
 
     /// When the week containing `ms` began, in milliseconds since the epoch.
@@ -1131,7 +1136,7 @@ pub struct Lifetime {
     pub quests: u64,
     /// Hard cards learned at last; see [`conquests`].
     pub conquered: u64,
-    /// Leeches among them, each card once; see [`leeches_tamed`]. Unlocks Leech-tan.
+    /// Leeches among them, each card once; see [`leeches_tamed`]. Unlocks Leech-kun.
     #[serde(skip)]
     pub leeches_tamed: u64,
 }
@@ -1145,9 +1150,9 @@ pub struct Event {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct HistoryDay {
-    /// UTC start of the player's Anki day. Competition periods use this instant,
-    /// exactly as the existing weekly/monthly leaderboard does.
+    /// UTC start of the player's Anki day.
     pub at: i64,
+    /// The day's date on the player's own clock; competition periods credit it to this date.
     pub date: String,
     pub xp: u64,
     pub reviews: u64,
@@ -1206,22 +1211,54 @@ pub struct Profile {
     /// The daily goal and today's progress, in the owner's view only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub goal: Option<crate::goals::GoalView>,
-    /// The week that has already reset on the board but still counts this player's current
-    /// day, present only while it does; see [`ClosingWeek`].
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub closing_week: Option<ClosingWeek>,
+    /// The week the player's current day counts toward when it is not the one the board
+    /// shows; left out while it is. See [`OwnWeek`].
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub own_week: Option<OwnWeek>,
 }
 
-/// The shared week resets for everyone at one instant, but an Anki day counts toward the
-/// week its start falls in. A player whose current day began before the reset (Sunday
-/// evening in California for a reset at Monday 00:00 UTC) is still adding to the closing
-/// week until that day ends, while `week_xp` already shows the new one.
+impl Profile {
+    /// XP of the week the player's current day counts toward, today's included.
+    pub fn own_week_xp(&self) -> u64 {
+        match self.own_week {
+            None => self.week_xp,
+            Some(OwnWeek::Closing(closing)) => closing.xp,
+            Some(OwnWeek::Next(next)) => next.xp,
+        }
+    }
+}
+
+/// An Anki day counts toward the week its own date is in, on the player's clock, but the
+/// board switches weeks for everyone at one instant. Around the switch a player's current
+/// day can count toward the week before the board's or the week after it. Serialized as
+/// `closing_week` or `next_week`.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OwnWeek {
+    /// A Sunday still running after the switch (UTC-12 with a 04:00 rollover).
+    #[serde(rename = "closing_week")]
+    Closing(ClosingWeek),
+    /// A Monday that began before the switch (Berlin on Monday morning).
+    #[serde(rename = "next_week")]
+    Next(NextWeek),
+}
+
+/// The week the board has just left, still counting the player's current day while
+/// `week_xp` already shows the new one.
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ClosingWeek {
     /// XP that counts toward the closing week, today's included.
     pub xp: u64,
-    /// When it closes for this player: the end of their current day (ms).
+    /// When it closes for this player: the start of their own Monday (ms).
     pub ends_at: i64,
+}
+
+/// The week after the board's, which the player's current day already counts toward.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NextWeek {
+    /// XP that counts toward the next week, today's included.
+    pub xp: u64,
+    /// When the board switches to it (ms).
+    pub starts_at: i64,
 }
 
 pub fn level_need(level: u64) -> u64 {
@@ -1257,6 +1294,11 @@ fn civil(day: i64) -> (i64, i64, i64) {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = yoe + era * 400 + i64::from(m <= 2);
     (y, m, d)
+}
+
+/// The Monday of the week `day` is in, as a day number. Day 0, 1970-01-01, was a Thursday.
+pub(crate) fn monday_of(day: i64) -> i64 {
+    day - (day + 3).rem_euclid(7)
 }
 
 fn is_weekend(day: i64) -> bool {
@@ -1806,17 +1848,19 @@ pub fn compute_with_rules(
         })
         .collect();
 
-    let this_week = week.of(now_ms);
-    let this_month = week.month_of(now_ms);
-    let this_year = week.year_of(now_ms);
+    // A day counts toward the week, month and year of its own date. The week is the one
+    // the board shows; month and year are the player's own current ones.
+    let board_monday = week.monday(now_ms);
+    let own_monday = monday_of(today);
+    let (this_year, this_month, _) = civil(today);
     let in_period = |days_back: i64, matches: &dyn Fn(i64) -> bool| -> u64 {
         day_xp
             .range(today - days_back..=today)
-            .filter(|(d, _)| matches(clock.day_start_ms(**d)))
+            .filter(|(d, _)| matches(**d))
             .map(|(_, xp)| xp)
             .sum()
     };
-    let week_xp = in_period(9, &|start| week.of(start) == this_week);
+    let week_xp = in_period(9, &|day| monday_of(day) == board_monday);
     let periods = Periods {
         hour: earned
             .iter()
@@ -1826,8 +1870,11 @@ pub fn compute_with_rules(
             .round() as u64,
         day: day_xp.get(&today).copied().unwrap_or(0),
         week: week_xp,
-        month: in_period(40, &|start| week.month_of(start) == this_month),
-        year: in_period(400, &|start| week.year_of(start) == this_year),
+        month: in_period(40, &|day| {
+            let (year, month, _) = civil(day);
+            (year, month) == (this_year, this_month)
+        }),
+        year: in_period(400, &|day| civil(day).0 == this_year),
         all: xp_total,
     };
 
@@ -1925,13 +1972,20 @@ pub fn compute_with_rules(
     } else {
         0
     };
-    let closing_week = (week.of(today_start) != this_week).then(|| {
-        let closing = week.of(today_start);
-        ClosingWeek {
-            xp: in_period(9, &|start| week.of(start) == closing),
-            ends_at: day_ends_at,
-        }
-    });
+    // Around the board's switch the current day can count toward a week the board does not
+    // show: the one it has just left, or the one it has yet to reach.
+    let own_xp = in_period(9, &|day| monday_of(day) == own_monday);
+    let own_week = match own_monday.cmp(&board_monday) {
+        std::cmp::Ordering::Equal => None,
+        std::cmp::Ordering::Less => Some(OwnWeek::Closing(ClosingWeek {
+            xp: own_xp,
+            ends_at: clock.day_start_ms(own_monday + 7),
+        })),
+        std::cmp::Ordering::Greater => Some(OwnWeek::Next(NextWeek {
+            xp: own_xp,
+            starts_at: week.end_after(now_ms),
+        })),
+    };
     let streak_state = if today_counts {
         StreakState::Studied
     } else if frozen.contains(&(today - 1)) {
@@ -2005,7 +2059,7 @@ pub fn compute_with_rules(
         events,
         history,
         goal: None,
-        closing_week,
+        own_week,
     }
 }
 
@@ -2232,7 +2286,7 @@ mod tests {
         let at = reviews.last().unwrap().id;
         let profile = compute(
             "hill",
-            "Hill",
+            "hill",
             &reviews,
             &Clock::default(),
             &Week::default(),
@@ -2272,7 +2326,7 @@ mod tests {
         let at = reviews.last().unwrap().id;
         let clock = Clock::default();
         let week = Week::default();
-        let profile = compute("hill", "Hill", &reviews, &clock, &week, at + 60_000);
+        let profile = compute("hill", "hill", &reviews, &clock, &week, at + 60_000);
         assert_eq!(profile.conquests.len(), 1);
         assert_eq!(profile.lifetime.conquered, 1);
         assert!(
@@ -2281,7 +2335,7 @@ mod tests {
                 .iter()
                 .any(|e| e.key == format!("conquered:{at}"))
         );
-        let later = compute("hill", "Hill", &reviews, &clock, &week, at + 3 * DAY_MS);
+        let later = compute("hill", "hill", &reviews, &clock, &week, at + 3 * DAY_MS);
         assert!(
             !later.events.iter().any(|e| e.key.starts_with("conquered:")),
             "old conquests are listed, not announced"
@@ -2517,8 +2571,14 @@ mod tests {
             kind: 1,
         };
 
-        assert_eq!(week.of(at_berlin(21, 3)), week.of(at_berlin(20, 12)));
-        assert_ne!(week.of(at_berlin(21, 5)), week.of(at_berlin(20, 12)));
+        assert_eq!(
+            week.monday(at_berlin(21, 3)),
+            week.monday(at_berlin(20, 12))
+        );
+        assert_ne!(
+            week.monday(at_berlin(21, 5)),
+            week.monday(at_berlin(20, 12))
+        );
         assert_eq!(week.end_after(at_berlin(21, 10)), at_berlin(28, 4));
         assert_eq!(week.end_after(at_berlin(21, 3)), at_berlin(21, 4));
         assert_eq!(week.start_of(at_berlin(21, 10)), at_berlin(21, 4));
@@ -2554,6 +2614,13 @@ mod tests {
             p.week_xp > 0,
             "their Monday started after the shared week did"
         );
+    }
+
+    fn closing_of(p: &Profile) -> Option<ClosingWeek> {
+        match p.own_week {
+            Some(OwnWeek::Closing(closing)) => Some(closing),
+            _ => None,
+        }
     }
 
     #[test]
@@ -2595,11 +2662,11 @@ mod tests {
         let reviews = [review(saturday), review(sunday_evening)];
         let p = compute("a", "a", &reviews, &california, &week, sunday_evening);
         assert_eq!(p.week_xp, 0, "the board has already reset");
-        let closing = p.closing_week.expect("their Sunday still counts");
+        let closing = closing_of(&p).expect("their Sunday still counts");
         assert_eq!(closing.ends_at, utc(21, 12));
         assert_eq!(closing.ends_at, p.day_ends_at);
         let before = compute("a", "a", &reviews, &california, &week, reset - 1);
-        assert_eq!(before.closing_week, None, "nothing has reset yet");
+        assert_eq!(closing_of(&before), None, "nothing has reset yet");
         assert_eq!(closing.xp, before.week_xp);
         assert!(closing.xp > 0);
         let json = serde_json::to_value(&p).unwrap();
@@ -2608,7 +2675,7 @@ mod tests {
 
         let monday = utc(21, 12);
         let p = compute("a", "a", &reviews, &california, &week, monday);
-        assert_eq!(p.closing_week, None, "gone once their Sunday ends");
+        assert_eq!(closing_of(&p), None, "gone once their Sunday ends");
         assert!(
             serde_json::to_value(&p)
                 .unwrap()
@@ -2625,7 +2692,7 @@ mod tests {
             &week,
             sunday_evening,
         );
-        assert_eq!(p.closing_week, None);
+        assert_eq!(closing_of(&p), None);
     }
 
     #[test]
@@ -4144,5 +4211,107 @@ mod tests {
         };
         assert!(!week(&ruled(&reviews, at(7), &[(0, 10)])));
         assert!(week(&ruled(&study(&days), at(7), &[(0, 10)])));
+    }
+
+    #[test]
+    fn weekly_board_fixture() {
+        use weekly_fixture::CountsToward;
+
+        let week = Week::BOARD;
+        for case in weekly_fixture::cases() {
+            let name = &case.name;
+            let expected = &case.expected;
+            assert_eq!(
+                week.start_of(case.now_ms),
+                expected.board_starts_at,
+                "{name}"
+            );
+            assert_eq!(
+                week.end_after(case.now_ms),
+                expected.board_ends_at,
+                "{name}"
+            );
+
+            // One review now: its XP shows where the player's current day counts.
+            let review = Review {
+                id: case.now_ms,
+                cid: 1,
+                last_ivl: 0,
+                ivl: None,
+                time_ms: 5_000,
+                kind: 1,
+            };
+            let p = compute("a", "a", &[review], &case.clock, &week, case.now_ms);
+            let json = serde_json::to_value(&p).unwrap();
+            let today = p.periods.day;
+            assert!(today > 0, "{name}");
+            let (board, closing, next) = match expected.counts_toward {
+                CountsToward::Board => (today, None, None),
+                CountsToward::Closing => (0, Some(expected.own_week_ends_at), None),
+                CountsToward::Next => (0, None, Some(expected.board_ends_at)),
+            };
+            assert_eq!(p.week_xp, board, "{name}: week_xp");
+            assert_eq!(
+                json.get("closing_week").map(|c| c["ends_at"].as_i64()),
+                closing.map(Some),
+                "{name}: closing_week"
+            );
+            if closing.is_some() {
+                assert_eq!(json["closing_week"]["xp"], today, "{name}");
+            }
+            assert_eq!(
+                json.get("next_week").map(|n| n["starts_at"].as_i64()),
+                next.map(Some),
+                "{name}: next_week"
+            );
+            if next.is_some() {
+                assert_eq!(json["next_week"]["xp"], today, "{name}");
+            }
+        }
+    }
+}
+
+/// The cases in `tests/fixtures/weekly_board.json`, shared by the game and reminder tests.
+#[cfg(test)]
+pub(crate) mod weekly_fixture {
+    use super::Clock;
+    use serde::Deserialize;
+
+    /// Which week the player's current Anki day counts toward, next to the board's.
+    #[derive(Deserialize, Clone, Copy)]
+    pub(crate) enum CountsToward {
+        #[serde(rename = "board_week")]
+        Board,
+        #[serde(rename = "closing_week")]
+        Closing,
+        #[serde(rename = "next_week")]
+        Next,
+    }
+
+    #[derive(Deserialize)]
+    pub(crate) struct Expected {
+        pub board_starts_at: i64,
+        pub board_ends_at: i64,
+        pub counts_toward: CountsToward,
+        pub own_week_ends_at: i64,
+    }
+
+    #[derive(Deserialize)]
+    pub(crate) struct Case {
+        pub name: String,
+        pub now_ms: i64,
+        pub clock: Clock,
+        pub expected: Expected,
+    }
+
+    #[derive(Deserialize)]
+    struct Fixture {
+        cases: Vec<Case>,
+    }
+
+    pub(crate) fn cases() -> Vec<Case> {
+        let fixture: Fixture =
+            serde_json::from_str(include_str!("../tests/fixtures/weekly_board.json")).unwrap();
+        fixture.cases
     }
 }
