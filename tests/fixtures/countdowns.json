@@ -1,10 +1,11 @@
 {
-  "_about": "Countdowns to a player's events and exams. The list is the synced setting `countdowns` (synced_settings.json holds its limits); the server only checks that it is well formed. Both clients compute what they show from the cases here. `days`: an Anki day starts at the collection's day start hour (Anki's \"next day starts at\"), so today is the local date of `now` minus `day_start_hour` hours; `days` is the event's date minus today, and `state` names it. `nearest`: the event Home and Today show, the one with the fewest days that is not past; on a tie the first in the list. `order`: the list in settings, by date and on a tie in stored order, past ones included until the player removes them. `search`: the Anki search for the cards a linked deck still has before the event (subdecks included, suspended cards left out): new, learning, and review cards due before the event day. `pace`: cards a day from today up to the day before the event, rounded up; `remaining` null means no deck is linked or the collection has no such deck. `wording`: the English text; each client translates it.",
+  "_about": "Countdowns to a player's events and exams. The list is the synced setting `countdowns` (synced_settings.json holds its limits); the server only checks that it is well formed. Both clients compute what they show from the cases here. `days`: an Anki day starts at the collection's day start hour (Anki's \"next day starts at\"), so today is the local date of `now` minus `day_start_hour` hours; `days` is the event's date minus today, and `state` names it. `nearest`: the event Home and Today show, the one with the fewest days that is not past; on a tie the first in the list. `order`: the list in settings, by date and on a tie in stored order, past ones included until the player removes them. `search`: the Anki search for the cards a linked deck still has before the event (subdecks included, suspended cards left out): new, learning, and review cards due before the event day. `pace`: cards a day from today up to the day before the event, rounded up; `remaining` null means no deck is linked or the collection has no such deck. `wording`: the English text; each client translates it. `pace_one` and `pace_other` are the plural forms of one message.",
   "wording": {
     "section": "Countdowns",
     "empty": "Add an exam or event to count down to it.",
     "add": "Add countdown",
     "edit": "Edit countdown",
+    "manage": "Edit countdowns",
     "name": "Name",
     "date": "Date",
     "deck": "Deck (optional)",
@@ -18,7 +19,7 @@
     "tomorrow": "{name} tomorrow",
     "today": "{name} today",
     "past": "{name} is over",
-    "pace_one": "~1 card a day to finish {deck} by then",
+    "pace_one": "~{cards} card a day to finish {deck} by then",
     "pace_other": "~{cards} cards a day to finish {deck} by then",
     "done": "Nothing left in {deck} before then"
   },
