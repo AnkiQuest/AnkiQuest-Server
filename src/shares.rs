@@ -1076,18 +1076,18 @@ mod tests {
         assert_eq!(quoted.topic.as_deref(), Some("streak"));
         let friends = strings(&["cerro", "aldanita"]);
         assert_eq!(
-            send(&mut store, "hill", "Hill", &friends, &quoted, 3_000).unwrap(),
+            send(&mut store, "hill", "hill", &friends, &quoted, 3_000).unwrap(),
             2
         );
         assert_eq!(
-            send(&mut store, "hill", "Hill", &friends, &quoted, 4_000).unwrap(),
+            send(&mut store, "hill", "hill", &friends, &quoted, 4_000).unwrap(),
             0,
             "a win reaches each friend once"
         );
         let got = &store.notifications("cerro", 4_000).unwrap()[0];
         assert_eq!(got.kind, "share");
         assert_eq!(got.sender, "hill");
-        assert_eq!(got.title, "🎉 Hill shared a win");
+        assert_eq!(got.title, "🎉 hill shared a win");
         assert_eq!(got.body, "Title streak:1:30: “Body”");
         assert_eq!(got.topic.as_deref(), Some("streak"));
     }
@@ -1125,7 +1125,7 @@ mod tests {
             send_wins(
                 store,
                 "hill",
-                "Hill",
+                "hill",
                 &friends,
                 std::slice::from_ref(&win),
                 Sending::ByHand(None),
@@ -1140,7 +1140,7 @@ mod tests {
         let mut got = store.notifications("cerro", 3_000).unwrap().remove(0);
         assert_eq!(
             (got.kind.as_str(), got.sender.as_str(), got.title.as_str()),
-            ("share", "hill", "🎉 Hill shared a win")
+            ("share", "hill", "🎉 hill shared a win")
         );
         assert_eq!(got.body, "Title streak:1:30: “Body”");
         assert_eq!(got.topic.as_deref(), Some("streak"));
@@ -1180,7 +1180,7 @@ mod tests {
             send_wins(
                 &mut store,
                 "hill",
-                "Hill",
+                "hill",
                 &friends,
                 &both,
                 Sending::Automatic,
@@ -1192,7 +1192,7 @@ mod tests {
         );
         let got = store.notifications("cerro", 3_000).unwrap();
         assert_eq!(got.len(), 1);
-        assert_eq!(got[0].title, "🎉 Hill: 2 wins");
+        assert_eq!(got[0].title, "🎉 hill: 2 wins");
         assert_eq!(got[0].body, "Title level:4 · Title achievement:x");
         assert_eq!(got[0].topic.as_deref(), Some("level"));
         assert_eq!(got[0].win, Some(first));
@@ -1201,7 +1201,7 @@ mod tests {
             send_wins(
                 &mut store,
                 "hill",
-                "Hill",
+                "hill",
                 &friends,
                 &third,
                 Sending::Automatic,
@@ -1216,7 +1216,7 @@ mod tests {
             send_wins(
                 &mut store,
                 "hill",
-                "Hill",
+                "hill",
                 &friends,
                 &third,
                 Sending::ByHand(None),
@@ -1340,7 +1340,7 @@ mod tests {
         send_wins(
             &mut store,
             "hill",
-            "Hill",
+            "hill",
             &friends[..1],
             &[level.clone(), secured],
             Sending::ByHand(None),
@@ -1350,7 +1350,7 @@ mod tests {
         send_wins(
             &mut store,
             "hill",
-            "Hill",
+            "hill",
             &friends[1..],
             &[level],
             Sending::ByHand(None),
@@ -1358,14 +1358,14 @@ mod tests {
         )
         .unwrap();
         let mut digest = store.notifications("cerro", 3_000).unwrap().remove(0);
-        crate::i18n::notification(&mut digest, "es", "Hill");
+        crate::i18n::notification(&mut digest, "es", "hill");
         localize(&store.conn, &mut digest, "es").unwrap();
-        assert_eq!(digest.title, "🎉 Hill: 2 logros");
+        assert_eq!(digest.title, "🎉 hill: 2 logros");
         assert_eq!(digest.body, "Nivel 4 · ¡Racha asegurada!");
         let mut single = store.notifications("aldanita", 3_000).unwrap().remove(0);
-        crate::i18n::notification(&mut single, "de", "Hill");
+        crate::i18n::notification(&mut single, "de", "hill");
         localize(&store.conn, &mut single, "de").unwrap();
-        assert_eq!(single.title, "🎉 Hill hat einen Erfolg geteilt");
+        assert_eq!(single.title, "🎉 hill hat einen Erfolg geteilt");
         assert_eq!(
             single.body, "Level 4: “Ich habe Level 4 mit 900 XP erreicht.”",
             "a friend reads it in the sharer's words"
@@ -1461,7 +1461,7 @@ mod tests {
         send_wins(
             &mut store,
             "hill",
-            "Hill",
+            "hill",
             &strings(&["cerro"]),
             &[win],
             Sending::ByHand(None),
@@ -1470,7 +1470,7 @@ mod tests {
         .unwrap();
         let row = store.notifications("cerro", 3_000).unwrap()[0].id;
         assert_eq!(
-            react(&mut store.conn, "hill", "Hill", row, 4_000).unwrap(),
+            react(&mut store.conn, "hill", "hill", row, 4_000).unwrap(),
             None
         );
         assert_eq!(
@@ -1493,7 +1493,7 @@ mod tests {
         assert!(!cheers[0].reacted);
         assert_eq!(
             store
-                .reply("hill", "Hill", cheers[0].id, "thanks!", 6_000)
+                .reply("hill", "hill", cheers[0].id, "thanks!", 6_000)
                 .unwrap()
                 .as_deref(),
             Some("cerro")
@@ -1520,7 +1520,7 @@ mod tests {
             send(
                 &mut store,
                 "hill",
-                "Hill",
+                "hill",
                 &strings(&["cerro"]),
                 &win,
                 3_000
@@ -1531,13 +1531,13 @@ mod tests {
         assert!(store.notifications("cerro", 3_000).unwrap().is_empty());
     }
 
-    /// Hill, Cerro and Friend share the original community; accounts can sign up.
+    /// hill, Cerro and Friend share the original community; accounts can sign up.
     fn moments_app() -> (Arc<App>, PathBuf) {
         crate::test_support::app_with(json!({
             "registration": true,
             "users": {
                 "cerro": {"display": "Cerro", "token": "cerro-secret"},
-                "hill": {"display": "Hill", "token": "hill-secret"},
+                "hill": {"display": "hill", "token": "hill-secret"},
                 "friend": {"token": "friend-secret"}
             }
         }))
@@ -1702,7 +1702,7 @@ mod tests {
                     &Outgoing {
                         to: "cerro",
                         from: "hill",
-                        title: "Hill shared a win",
+                        title: "hill shared a win",
                         body: "#1 on this week's leaderboard",
                         kind: "share",
                     },
@@ -2305,7 +2305,7 @@ mod tests {
         let id = moment(&app.store.lock().unwrap(), "hill", "level:7");
         sign_up(&app, "ana").await;
         sign_up(&app, "bea").await;
-        // Hill, Ana and Cerro are in the club; Bea has a group of her own.
+        // hill, Ana and Cerro are in the club; Bea has a group of her own.
         sql(
             &app,
             "insert into groups (id, name, invite, created_by, created_at)
@@ -2420,7 +2420,7 @@ mod tests {
         send_wins(
             &mut store,
             "hill",
-            "Hill",
+            "hill",
             &friends,
             &[win],
             Sending::Automatic,
@@ -2568,7 +2568,7 @@ mod tests {
             send_wins(
                 store,
                 "hill",
-                "Hill",
+                "hill",
                 &strings(&["cerro"]),
                 std::slice::from_ref(&win),
                 Sending::ByHand(None),
@@ -2630,7 +2630,7 @@ mod tests {
             send_wins(
                 store,
                 "hill",
-                "Hill",
+                "hill",
                 &strings(&["cerro"]),
                 std::slice::from_ref(&win),
                 Sending::ByHand(None),

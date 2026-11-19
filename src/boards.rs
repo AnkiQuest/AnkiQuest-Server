@@ -633,7 +633,7 @@ mod tests {
             },
         );
         let expected = app.profile("cerro").unwrap();
-        // Hill has studied, so the board shows Cerro to Hill.
+        // hill has studied, so the board shows Cerro to hill.
         with_reviews(&app, "hill", 1);
         let Json(board) = leaderboard(State(app), Query(BoardQuery::default()), headers("hill"))
             .await
@@ -767,7 +767,7 @@ mod tests {
         assert_eq!(answer.order, vec!["cerro", "hill"]);
         let change = answer.change.unwrap();
         assert_eq!(change.title, "👑 You took the crown");
-        assert_eq!(change.body, "You passed Hill.");
+        assert_eq!(change.body, "You passed hill.");
         let first_look = rank(
             State(app.clone()),
             UrlPath("cerro".into()),
@@ -825,7 +825,7 @@ mod tests {
         .0
     }
 
-    /// The scenario from issue #125: Hill in Berlin and Cerro in Buenos Aires on a Berlin
+    /// The scenario from issue #125: hill in Berlin and Cerro in Buenos Aires on a Berlin
     /// week. Phones that keep only the order compare it across the weekly reset.
     #[tokio::test]
     async fn an_order_seen_before_the_reset_is_not_compared_across_time_zones() {
@@ -833,7 +833,7 @@ mod tests {
         let config = serde_json::from_value(serde_json::json!({
             "users": {
                 "cerro": {"display": "Cerro", "token": "cerro-secret"},
-                "hill": {"display": "Hill", "token": "hill-secret"}
+                "hill": {"display": "hill", "token": "hill-secret"}
             }
         }))
         .unwrap();
@@ -892,7 +892,7 @@ mod tests {
         assert_eq!(monday.order, vec!["cerro", "hill"]);
         assert!(
             monday.change.is_none(),
-            "Cerro led all week; Hill only led last week: {:?}",
+            "Cerro led all week; hill only led last week: {:?}",
             monday.change.map(|change| change.title)
         );
         assert!(
@@ -900,7 +900,7 @@ mod tests {
                 .await
                 .change
                 .is_none(),
-            "nobody passed Hill this week either"
+            "nobody passed hill this week either"
         );
 
         crate::app::fix_now_ms(Some(at_berlin(21, 12, 0)));
@@ -914,7 +914,7 @@ mod tests {
                 .change
                 .unwrap()
                 .title,
-            "👑 Hill took the crown"
+            "👑 hill took the crown"
         );
         crate::app::fix_now_ms(None);
         cleanup(app, path);
@@ -926,7 +926,7 @@ mod tests {
         let now = now_ms();
         let week = app.week.start_of(now);
         assert!(week <= now && now < app.week.end_after(now));
-        // Hill studied a lot last week and nothing yet this week; Cerro is the first to study.
+        // hill studied a lot last week and nothing yet this week; Cerro is the first to study.
         upload_as(
             &app,
             "hill",
@@ -948,7 +948,7 @@ mod tests {
                 .is_none(),
             "older clients without a week are spared too"
         );
-        // Once Hill studies more than Cerro this week, passing is real again.
+        // Once hill studies more than Cerro this week, passing is real again.
         upload_as(&app, "hill", plain_upload(reviews_at(now - 300_000, 20))).await;
         let answer = rank_of(&app, "hill", &["cerro", "hill"], Some(week)).await;
         assert_eq!(answer.change.unwrap().title, "👑 You took the crown");

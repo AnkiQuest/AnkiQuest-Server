@@ -255,7 +255,7 @@ mod tests {
     #[tokio::test]
     async fn spanish_inbox_preserves_names_decks_and_authored_messages() {
         let (app, _path) = fixture();
-        // Hill has studied, so friends' completions reach Hill's inbox.
+        // hill has studied, so friends' completions reach hill's inbox.
         with_reviews(&app, "hill", 1);
         let now = now_ms();
         {
@@ -404,7 +404,7 @@ mod tests {
         );
 
         let answer = inbox(app.clone(), "cerro").await.remove(0);
-        assert_eq!(answer.title, "\u{1f4ac} Hill");
+        assert_eq!(answer.title, "\u{1f4ac} hill");
         assert_eq!(answer.body, "Good job!");
         assert_eq!(answer.sender, "hill");
         assert_eq!(
@@ -413,7 +413,7 @@ mod tests {
                 .unwrap()
                 .0
                 .sent_to,
-            "Hill"
+            "hill"
         );
         assert_eq!(inbox(app.clone(), "hill").await[1].body, "thanks!");
 

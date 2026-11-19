@@ -341,7 +341,7 @@ async function community(t: TestContext, items: Record<string, unknown>[], width
     if (pathname.startsWith('/api/')) calls.push({method: request.method(), path: pathname, query: url.search, body: request.postDataJSON(), auth: request.headers().authorization});
     if (pathname === '/api/avatars') return route.fulfill({json: {}});
     if (pathname === '/auth/status') return route.fulfill({json: {private_site: false, authenticated: true, member: null}});
-    if (pathname === '/api/community') return route.fulfill({json: {meta: {}, players: [{user: 'cerro', display: 'Cerro'}, {user: 'hill', display: 'Hill'}]}});
+    if (pathname === '/api/community') return route.fulfill({json: {meta: {}, players: [{user: 'cerro', display: 'Cerro'}, {user: 'hill', display: 'hill'}]}});
     if (pathname.startsWith('/api/friend-nudges/')) return route.fulfill({json: {receiving: true, automatic_receiving: false, friends: []}});
     if (pathname === '/api/activity/cerro') return route.fulfill({json: {items, attention: [], action_count: 0, unread_count: 0, next_before: null}});
     if (pathname === '/api/react/cerro') return route.fulfill({json: {}});
@@ -357,9 +357,9 @@ async function community(t: TestContext, items: Record<string, unknown>[], width
 test('activity shows shared cards, cheers and replyable reactions', async t => {
   const now = Math.floor(Date.now() / 1000);
   const items = [
-    {id: 3, sender: 'hill', kind: 'share', title: 'Hill <b>reached</b> a goal', body: '“Daily goal reached!”', created_at: now, read_at: now, win: 17, image: `${origin}/w/abc123.png`},
-    {id: 2, sender: 'hill', kind: 'share', title: 'Hill leveled up', body: '“Level 54”', created_at: now - 60, read_at: now, win: 18, image: 'javascript:alert(1)//.png', reacted: true},
-    {id: 1, sender: 'hill', kind: 'reaction', title: '🎉 Hill cheered', body: '“Level 12”', created_at: now - 120, read_at: now},
+    {id: 3, sender: 'hill', kind: 'share', title: 'hill <b>reached</b> a goal', body: '“Daily goal reached!”', created_at: now, read_at: now, win: 17, image: `${origin}/w/abc123.png`},
+    {id: 2, sender: 'hill', kind: 'share', title: 'hill leveled up', body: '“Level 54”', created_at: now - 60, read_at: now, win: 18, image: 'javascript:alert(1)//.png', reacted: true},
+    {id: 1, sender: 'hill', kind: 'reaction', title: '🎉 hill cheered', body: '“Level 12”', created_at: now - 120, read_at: now},
   ];
   const {page, calls} = await community(t, items);
   const share = page.locator('.activity-item[data-notice="3"]');
@@ -379,7 +379,7 @@ test('activity shows shared cards, cheers and replyable reactions', async t => {
   assert.equal(react.auth, 'Bearer saved-token');
   assert(await page.locator('.activity-item[data-notice="3"] [data-cheer]').isDisabled());
   const reaction = page.locator('.activity-item[data-notice="1"]');
-  assert.equal(await reaction.locator('h3').textContent(), '🎉 Hill cheered: “Level 12”');
+  assert.equal(await reaction.locator('h3').textContent(), '🎉 hill cheered: “Level 12”');
   assert.equal(await reaction.locator('[data-cheer]').count(), 0);
   await reaction.getByRole('button', {name: 'Thanks!'}).click();
   await page.locator('#activity-action-status', {hasText: 'reply was sent'}).waitFor();
@@ -388,7 +388,7 @@ test('activity shows shared cards, cheers and replyable reactions', async t => {
 
 test('cheering shows the server explanation when it fails', async t => {
   const now = Math.floor(Date.now() / 1000);
-  const {page} = await community(t, [{id: 5, sender: 'hill', kind: 'share', title: 'Hill', body: 'x', created_at: now, read_at: now, image: `${origin}/w/t.png`}]);
+  const {page} = await community(t, [{id: 5, sender: 'hill', kind: 'share', title: 'hill', body: 'x', created_at: now, read_at: now, image: `${origin}/w/t.png`}]);
   await page.route(`${origin}/api/react/cerro`, route => route.fulfill({status: 404, json: {error: 'That update is gone.'}}));
   await page.locator('[data-cheer="5"]').click();
   await page.locator('#activity-action-status.error', {hasText: 'That update is gone.'}).waitFor();
@@ -398,7 +398,7 @@ test('cheering shows the server explanation when it fails', async t => {
 test('shared cards fit a phone in both themes', async t => {
   const now = Math.floor(Date.now() / 1000);
   for (const theme of ['light', 'dark'] as const) {
-    const {page} = await community(t, [{id: 5, sender: 'hill', kind: 'share', title: 'Hill reached a very long goal name that keeps on going and going', body: 'x', created_at: now, read_at: now, image: `${origin}/w/t.png`}], 320, theme);
+    const {page} = await community(t, [{id: 5, sender: 'hill', kind: 'share', title: 'hill reached a very long goal name that keeps on going and going', body: 'x', created_at: now, read_at: now, image: `${origin}/w/t.png`}], 320, theme);
     await page.locator('.share-card img').waitFor();
     await noOverflow(page, `community 320 ${theme}`);
   }

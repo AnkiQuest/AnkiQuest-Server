@@ -60,7 +60,7 @@ pub(crate) fn fixture() -> (Arc<App>, PathBuf) {
     app_with(serde_json::json!({
         "users": {
             "cerro": {"display": "Cerro", "token": "cerro-secret"},
-            "hill": {"display": "Hill", "token": "hill-secret"},
+            "hill": {"display": "hill", "token": "hill-secret"},
             "friend": {"token": "friend-secret"}
         }
     }))

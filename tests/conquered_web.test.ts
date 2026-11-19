@@ -21,7 +21,7 @@ async function visit(browser: Browser, owner: boolean, leech: boolean, shot = ''
     if (pathname === `/api/conquests/hill/${AT}`) {
       const conquest = {at: AT, lapses: leech ? 9 : 4, answers: 23, since: AT - 40 * 86_400_000, leech};
       const sharing = isTold ? {told: true, friends: 2, undo_until: Date.now() + 86_400_000} : {told: false, friends: 2};
-      return route.fulfill({json: {user: 'hill', display: 'Hill', conquest, ...(owner ? sharing : {})}});
+      return route.fulfill({json: {user: 'hill', display: 'hill', conquest, ...(owner ? sharing : {})}});
     }
     if (pathname === `/api/conquests/hill/${AT}/tell` && request.method() === 'POST') {
       told.push({csrf: request.headers()['x-ankiquest-csrf'] ?? null});
@@ -93,7 +93,7 @@ test('the owner may show what the card was; a suggestion stays in the fragment u
       if (pathname === '/auth/status') return route.fulfill({json: {private_site: false, authenticated: true, member: {user: 'hill'}}});
       if (pathname === `/api/conquests/hill/${AT}`) {
         const conquest = {at: AT, lapses: 6, answers: 31, since: AT - 52 * 86_400_000, leech: false};
-        return route.fulfill({json: {user: 'hill', display: 'Hill', conquest, told: false, friends: 2, ...(label ? {label} : {})}});
+        return route.fulfill({json: {user: 'hill', display: 'hill', conquest, told: false, friends: 2, ...(label ? {label} : {})}});
       }
       if (pathname === `/api/conquests/hill/${AT}/label` && request.method() === 'POST') {
         saved.push({csrf: request.headers()['x-ankiquest-csrf'] ?? null, body: request.postDataJSON()});

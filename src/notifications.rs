@@ -1798,7 +1798,7 @@ mod tests {
         assert!(!inbox[0].replied);
         assert!(
             store
-                .reply("hill", "Hill", inbox[0].id, "Good job!", NOW)
+                .reply("hill", "hill", inbox[0].id, "Good job!", NOW)
                 .unwrap()
                 .is_none(),
             "nobody is recorded as the sender of a pre-reply notification"
@@ -1824,7 +1824,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             store
-                .reply("hill", "Hill", original, "Good job!", NOW + 1)
+                .reply("hill", "hill", original, "Good job!", NOW + 1)
                 .unwrap(),
             Some("cerro".into())
         );
@@ -1860,7 +1860,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             serde_json::to_value(second).unwrap()["reply_to"],
-            serde_json::json!({"title":"💬 Hill","body":"Good job!"})
+            serde_json::json!({"title":"💬 hill","body":"Good job!"})
         );
         cleanup(store, path);
     }

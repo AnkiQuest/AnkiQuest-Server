@@ -1652,7 +1652,7 @@ mod tests {
         assert_eq!(first, again);
         assert_eq!(first.as_ptr(), again.as_ptr(), "served from the cache");
         let mut renamed = card();
-        renamed.display = "Hill".into();
+        renamed.display = "hill".into();
         assert_ne!(
             first.as_ptr(),
             png(renamed, Shape::Wide).await.unwrap().as_ptr()
@@ -1730,7 +1730,7 @@ mod tests {
             "private_site": private_site,
             "users": {
                 "cerro": {"display": "Cerro", "token": "cerro-secret"},
-                "hill": {"display": "Hill", "token": "hill-secret"}
+                "hill": {"display": "hill", "token": "hill-secret"}
             }
         });
         if let Some(url) = public_url {

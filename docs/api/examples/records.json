@@ -4,7 +4,7 @@
       {
         "at": 1793007000000,
         "detail": 6,
-        "display": "Hill",
+        "display": "hill",
         "until": 1793007005000,
         "user": "hill",
         "value": 61
@@ -26,7 +26,7 @@
       {
         "at": 1793182200000,
         "detail": 5,
-        "display": "Hill",
+        "display": "hill",
         "until": 1793182204000,
         "user": "hill",
         "value": 101
@@ -48,7 +48,7 @@
       {
         "at": 1792920600000,
         "detail": 15,
-        "display": "Hill",
+        "display": "hill",
         "until": 1793182204000,
         "user": "hill",
         "value": 203
@@ -70,7 +70,7 @@
       {
         "at": 1792920600000,
         "detail": 15,
-        "display": "Hill",
+        "display": "hill",
         "until": 1793182204000,
         "user": "hill",
         "value": 203
@@ -92,7 +92,7 @@
       {
         "at": 1792920600000,
         "detail": 15,
-        "display": "Hill",
+        "display": "hill",
         "until": 1793182204000,
         "user": "hill",
         "value": 203
@@ -114,7 +114,7 @@
       {
         "at": 1792987200000,
         "detail": 0,
-        "display": "Hill",
+        "display": "hill",
         "until": 1792987200000,
         "user": "hill",
         "value": 2
@@ -136,7 +136,7 @@
       {
         "at": 1792900800000,
         "detail": 0,
-        "display": "Hill",
+        "display": "hill",
         "until": 1792900800000,
         "user": "hill",
         "value": 3

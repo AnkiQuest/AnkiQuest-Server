@@ -731,7 +731,7 @@ mod tests {
                 .filter(|n| n.kind == "share")
                 .collect();
             assert_eq!(shares.len(), 1, "{friend}: {shares:?}");
-            assert_eq!(shares[0].title, "🎉 Hill: 2 wins");
+            assert_eq!(shares[0].title, "🎉 hill: 2 wins");
             assert_eq!(shares[0].body, "Streak secured! · Daily goal reached!");
         }
         let own = store.notifications("hill", now_ms()).unwrap();
@@ -982,7 +982,7 @@ mod tests {
                 )
                 .unwrap();
             store
-                .reply("hill", "Hill", original, "Good job!", now + 1)
+                .reply("hill", "hill", original, "Good job!", now + 1)
                 .unwrap();
             store.conn.last_insert_rowid()
         };

@@ -438,7 +438,7 @@ mod tests {
             .unwrap();
         assert!(on);
         conn.execute_batch(
-            "insert into accounts values ('hill', 'Hill', '', 0);
+            "insert into accounts values ('hill', 'hill', '', 0);
              insert into account_tokens values ('token', 'hill', 'Phone', 0);
              insert into groups values (1, 'Study', 'invite', 'hill', 0);
              insert into group_members values (1, 'hill', 1, 0);",

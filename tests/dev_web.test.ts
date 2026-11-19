@@ -21,7 +21,7 @@ async function visit(browser: Browser, dev: boolean, width = 390) {
     const request = route.request(), pathname = new URL(request.url()).pathname;
     if (pathname === '/dev') return route.fulfill({contentType: 'text/html', body: built('dev')});
     if (await fulfillAsset(route, pathname)) return;
-    if (pathname === '/auth/status') return route.fulfill({json: {private_site: false, registration: true, authenticated: true, member: {user: 'hill', display: 'Hill'}, ...(dev ? {dev: true} : {})}});
+    if (pathname === '/auth/status') return route.fulfill({json: {private_site: false, registration: true, authenticated: true, member: {user: 'hill', display: 'hill'}, ...(dev ? {dev: true} : {})}});
     if (pathname === '/api/dev/hill/stats') return route.fulfill({json: stats});
     if (pathname === '/api/dev/hill/groups') return route.fulfill({json: [{id: 1, name: 'Book club', members: 4}, {id: 2, name: 'Night owls', members: 2}]});
     if (pathname === '/api/dev/hill/errors') return route.fulfill({json: [{at: TODAY * DAY, user: null, message: 'tick failed: disk full'}]});
