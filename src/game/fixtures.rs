@@ -73,7 +73,8 @@ pub(super) fn protected(reviews: &[Review], now: i64, changes: &[FreezePreferenc
 
 /// Finish every possible quest metric, with a second session before noon.
 pub(super) fn perfect_day(prior: &[Review], day: i64, clock: &Clock) -> Vec<Review> {
-    let (days, _, _) = collect_days_with_quests(prior, &ClockHistory::single(*clock), seed_of("a"));
+    let (days, _, _) =
+        collect_days_with_quests(exact(prior), &ClockHistory::single(*clock), seed_of("a"));
     let recent = days
         .values()
         .rev()
@@ -108,7 +109,7 @@ pub(super) fn perfect_history(days: &[i64]) -> Vec<Review> {
 }
 
 pub(super) fn first_completion(reviews: &[Review], day: i64) -> i64 {
-    collect_days_with_quests(reviews, &ClockHistory::single(utc()), seed_of("a"))
+    collect_days_with_quests(exact(reviews), &ClockHistory::single(utc()), seed_of("a"))
         .0
         .get(&day)
         .unwrap()
@@ -192,6 +193,7 @@ pub(super) fn ruled(reviews: &[Review], now: i64, rule: &[(i64, u32)]) -> Profil
         "a",
         "a",
         reviews,
+        &Observed::default(),
         &ClockHistory::single(utc()),
         &Week::default(),
         now,
