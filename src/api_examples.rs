@@ -269,6 +269,23 @@ async fn examples_match_the_handlers() {
         .await,
     ));
 
+    // A countdown list, synced as one value: an exam with a deck to finish and an event without.
+    examples.push((
+        "settings_countdowns",
+        f.call(
+            "PUT",
+            "/api/settings/hill",
+            Some("hill-secret"),
+            json!({"settings": {
+                "countdowns": {"value": [
+                    {"name": "Spanish exam", "date": "2026-11-09", "deck": "Spanish::A1"},
+                    {"name": "Driving theory", "date": "2026-12-01", "deck": null}
+                ], "updated_at": NOW_MS - 60_000}
+            }}),
+        )
+        .await,
+    ));
+
     f.call(
         "PUT",
         "/api/goal/hill",

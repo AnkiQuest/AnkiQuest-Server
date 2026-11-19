@@ -19,6 +19,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "companion_milestones",
     "companion_unlocks",
     "cookie_session",
+    "countdowns",
     "deck_share",
     "devices",
     "global_leaderboard_hide",

@@ -21,8 +21,8 @@ use std::sync::{Arc, OnceLock};
 
 const PATH: &str = "/api/settings/{user}";
 
-/// Room for the known keys and a few dozen newer ones with their times.
-const BODY_LIMIT: usize = 8192;
+/// Room for the known keys, a full countdown list and a few dozen newer keys with their times.
+const BODY_LIMIT: usize = 65536;
 
 /// The longest key name, as `key_rules.pattern` in the shared fixture allows.
 const MAX_NAME_LEN: usize = 64;
@@ -35,6 +35,7 @@ const SCHEMA: &str = include_str!("../tests/fixtures/synced_settings.json");
 enum Kind {
     Bool,
     Int { min: i64, max: i64 },
+    Countdowns(crate::countdowns::Limits),
 }
 
 impl Kind {
@@ -42,6 +43,7 @@ impl Kind {
         match self {
             Kind::Bool => value.is_boolean(),
             Kind::Int { min, max } => value.as_i64().is_some_and(|n| (*min..=*max).contains(&n)),
+            Kind::Countdowns(limits) => limits.accepts(value),
         }
     }
 }

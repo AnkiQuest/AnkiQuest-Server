@@ -23,6 +23,7 @@ mod companions;
 mod competition;
 mod config;
 mod conquests;
+mod countdowns;
 #[cfg(test)]
 mod day_verdicts;
 mod deck_copies;
