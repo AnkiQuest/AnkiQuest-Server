@@ -2,7 +2,7 @@
 //! Each provider's stable user id is linked to one player. A first sign-in creates an account
 //! once the person has picked a username; later ones sign into the linked player.
 
-use crate::accounts::{clean_device, clean_display, valid_username};
+use crate::accounts::{AccountKind, SignIn, clean_device, clean_display, valid_username};
 use crate::web_util::escape;
 use crate::web_util::{base64url, hex, hex_cookie, normalize_user, random_bytes, set_cookie};
 use crate::web_util::{refuse, reply};
@@ -185,6 +185,18 @@ impl Settings {
             Provider::Gitlab => self.gitlab.as_ref(),
         }
         .filter(|client| client.secret().is_some())
+    }
+
+    /// The providers the configuration names, whether or not their secrets are loaded.
+    pub fn named(&self) -> Vec<Provider> {
+        Provider::ALL
+            .into_iter()
+            .filter(|provider| match provider {
+                Provider::Google => self.google.is_some(),
+                Provider::Github => self.github.is_some(),
+                Provider::Gitlab => self.gitlab.is_some(),
+            })
+            .collect()
     }
 
     /// The providers people can sign in with here.
@@ -1343,7 +1355,25 @@ async fn create(
     signed_in(&app, &headers, &user, &signup.next, &[clear])
 }
 
+/// How `user` can sign in on a new device.
+fn sign_in_of(app: &App, user: &str) -> Result<SignIn, Error> {
+    let store = app.store.lock().unwrap();
+    let account = if !app.accounts.contains(user) {
+        AccountKind::None
+    } else if crate::accounts::has_password(&store.conn, user)? {
+        AccountKind::Password
+    } else {
+        AccountKind::NoPassword
+    };
+    let offered = linked_providers(&store.conn, user)?
+        .into_iter()
+        .filter(|provider| app.config.oauth.client(*provider).is_some())
+        .count();
+    Ok(SignIn::of(account, offered))
+}
+
 fn methods_of(app: &App, user: &str) -> Result<serde_json::Value, Error> {
+    let sign_in = sign_in_of(app, user)?;
     let store = app.store.lock().unwrap();
     let linked = linked_providers(&store.conn, user)?;
     let account = app.accounts.contains(user);
@@ -1367,7 +1397,7 @@ fn methods_of(app: &App, user: &str) -> Result<serde_json::Value, Error> {
         .iter()
         .any(|provider| app.config.oauth.client(*provider).is_none());
     Ok(
-        serde_json::json!({"account": account, "password": password, "providers": providers, "linked_unavailable": unavailable}),
+        serde_json::json!({"account": account, "password": password, "providers": providers, "linked_unavailable": unavailable, "sign_in": sign_in}),
     )
 }
 
@@ -1496,11 +1526,16 @@ async fn change(
                 return refuse(StatusCode::BAD_REQUEST, "Enter a new password.");
             };
             let client = access::client_ip(&app.config, &headers, peer);
+            let sign_in = match sign_in_of(&app, &user) {
+                Ok(sign_in) => sign_in,
+                Err(error) => return internal(error),
+            };
             if let Some(refused) = crate::accounts::change_password(
                 &app,
                 &user,
                 &headers,
                 client,
+                sign_in,
                 change.current.as_deref(),
                 password,
                 change.sign_out_others,
@@ -1705,6 +1740,7 @@ mod tests {
             "registration": registration,
             "public_url": ORIGIN,
             "devs": ["hill"],
+            "configured_tokens": "enabled",
             "users": {"alice": {"token": "alice-token"}},
             "oauth": {
                 "gitlab": {"client_id": "gitlab-app", "client_secret": "gitlab-secret", "base_url": base},
@@ -3082,12 +3118,14 @@ mod tests {
             .await,
         )
         .await;
+        // Still token only: without an account the link stops working once the
+        // configuration drops her.
         assert_eq!(
             methods,
             serde_json::json!({"account": false, "password": false, "providers": [
                 {"provider": "github", "name": "GitHub", "linked": true},
                 {"provider": "gitlab", "name": "GitLab", "linked": false}
-            ], "linked_unavailable": false})
+            ], "linked_unavailable": false, "sign_in": "token_only"})
         );
         assert_eq!(
             send(
@@ -3266,9 +3304,9 @@ mod tests {
 
     #[tokio::test]
     async fn servers_without_providers_say_nothing_about_them() {
-        let (app, path) = crate::test_support::app_with(
-            serde_json::json!({"users": {"alice": {"token": "alice-token"}}}),
-        );
+        let (app, path) =
+            crate::test_support::app_with(serde_json::json!({"configured_tokens": "enabled",
+            "users": {"alice": {"token": "alice-token"}}}));
         let status = json(send(&app, "GET", "/auth/status", &[], "").await).await;
         assert!(status.get("oauth").is_none(), "{status}");
         assert_eq!(

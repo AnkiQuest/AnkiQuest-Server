@@ -23,7 +23,7 @@ async function login(browser: Browser, oauth: string[] | undefined) {
   return {links, shown, errors};
 }
 
-async function settings(browser: Browser, confirmedUntil: number | null = null, linked = true) {
+async function settings(browser: Browser, confirmedUntil: number | null = null, linked = true, signIn?: string) {
   const context = await browser.newContext({locale: 'en-US', viewport: {width: 390, height: 1400}});
   const posted: unknown[] = [];
   await context.route('**/*', async route => {
@@ -41,7 +41,7 @@ async function settings(browser: Browser, confirmedUntil: number | null = null, 
       return route.fulfill({json: {account: true, password: false, providers: [
         {provider: 'github', name: 'GitHub', linked: false},
         {provider: 'gitlab', name: 'GitLab', linked},
-      ]}});
+      ], ...(signIn ? {sign_in: signIn} : {})}});
     }
     return route.fulfill({status: 404, body: ''});
   });
@@ -54,6 +54,7 @@ async function settings(browser: Browser, confirmedUntil: number | null = null, 
     link: await page.locator('.sign-in-row a').count() ? await page.locator('.sign-in-row a').getAttribute('href') : null,
     reauth: await page.locator('#delete-account-reauth [data-reauth]').evaluateAll(links => links.map(link => [link.textContent, link.getAttribute('href')])),
     passwordForm: await page.locator('#password-form').count(),
+    currentField: await page.locator('#password-form input[name=current]').count(),
     unlinkDisabled: linked && await page.locator('[data-unlink=gitlab]').isDisabled(),
     reauthHints: await page.locator('.reauth .settings-hint').allInnerTexts(),
     deleteForm: await page.locator('#delete-account-form').count(),
@@ -114,6 +115,18 @@ test('an account without a password or a linked sign-in is told who can give it 
     assert.deepEqual(page.reauth, []);
     const operator = 'Ask the person who runs your server to set a first password for you; you can change it here afterwards.';
     assert.deepEqual(page.reauthHints, [operator, operator], 'in the sign-in card and the delete section, with no empty sign-in-again buttons');
+    assert.deepEqual(page.errors, []);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('a player who signs in only with a token sets a first password with it', async () => {
+  const browser = await launch();
+  try {
+    const page = await settings(browser, null, false, 'token_only');
+    assert.equal(page.passwordForm, 1);
+    assert.equal(page.currentField, 0, 'there is no current password');
     assert.deepEqual(page.errors, []);
   } finally {
     await browser.close();

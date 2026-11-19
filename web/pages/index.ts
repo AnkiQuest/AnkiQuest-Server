@@ -31,8 +31,10 @@ interface Standing extends Person {
   today_minutes?: number;
   /** Review minutes today needs for the streak; 0 or missing when any review counts. */
   streak_minutes?: number;
-  /** XP still counting toward the week that just reset, while this player's day began before it. */
+  /** XP still counting toward the week the board has just left, while this player's Sunday runs. */
   closing_xp?: number;
+  /** XP already counting toward the week the board switches to next, while this player's Monday runs. */
+  next_xp?: number;
 }
 
 interface RecordHolder extends Person { value: number; detail: number; at: number; until: number; }
@@ -71,12 +73,16 @@ interface Profile extends Person {
   heatmap: HeatCell[];
   conquests: Conquest[];
   last_review_id: number;
-  /** Present while the player's current day still counts toward the week that just reset. */
+  /** Present while the player's current day still counts toward the week the board has just left. */
   closing_week?: ClosingWeek;
+  /** Present while the player's current day already counts toward the week the board shows next. */
+  next_week?: NextWeek;
 }
 
 /** The closing week, still counting the player's current day (`ClosingWeek` in src/game.rs). */
 interface ClosingWeek { xp: number; ends_at: number; }
+/** The week the board switches to next, already counting the player's current day (`NextWeek` in src/game.rs). */
+interface NextWeek { xp: number; starts_at: number; }
 
 /** A hard card learned at last (`Conquest` in src/game.rs). */
 interface Conquest { at: number; lapses: number; answers: number; since: number; leech: boolean; }
@@ -299,6 +305,13 @@ function closingWeek(closing: ClosingWeek | undefined) {
   return aqHtml`<section class="notice closing-week wide" role="status">${esc(aqText`Last week still counting: ${num(closing.xp)} XP · closes at ${at}`)}</section>`;
 }
 
+/** The week the board has yet to reach but already counts this player's day, until the board switches. */
+function nextWeek(next: NextWeek | undefined) {
+  if (!next || !(next.starts_at > Date.now())) return "";
+  const at = new Date(next.starts_at).toLocaleTimeString(AnkiQuestI18n.language, { hour: "2-digit", minute: "2-digit" });
+  return aqHtml`<section class="notice next-week wide" role="status">${esc(aqText`Next week already counting: ${num(next.xp)} XP · the board switches at ${at}`)}</section>`;
+}
+
 function streakIcon(state: string) {
   const flame = 'M12 2C13 6 18 8 18 13C18 17 15 20 11 20C7 20 4 17 4 13C4 10 6 7 8 5C8 8 9 9 10 10C12 8 13 5 12 2Z';
   const waiting = state === "pending" || state === "unknown";
@@ -356,7 +369,7 @@ function board(rows: Standing[], me: string, hideFor?: string, lock: Lock = null
         <div class="bar"><i style="width:${pct(r.xp, lead)}%"></i></div>
         ${hide ? aqHtml`<button type="button" class="hide-row" data-global-hide="${esc(r.user)}" aria-label="${esc(aqText`Hide ${r.display} for me`)}">Hide for me</button>` : ""}
       </div>
-      </div><div class="xp"><b>${num(r.xp)}</b>${r.today_reviews != null ? aqHtml`<span>${num(r.today_reviews)} today</span>` : ""}${r.closing_xp != null && (r.day_ends_at ?? 0) > Date.now() ? aqHtml`<span class="closing-xp">${esc(aqText`${num(r.closing_xp)} XP still counting for last week`)}</span>` : ""}</div>
+      </div><div class="xp"><b>${num(r.xp)}</b>${r.today_reviews != null ? aqHtml`<span>${num(r.today_reviews)} today</span>` : ""}${r.closing_xp != null && (r.day_ends_at ?? 0) > Date.now() ? aqHtml`<span class="closing-xp">${esc(aqText`${num(r.closing_xp)} XP still counting for last week`)}</span>` : ""}${r.next_xp != null && weekEnds > Date.now() ? aqHtml`<span class="next-xp">${esc(aqText`${num(r.next_xp)} XP already counting for next week`)}</span>` : ""}</div>
     </li>`;
   }).join("")}
   </ol><p class="streak-legend">${[["studied",aqText("Studied today")],["pending",aqText("Not studied yet")],["protected",aqText("Streak protected")]].map(([state,label]) => aqHtml`<span data-streak-state="${state}">${streakIcon(state)}${label}</span>`).join("")}</p>`;
@@ -564,7 +577,7 @@ ${AnkiQuestAki.profile(p)}
   </div>
 </section>
 ${p.at_risk ? (p.today.streak_minutes ?? 0) > 0 ? aqHtml`<section class="notice risk wide">Your ${p.streak} day streak is waiting: ${Math.min(p.today.minutes, p.today.streak_minutes!)} of ${p.today.streak_minutes!} minutes today.</section>` : aqHtml`<section class="notice risk wide">Your ${p.streak} day streak is waiting for today's reviews.</section>` : ""}
-${closingWeek(p.closing_week)}
+${closingWeek(p.closing_week)}${nextWeek(p.next_week)}
 <div class="kpis wide">
   ${AnkiQuestSite.kpi(aqText("Day streak"), num(p.streak), (p.today.streak_minutes ?? 0) > 0 ? aqText`${num(Math.min(p.today.minutes, p.today.streak_minutes!))} of ${num(p.today.streak_minutes!)} minutes today` : aqText("Keep showing up"), "gold")}
   ${AnkiQuestSite.kpi(aqText("Streak freezes"), freezeCount(p.stored_freezes ?? p.freezes) + "/3", p.freezes_enabled ? aqText("Ready to protect your progress") : aqText("Protection paused"), "blue")}

@@ -3,11 +3,13 @@
 //! - `android-contract --android-resources <dir> [--server-examples <dir>]`
 //! - `export-android-art [--check] <android-checkout>`
 //! - `export-addon-art [--check] <desktop-checkout>`
-//! - `art-coverage`
+//! - `art-coverage [--missing | --since <companion_poses.json>]`
 //! - `banner [--social] [--out <file>]`
+//! - `event-base`
 
 mod art;
 mod contract;
+mod event;
 
 use std::env;
 use std::path::{Path, PathBuf};
@@ -15,8 +17,8 @@ use std::process::ExitCode;
 
 const USAGE: &str = "usage: xtask android-contract --android-resources <dir> \
 [--server-examples <dir>]\n       xtask export-android-art [--check] <android-checkout>\n       \
-xtask export-addon-art [--check] <desktop-checkout>\n       xtask art-coverage\n       \
-xtask banner [--social] [--out <file>]";
+xtask export-addon-art [--check] <desktop-checkout>\n       xtask art-coverage [--missing | --since <companion_poses.json>]\n       \
+xtask banner [--social] [--out <file>]\n       xtask event-base";
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
@@ -30,6 +32,7 @@ fn main() -> ExitCode {
         Some("export-addon-art") => art::addon(&rest),
         Some("art-coverage") => art::coverage(&rest),
         Some("banner") => art::banner(&rest),
+        Some("event-base") => event::run(&rest),
         _ => usage(),
     }
 }

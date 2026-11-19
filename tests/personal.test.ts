@@ -8,7 +8,7 @@ const now = Date.now();
 const token = 'test-owner-token';
 const initial = () => ({
   member:true,
-  profile:{user:'alice',display:'Alice <img src=x onerror=alert(1)>',today:{reviews:12,xp:150},streak:5,level:3,quests:[{title:'Review 10 cards',progress:10,target:10,reward:50,done:true},{title:'Review 20 cards',progress:12,target:20,reward:50,done:false}],closing_week:{xp:1234,ends_at:now+3600000}},
+  profile:{user:'alice',display:'Alice <img src=x onerror=alert(1)>',today:{reviews:12,xp:150},streak:5,level:3,quests:[{title:'Review 10 cards',progress:10,target:10,reward:50,done:true},{title:'Review 20 cards',progress:12,target:20,reward:50,done:false}],closing_week:{xp:1234,ends_at:now+3600000}} as Record<string,unknown>,
   study:{year:2026,years:[2026,2025],days:[{date:'2026-09-22',reviews:9,time_ms:200000,xp:90,new_cards:0,streak:1,frozen:true,streak_minutes:10,state:'frozen'},{date:'2026-09-23',reviews:12,time_ms:400000,xp:120,new_cards:0,streak:1,frozen:false,streak_minutes:10,state:'short'},{date:'2026-09-24',reviews:1,time_ms:30000,xp:12,new_cards:0,streak:1,frozen:false},{date:'2026-09-25',reviews:3,time_ms:120000,xp:41,new_cards:1,streak:2,frozen:false},{date:'2026-09-26',reviews:0,time_ms:0,xp:0,new_cards:0,streak:2,frozen:true}],last_review_at:now-60000,last_received_at:now,latest_session:{started_at:now-180000,ended_at:now-60000,reviews:2,time_ms:90000,new_cards:1}},
   challenges:{challenges:[{id:7,title:'Seven days together',status:'active',members:[{user:'alice',status:'invited'}]}]},
   activity:{items:[],unread_count:2},
@@ -17,6 +17,8 @@ const initial = () => ({
   // A server before milestones has no unlocks; `companionHeader` is what the last companion save sent.
   unlocks:null as null|{unlocks:string[],progress:Record<string,{kind:string,value:number,goal:number}>},
   companionHeader:null as string|null,
+  // The companions the last activity request said this page draws.
+  artHeader:null as string|null,
   freezes:{enabled:false,freezes:1,capacity:3},
   nudges:{receiving:true,automatic_receiving:false,friends:[{user:'bob',display:'Bob',muted_by_me:false,enabled:true,sent_today:false}]},
   subscriptions:{enabled:true,unsubscribed_senders:[],muted_senders:['carol'],sharing_senders:['bob'],senders:[{user:'bob',display:'Bob'}]},
@@ -37,7 +39,7 @@ async function fixture(browser: Browser, options: {member?:boolean,locale?:strin
     if(pathname==='/auth/logout'){data.member=false;return route.fulfill({json:{}});}
     if(pathname==='/api/profile/alice')return route.fulfill({json:data.profile});
     if(pathname==='/api/study/alice')return route.fulfill({json:url.searchParams.get('year')==='2025'?{...data.study,year:2025,days:[{date:'2025-06-20',reviews:4,time_ms:120000,xp:40,new_cards:1,streak:1,frozen:false}]}:data.study});
-    if(pathname==='/api/activity/alice')return route.fulfill({json:data.activity});
+    if(pathname==='/api/activity/alice'){data.artHeader=route.request().headers()['x-ankiquest-companion-art']??null;return route.fulfill({json:data.activity});}
     if(pathname==='/api/community/challenges/alice')return route.fulfill({json:data.challenges});
     if(pathname==='/api/unlocks/alice'&&data.unlocks)return route.fulfill({json:data.unlocks});
     if(pathname==='/api/companion/alice'&&method==='POST')data.companionHeader=route.request().headers()['x-ankiquest-companions']??null;
@@ -75,13 +77,23 @@ async function noOverflow(page: Page,label: string){const size=await page.evalua
       await f.page.getByRole('heading',{name:/Alice/}).waitFor();
       assert.equal(await f.page.locator('img[onerror]').count(),0);
       assert.equal(await f.page.locator('.personal-quest').count(),2);
+      assert.equal(f.data.artHeader,'aki, ankilope, cow');
       assert.equal(await f.page.locator('.personal-summary strong').first().textContent(),'2');
       assert.match((await f.page.locator('.personal-stamp').textContent())!,/Study data updated/);
       assert.match((await f.page.locator('#closing-week').textContent())!,/^Last week still counting: 1,234 XP · closes at \d\d:\d\d(\s?[AP]M)?$/);
+      assert.equal(await f.page.locator('#next-week').count(),0);
       assert.match((await f.page.locator('a[href="/community#challenge-7"]').getAttribute('href'))!,/challenge-7/);
       assert.match((await f.page.locator('a[href="/community#activity"]').textContent())!,/2 new updates/);
       await noOverflow(f.page,`today ${width} ${theme}`);
       if(screenshots && width===390)await f.page.screenshot({path:path.join(screenshots,`today-${theme}.png`),fullPage:true});
+      // The server sends at most one of the two: here the player's next week has begun before the board's.
+      const {closing_week:closing,...rest}=f.data.profile;
+      f.data.profile={...rest,next_week:{xp:99,starts_at:now+3600000}};
+      await f.page.reload();
+      await f.page.locator('#next-week').waitFor();
+      assert.match((await f.page.locator('#next-week').textContent())!,/^Next week already counting: 99 XP · the board switches at \d\d:\d\d(\s?[AP]M)?$/);
+      assert.equal(await f.page.locator('#closing-week').count(),0);
+      f.data.profile={...rest,closing_week:closing};
       await f.page.goto('http://ankiquest.test/history');
       await f.page.locator('[data-day="2026-09-25"]').click();
       assert.match((await f.page.locator('#day-detail').textContent())!,/41/);

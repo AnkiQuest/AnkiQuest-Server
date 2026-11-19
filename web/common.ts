@@ -20,6 +20,14 @@ export function nativeAccount(): OwnerSession | null {
   return token ? {user: value.user, token} : {user: value.user};
 }
 
+/**
+ * Up to two initials for an avatar, from the display name (or the user when it has none). They keep
+ * the name's own case: hill writes his name in lowercase, so his avatar shows "h".
+ */
+export function initials(user: string, display = user): string {
+  return String(display || user).trim().split(/\s+/).map(part => Array.from(part)[0] || "").slice(0, 2).join("");
+}
+
 /** A count in the page's language; anything that is not a number shows as 0. */
 export function number(value: unknown): string {
   return Number(value || 0).toLocaleString(AnkiQuestI18n.language);
