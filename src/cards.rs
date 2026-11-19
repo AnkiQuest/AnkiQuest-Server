@@ -1544,7 +1544,8 @@ mod tests {
 
     #[test]
     fn a_companion_without_art_shows_no_one_elses() {
-        // Anki-tan has no masters in static/ yet: her card must not show Aki.
+        // Anki-tan has no share-card masters (celebrate.png, streak.png, ...) yet: her card must
+        // not show Aki.
         for pose in ["celebrate", "streak", "winner", "freeze"] {
             assert_eq!(art("anki_tan", pose), None, "{pose}");
         }

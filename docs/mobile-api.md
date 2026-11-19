@@ -62,7 +62,7 @@ The `403` with `"reauth": true` described under capabilities applies to the firs
 
 ## study companion
 
-`GET /api/companion/{user}` answers the owner's companion, `{"companion": "aki"}`; `POST` with the same shape saves it. The companions are `aki` (the default), `ankilope`, `cow` and `none`, and each planned companion below once it goes live; anything else is `400`. Example: `companion.json`.
+`GET /api/companion/{user}` answers the owner's companion, `{"companion": "aki"}`; `POST` with the same shape saves it. The companions are `aki` (the default), `ankilope`, `cow`, `anki_tan` and `none`, and each planned companion below once it goes live; anything else is `400`. Example: `companion.json`.
 
 Every companion but Aki is earned at a milestone. The conditions are defined once in [`tests/fixtures/companion_unlock.json`](../tests/fixtures/companion_unlock.json), which both clients and the server test against:
 
@@ -70,7 +70,7 @@ Every companion but Aki is earned at a milestone. The conditions are defined onc
 |---|---|---|---|
 | `ankilope` | reaching level 30 | `level` | 30 |
 | `cow` (Bluma) | 10 hours of study in total | `study_hours` | 10 |
-| `anki_tan` (Anki-tan), planned | a 66-day streak | `streak` | 66 |
+| `anki_tan` (Anki-tan) | a 66-day streak | `streak` | 66 |
 | `anki_tan_chibi` (Chibi Anki-tan), planned, secret | an Easter egg: 9 quick taps in a row on Anki-tan's picture, once she is unlocked | `taps` | 9 |
 | `leech_tan` (Leech-tan), planned, secret | 3 tamed leeches: cards with at least 8 lapses that later reached a 21-day interval, each card once | `leeches_tamed` | 3 |
 

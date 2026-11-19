@@ -818,10 +818,8 @@ mod tests {
             streak: 999,
             leeches_tamed: 99,
         };
-        assert_eq!(
-            store.grant("hill", everything, 1).unwrap(),
-            [Unlock::Ankilope, Unlock::Cow]
-        );
+        let live = [Unlock::Ankilope, Unlock::Cow, Unlock::AnkiTan];
+        assert_eq!(store.grant("hill", everything, 1).unwrap(), live);
         let shown = serde_json::to_value(listed(milestones(), vec![], everything)).unwrap();
         assert_eq!(
             shown["progress"]
@@ -829,14 +827,38 @@ mod tests {
                 .unwrap()
                 .keys()
                 .collect::<Vec<_>>(),
-            ["ankilope", "cow"]
+            ["anki_tan", "ankilope", "cow"]
         );
 
         // A planned unlock stored anyway stays out of the answer and the moments.
         store.add_unlock("hill", Unlock::LeechTan, 2).unwrap();
+        assert_eq!(store.grant("hill", everything, 3).unwrap(), live);
+        cleanup(store, path);
+    }
+
+    #[test]
+    fn a_66_day_streak_brings_anki_tan_but_not_her_chibi() {
+        // hill's decision (2026-11-18): Anki-tan is live; her chibi and Leech-tan stay planned.
+        let (store, path) = crate::test_support::temporary_store();
+        assert!(Unlock::AnkiTan.live());
+        assert!(!Unlock::AnkiTanChibi.live());
+        assert!(!Unlock::LeechTan.live());
+        assert!(valid("anki_tan"));
+        assert!(!valid("anki_tan_chibi"));
+
+        // The shipped rules, not all_live(): a lost streak takes nothing back.
+        let streak = |days, at| {
+            store
+                .grant("hill", only(Measure::Streak, days), at)
+                .unwrap()
+        };
+        assert!(streak(65, 1).is_empty());
+        assert_eq!(streak(66, 2), [Unlock::AnkiTan]);
+        assert_eq!(streak(0, 3), [Unlock::AnkiTan]);
+        let shown = serde_json::to_value(listed(milestones(), vec![], only(Measure::Streak, 12)));
         assert_eq!(
-            store.grant("hill", everything, 3).unwrap(),
-            [Unlock::Ankilope, Unlock::Cow]
+            shown.unwrap()["progress"]["anki_tan"],
+            json!({"kind": "streak", "value": 12, "goal": 66})
         );
         cleanup(store, path);
     }
@@ -934,18 +956,21 @@ mod tests {
             listed(vec![], measures(3, 6)),
             json!({"unlocks": [], "progress": {
                 "ankilope": {"kind": "level", "value": 3, "goal": 30},
-                "cow": {"kind": "study_hours", "value": 6, "goal": 10}
+                "cow": {"kind": "study_hours", "value": 6, "goal": 10},
+                "anki_tan": {"kind": "streak", "value": 0, "goal": 66}
             }})
         );
         assert_eq!(
             listed(vec![Unlock::Cow], measures(3, 12)),
             json!({"unlocks": ["cow"], "progress": {
-                "ankilope": {"kind": "level", "value": 3, "goal": 30}
+                "ankilope": {"kind": "level", "value": 3, "goal": 30},
+                "anki_tan": {"kind": "streak", "value": 0, "goal": 66}
             }})
         );
+        let all = vec![Unlock::Ankilope, Unlock::Cow, Unlock::AnkiTan];
         assert_eq!(
-            listed(vec![Unlock::Ankilope, Unlock::Cow], measures(40, 12)),
-            json!({"unlocks": ["ankilope", "cow"], "progress": {}})
+            listed(all, measures(40, 12)),
+            json!({"unlocks": ["ankilope", "cow", "anki_tan"], "progress": {}})
         );
         assert_eq!(Measures::of(None), measures(1, 0));
     }
@@ -1134,9 +1159,11 @@ mod tests {
         let granted = call(&app, "POST", unlocks, "hill-secret", ask("ankilope")).await;
         assert_eq!(granted.0, StatusCode::OK);
         assert_eq!(granted.1["unlocks"], json!(["ankilope"]));
-        let cow = call(&app, "POST", unlocks, "hill-secret", ask("cow")).await;
-        assert_eq!(cow.0, StatusCode::CONFLICT);
-        for unknown in ["horse", "anki_tan", "leech_tan", "anki_tan_chibi"] {
+        for locked in ["cow", "anki_tan"] {
+            let refused = call(&app, "POST", unlocks, "hill-secret", ask(locked)).await;
+            assert_eq!(refused.0, StatusCode::CONFLICT, "{locked}");
+        }
+        for unknown in ["horse", "leech_tan", "anki_tan_chibi"] {
             let bad = call(&app, "POST", unlocks, "hill-secret", ask(unknown)).await;
             assert_eq!(bad.0, StatusCode::BAD_REQUEST, "{unknown}");
         }
