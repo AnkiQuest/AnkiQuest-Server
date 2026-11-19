@@ -60,6 +60,44 @@ jobs:
       - name: Browser tests
         run: npm run test:web
 
+  # Regenerates the web screenshots, the README banner and the social
+  # preview, and fails unless they are byte-identical to the committed
+  # files. On failure the rendered images are uploaded for review.
+  screenshots:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Playwright's Chromium
+        run: |
+          bash .github/scripts/ubuntu-archive.sh
+          npm ci && npx playwright install --with-deps chromium
+
+      - name: Regenerate
+        run: npm run screenshots
+
+      - name: Compare with the committed images
+        run: git diff --exit-code --stat -- docs/screenshots/web docs/graphics
+
+      - name: Upload the rendered images
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: screenshots
+          path: |
+            docs/screenshots/web/*.png
+            docs/graphics/*.png
+
   nix:
     runs-on: ubuntu-24.04
     steps:
