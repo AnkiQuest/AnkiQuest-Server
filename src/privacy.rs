@@ -64,7 +64,10 @@ const EXPORT: &[(&str, &str)] = &[
     ("deck_recipients", "select deck_id, recipient from deck_recipients where owner = ?1"),
     ("deck_completions", "select deck_id, day from deck_completions where owner = ?1 order by day"),
     ("notifications_received", "select * from notifications where recipient = ?1 order by id"),
-    ("messages_sent", "select * from notifications where sender = ?1 order by id"),
+    // What the sender wrote, without delivery state, which would show who muted them.
+    ("messages_sent", "select id, recipient, kind, title, body, day, created_at, read_at, replied,
+         reply_to_title, reply_to_body, note, challenge_id, group_id, win_id
+         from notifications where sender = ?1 order by id"),
     ("deck_copies_sent", "select o.id, o.deck, o.created_at, length(o.package) as bytes, group_concat(r.recipient) as recipients
          from deck_copy_offers o left join deck_copy_recipients r on r.offer = o.id where o.sender = ?1 group by o.id"),
     ("deck_copies_received", "select o.id, o.sender, o.deck, o.created_at from deck_copy_offers o

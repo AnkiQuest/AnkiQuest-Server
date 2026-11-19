@@ -4,7 +4,7 @@
 use crate::access::require_owner;
 use crate::app::{App, now_ms};
 use crate::game::DAY_MS;
-use crate::notifications::{Outgoing, insert_notification, message_title};
+use crate::notifications::{Outgoing, insert_notification, message_title, withhold};
 use crate::store::{Error, Store};
 use crate::web_util::{failed_for, normalize_user};
 use axum::extract::{Path, State};
@@ -34,8 +34,8 @@ struct MessageResponse {
 #[derive(Debug, PartialEq, Eq)]
 enum Outcome {
     Delivered,
-    /// The recipient muted the sender: nothing is stored, and the sender hears the same as
-    /// for [`Outcome::Delivered`].
+    /// The recipient muted the sender: the message is stored but withheld from them, so the
+    /// sender sees it sent and counted like a delivered one.
     Muted,
     NotFriends,
     DailyLimit,
@@ -73,13 +73,10 @@ fn deliver(
     if sent >= MAX_MESSAGES_PER_DAY {
         return Ok(Outcome::DailyLimit);
     }
-    if crate::social::muted(&tx, to, sender)? {
-        return Ok(Outcome::Muted);
-    }
 
     // A `message` row with a sender is replyable, as messages sent from the command line are.
     let day = crate::store::clock_in(&tx, to)?.day(now);
-    insert_notification(
+    let id = insert_notification(
         &tx,
         &Outgoing {
             to,
@@ -92,8 +89,16 @@ fn deliver(
         now,
         false,
     )?;
+
+    // A muted sender's message is kept only for their own sent list and daily count.
+    let outcome = if crate::social::muted(&tx, to, sender)? {
+        withhold(&tx, id)?;
+        Outcome::Muted
+    } else {
+        Outcome::Delivered
+    };
     tx.commit()?;
-    Ok(Outcome::Delivered)
+    Ok(outcome)
 }
 
 /// Sends a friend a message, so a conversation can start without a notification to answer.
@@ -305,6 +310,66 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(messages(&app, "bobby", &bo).await.len(), 0);
+        let (_, unread) = call(&app, "GET", "/api/activity/bobby", &bo, Value::Null).await;
+        assert_eq!(unread["unread_count"], 0);
+        assert!(
+            app.store
+                .lock()
+                .unwrap()
+                .take_deck_deliveries(now_ms())
+                .unwrap()
+                .iter()
+                .all(|delivery| delivery.user != "bobby"),
+            "nothing is pushed to Bobby"
+        );
+
+        // Ana's sent list shows both like any other, so she cannot tell she was muted.
+        let (_, outbox) = call(&app, "GET", "/api/activity/ana/sent", &ana, Value::Null).await;
+        let sent: Vec<_> = outbox["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| {
+                (
+                    row["kind"].clone(),
+                    row["body"].clone(),
+                    row["read_at"].clone(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            sent,
+            [
+                (json!("reply"), json!("Reply"), Value::Null),
+                (json!("message"), json!("Hi"), Value::Null),
+            ]
+        );
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn messages_to_a_player_who_muted_the_sender_count_toward_the_limit() {
+        let (app, path, ana, bo, _) = friends().await;
+        let (status, _) = call(
+            &app,
+            "POST",
+            "/api/social/bobby",
+            &bo,
+            json!({"action": "mute", "user": "ana"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        for _ in 0..MAX_MESSAGES_PER_DAY {
+            assert_eq!(
+                message(&app, "ana", &ana, "bobby", "Hi").await,
+                StatusCode::OK
+            );
+        }
+        assert_eq!(
+            message(&app, "ana", &ana, "bobby", "One more").await,
+            StatusCode::TOO_MANY_REQUESTS,
+            "the limit is the same as for a delivered message"
+        );
         cleanup(app, path);
     }
 

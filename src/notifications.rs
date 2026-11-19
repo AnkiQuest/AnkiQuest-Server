@@ -11,6 +11,10 @@ pub(crate) const INBOX_AGE_MS: i64 = 7 * DAY_MS;
 /// recipient has no ntfy topic. A real cancellation (a mute, an opt-out) is 1.
 /// Any non-zero value keeps the worker from pushing it.
 pub(crate) const NO_PUSH_DESTINATION: i64 = 2;
+/// `push_only` for a message or reply to a player who muted its sender: the recipient never
+/// sees or gets it, but the sender's sent list shows it like any other, so the mute stays
+/// private. `push_only` 0 is an inbox row and 1 a push without one.
+pub(crate) const WITHHELD: i64 = 2;
 pub const ACTIVITY_DAYS: u32 = 90;
 pub(crate) const ACTIVITY_AGE_MS: i64 = ACTIVITY_DAYS as i64 * DAY_MS;
 pub(crate) const PUSH_LEASE_MS: i64 = 60_000;
@@ -291,6 +295,15 @@ pub(crate) fn insert_notification(
     Ok(conn.last_insert_rowid())
 }
 
+/// Keeps row `id` from its recipient and from push; see [`WITHHELD`].
+pub(crate) fn withhold(conn: &Connection, id: i64) -> rusqlite::Result<()> {
+    conn.execute(
+        "update notifications set push_only = ?2, push_cancelled = 1 where id = ?1",
+        params![id, WITHHELD],
+    )?;
+    Ok(())
+}
+
 /// The part of an event key before its first colon, e.g. "streak" for "streak:30".
 fn topic_of(key: &str) -> &str {
     key.split_once(':').map_or(key, |(topic, _)| topic)
@@ -490,7 +503,7 @@ impl Store {
     ) -> Result<SentPage, Error> {
         let mut stmt = self.conn.prepare(&format!(
             "select {NOTICE_COLUMNS},n.recipient from notifications n
-            where n.sender=?1 and n.kind in ('message','reply','nudge') and n.push_only=0
+            where n.sender=?1 and n.kind in ('message','reply','nudge') and n.push_only in (0,{WITHHELD})
             and n.created_at>=?3 and (?4 is null or n.id<?4)
             order by n.id desc limit ?5"
         ))?;
@@ -754,16 +767,16 @@ impl Store {
             params![id],
         )?;
 
-        // A player who muted the replier hears nothing; the replier is told the same.
-        if crate::social::muted(&tx, &sender, user)? {
-            tx.commit()?;
-            return Ok(Some(sender));
-        }
         tx.execute(
             "insert into notifications (recipient, sender, title, body, day, created_at, kind, reply_to_title, reply_to_body)
              values (?1, ?2, ?3, ?4, ?5, ?6, 'reply', ?7, ?8)",
             params![sender, user, message_title(display), message, day, now_ms, title, body],
         )?;
+
+        // A player who muted the replier never sees it; the replier sees it sent as usual.
+        if crate::social::muted(&tx, &sender, user)? {
+            withhold(&tx, tx.last_insert_rowid())?;
+        }
         tx.commit()?;
         Ok(Some(sender))
     }
