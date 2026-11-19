@@ -71,6 +71,8 @@ pub(crate) struct Access {
     password: Option<String>,
     sessions: Mutex<Sessions>,
     pub(crate) oauth: crate::oauth::Flows,
+    /// Recent wrong two-factor codes per account.
+    pub(crate) two_factor: crate::two_factor::Attempts,
 }
 
 impl Access {
@@ -102,6 +104,7 @@ impl Access {
             password,
             sessions: Mutex::new(Sessions::default()),
             oauth: Default::default(),
+            two_factor: Default::default(),
         })
     }
 
@@ -607,6 +610,9 @@ struct Password {
     /// Present when an account signs in with its own password.
     #[serde(default)]
     user: Option<String>,
+    /// The second factor, sent once the server has answered `"second_factor": true`.
+    #[serde(default)]
+    code: Option<String>,
 }
 
 // A reverse proxy may identify the original client only when explicitly trusted
@@ -660,15 +666,16 @@ pub(crate) async fn session(
         if let Some(Password {
             password,
             user: Some(user),
+            code,
         }) = &credential
         {
             let user = normalize_user(user);
-            if !crate::accounts::password_matches(&app, &user, password).await {
-                app.access.failure(client, now);
-                return json_error(
-                    StatusCode::UNAUTHORIZED,
-                    "Username or password not recognized.",
-                );
+            let step = crate::two_factor::sign_in(&app, &user, password, code.as_deref()).await;
+            if step != crate::two_factor::SignInStep::SignedIn {
+                if step.failed() {
+                    app.access.failure(client, now);
+                }
+                return step.refusal();
             }
             return open_session(&app, &headers, Some(user), None);
         }
