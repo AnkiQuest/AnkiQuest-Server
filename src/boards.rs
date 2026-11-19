@@ -831,6 +831,7 @@ mod tests {
     async fn an_order_seen_before_the_reset_is_not_compared_across_time_zones() {
         let (store, path) = temporary_store();
         let config = serde_json::from_value(serde_json::json!({
+            "configured_tokens": "enabled",
             "users": {
                 "cerro": {"display": "Cerro", "token": "cerro-secret"},
                 "hill": {"display": "Hill", "token": "hill-secret"}

@@ -553,6 +553,7 @@ mod tests {
         let config = serde_json::from_value(serde_json::json!({
             "registration": true,
             "devs": ["hill", "nobody"],
+            "configured_tokens": "enabled",
             "users": {
                 "hill": {"token": "hill-token"},
                 "cerro": {"token": "cerro-token"},

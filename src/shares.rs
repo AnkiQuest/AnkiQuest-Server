@@ -1535,6 +1535,7 @@ mod tests {
     fn moments_app() -> (Arc<App>, PathBuf) {
         crate::test_support::app_with(json!({
             "registration": true,
+            "configured_tokens": "enabled",
             "users": {
                 "cerro": {"display": "Cerro", "token": "cerro-secret"},
                 "hill": {"display": "Hill", "token": "hill-secret"},
