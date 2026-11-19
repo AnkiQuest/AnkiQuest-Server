@@ -1136,7 +1136,7 @@ pub struct Lifetime {
     pub quests: u64,
     /// Hard cards learned at last; see [`conquests`].
     pub conquered: u64,
-    /// Leeches among them, each card once; see [`leeches_tamed`]. Unlocks Leech-tan.
+    /// Leeches among them, each card once; see [`leeches_tamed`]. Unlocks Leech-kun.
     #[serde(skip)]
     pub leeches_tamed: u64,
 }
