@@ -4,8 +4,13 @@ set -euo pipefail
 # Probe official Ubuntu mirrors before apt retries an unreachable archive for minutes.
 # Packages still use the image's Ubuntu signing key and normal apt verification.
 source /etc/os-release
-for mirror in https://archive.ubuntu.com/ubuntu https://mirrors.kernel.org/ubuntu; do
-    if curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
+mirrors=("$@")
+if (( ${#mirrors[@]} == 0 )); then
+    mirrors=(https://azure.archive.ubuntu.com/ubuntu https://archive.ubuntu.com/ubuntu https://mirrors.kernel.org/ubuntu)
+fi
+for mirror in "${mirrors[@]}"; do
+    # A redirect alone says nothing about whether apt can reach the final host.
+    if curl --location --fail --silent --show-error --connect-timeout 5 --max-time 15 \
         "$mirror/dists/$VERSION_CODENAME/InRelease" --output "$RUNNER_TEMP/ubuntu-inrelease"; then
         # The runner's cloud-init template also references this list.
         printf '%s/\n' "$mirror" | sudo tee /etc/apt/apt-mirrors.txt
