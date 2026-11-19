@@ -162,7 +162,7 @@ impl DayState {
     /// count, and was `frozen` (or `skipped`) after it ended. A covered day reads as
     /// covered even with reviews: it did not count on its own.
     pub fn of(reviews: u64, time_ms: i64, needed_ms: i64, frozen: bool, skipped: bool) -> Self {
-        if reviews > 0 && time_ms >= needed_ms {
+        if ankiquest_rules::meets_minimum(reviews, time_ms, needed_ms) {
             DayState::Met
         } else if skipped && frozen {
             DayState::Skipped
@@ -182,13 +182,8 @@ pub(super) fn streak_milestone(streak: u64) -> bool {
         || (streak > 365 && streak.is_multiple_of(365))
 }
 
-#[derive(Serialize, Clone, Copy, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum StreakState {
-    Studied,
-    Pending,
-    Protected,
-}
+/// Today's verdict, shared with the clients through crates/rules.
+pub use ankiquest_rules::StreakState;
 
 #[cfg(test)]
 mod tests {
