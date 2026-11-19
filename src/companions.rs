@@ -58,12 +58,13 @@ pub(crate) enum Unlock {
     LeechKun,
 }
 
-/// Whether the clients released before milestones offered a companion to everyone.
+/// Whether the clients released before milestones offered a companion to everyone, and so
+/// have its art.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Released {
     /// Offered to every player, so a save from those clients is still accepted.
     Offered,
-    /// Never offered by them.
+    /// Never offered by them, nor drawn: their inbox leaves out its moment ([`Drawable`]).
     Hidden,
 }
 
@@ -175,6 +176,96 @@ const MOMENT_PREFIX: &str = "companion:";
 /// server refuses a locked one. Clients from before milestones don't send it.
 const CLIENT_HEADER: &str = "x-ankiquest-companions";
 const MILESTONES: &str = "milestones";
+
+/// A client lists in this header the companions it can draw, such as `aki, ankilope, cow`, so
+/// the inbox leaves out unlock moments about any other. Clients released before it send none.
+const ART_HEADER: &str = "x-ankiquest-companion-art";
+
+/// The capability that says this server reads [`ART_HEADER`].
+pub(crate) const ART_FEATURE: &str = "companion_art";
+
+/// The unlocks whose moments a client can show, so that it never announces a companion it
+/// would draw with another's art. One bit per unlock, in [`Unlock::ALL`]'s order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Drawable(u8);
+
+impl Drawable {
+    /// Every unlock, for callers that draw them all.
+    pub(crate) fn all() -> Self {
+        Self::keeping(|_| true)
+    }
+
+    /// The unlocks a request's client names in [`ART_HEADER`]. A client without the header
+    /// was released before it and draws what those clients offered: Ankilope, not the cow.
+    pub(crate) fn of(headers: &HeaderMap) -> Self {
+        let Some(value) = headers.get(ART_HEADER) else {
+            return Self::keeping(|unlock| unlock.released() == Released::Offered);
+        };
+
+        // Unknown and unreadable names are left out: the client cannot be shown them anyway.
+        let named: Vec<&str> = value
+            .to_str()
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .collect();
+        Self::keeping(|unlock| named.contains(&unlock.id()))
+    }
+
+    /// The unlocks `keep` accepts.
+    fn keeping(keep: impl Fn(Unlock) -> bool) -> Self {
+        let bits = Unlock::ALL
+            .into_iter()
+            .enumerate()
+            .filter(|(_, unlock)| keep(*unlock))
+            .fold(0, |bits, (index, _)| bits | 1 << index);
+        Drawable(bits)
+    }
+
+    fn contains(self, unlock: Unlock) -> bool {
+        let index = Unlock::ALL.iter().position(|known| *known == unlock);
+        index.is_some_and(|index| self.0 & 1 << index != 0)
+    }
+
+    /// SQL that is true for the notifications in `table` such a client may list: everything
+    /// but the player's own unlock moments about companions it cannot draw. A batch of
+    /// unlocks ("4 new unlocks") has no win naming them, so it shows only to a client that
+    /// draws every live unlock.
+    pub(crate) fn sql(self, table: &str) -> String {
+        let keys: Vec<String> = Unlock::ALL
+            .into_iter()
+            .filter(|unlock| self.contains(*unlock))
+            .map(|unlock| format!("'{MOMENT_PREFIX}{}'", unlock.id()))
+            .collect();
+        let batch = i32::from(live().all(|unlock| self.contains(unlock)));
+        format!(
+            "({table}.kind != 'celebration' or {table}.topic is not '{TOPIC}'
+              or ({table}.win_id is null and {batch})
+              or (select w.key from wins w where w.id = {table}.win_id) in ({}))",
+            keys.join(",")
+        )
+    }
+}
+
+/// The unlocks players can earn now, as the fixture says; planned ones have no art yet.
+fn live() -> impl Iterator<Item = Unlock> {
+    static LIVE: OnceLock<Vec<Unlock>> = OnceLock::new();
+    let live = LIVE.get_or_init(|| {
+        let rules: Rules = serde_json::from_str(RULES).expect("the unlock fixture parses");
+        let is_live = |unlock: &Unlock| {
+            let rule = rules
+                .companions
+                .iter()
+                .find(|rule| rule.companion == unlock.id());
+            rule.is_some_and(|rule| rule.status == Status::Live)
+        };
+        Unlock::ALL.into_iter().filter(is_live).collect()
+    });
+    live.iter().copied()
+}
+
+/// The inbox topic of unlock moments: [`MOMENT_PREFIX`] without its colon.
+const TOPIC: &str = "companion";
 
 /// The conditions both clients show, defined once with the cases they test against.
 const RULES: &str = include_str!("../tests/fixtures/companion_unlock.json");
@@ -1140,21 +1231,12 @@ mod tests {
         // The worker announces it once, as a moment with a win.
         crate::worker::tick(&app).unwrap();
         crate::worker::tick(&app).unwrap();
-        let (_, inbox) = call(
-            &app,
-            "GET",
-            "/api/notifications/hill",
-            "hill-secret",
-            Value::Null,
-        )
-        .await;
-        let joined: Vec<&Value> = inbox
-            .as_array()
-            .unwrap()
+        let rows = inbox(&app, "/api/notifications/hill", Some("aki, ankilope, cow")).await;
+        let joined: Vec<&Value> = rows
             .iter()
             .filter(|row| row["moment"] == "companion:cow")
             .collect();
-        assert_eq!(joined.len(), 1, "{inbox}");
+        assert_eq!(joined.len(), 1, "{rows:?}");
         assert_eq!(joined[0]["title"], "Bluma joined you!");
         assert_eq!(joined[0]["kind"], "celebration");
         assert_eq!(joined[0]["topic"], "companion");
@@ -1166,6 +1248,182 @@ mod tests {
         assert_eq!(shared.0, StatusCode::OK, "{}", shared.1);
         assert_eq!(shared.1["recipients"], 1);
         cleanup(app, path);
+    }
+
+    /// The rows of `hill`'s inbox at `path`, for a client that lists the companions it can
+    /// draw in `art`, or a released one that lists none.
+    async fn inbox(app: &Arc<App>, path: &str, art: Option<&str>) -> Vec<Value> {
+        let mut request = axum::http::Request::builder()
+            .uri(path)
+            .header("authorization", "Bearer hill-secret");
+        if let Some(art) = art {
+            request = request.header("x-ankiquest-companion-art", art);
+        }
+        let request = request.body(axum::body::Body::empty()).unwrap();
+        let (status, body) =
+            crate::test_support::json_response(crate::test_support::route(app, request).await)
+                .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let rows = body.get("items").unwrap_or(&body).as_array().unwrap();
+        rows.clone()
+    }
+
+    /// The companion moments among [`inbox`]'s rows.
+    async fn companion_moments(app: &Arc<App>, path: &str, art: Option<&str>) -> Value {
+        let rows = inbox(app, path, art).await;
+        Value::Array(
+            rows.iter()
+                .filter_map(|row| row["moment"].as_str())
+                .filter(|key| key.starts_with(MOMENT_PREFIX))
+                .map(|key| Value::String(key.into()))
+                .collect(),
+        )
+    }
+
+    /// Uploads hill's study so that the worker grants Bluma with her moment.
+    async fn bring_bluma(app: &Arc<App>) {
+        let now = crate::app::now_ms();
+
+        // A first upload and worker pass record history; the next upload brings Bluma.
+        for (at, time_ms) in [
+            (now - 3 * HOUR_MS, 10 * HOUR_MS - 60_000),
+            (now - HOUR_MS, 60_000),
+        ] {
+            let upload = call(
+                app,
+                "POST",
+                "/api/reviews/hill",
+                "hill-secret",
+                study(at, time_ms),
+            )
+            .await;
+            assert_eq!(upload.0, StatusCode::OK);
+            crate::worker::tick(app).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn the_inbox_leaves_out_companions_a_client_cannot_draw() {
+        let (app, path) = fixture();
+        bring_bluma(&app).await;
+        let joined = json!(["companion:cow"]);
+
+        // Released clients draw Aki and Ankilope only, and send no list: Bluma stays out of
+        // both inbox endpoints, and the activity counts.
+        for inbox in ["/api/notifications/hill", "/api/activity/hill"] {
+            assert_eq!(
+                companion_moments(&app, inbox, None).await,
+                json!([]),
+                "{inbox}"
+            );
+            let listed = companion_moments(&app, inbox, Some("aki, ankilope")).await;
+            assert_eq!(listed, json!([]), "{inbox}");
+            let listed = companion_moments(&app, inbox, Some("aki,ankilope,cow")).await;
+            assert_eq!(listed, joined, "{inbox}");
+            let listed = companion_moments(&app, inbox, Some("aki, ankilope, cow, horse")).await;
+            assert_eq!(listed, joined, "{inbox}");
+        }
+        let (_, activity) = call(
+            &app,
+            "GET",
+            "/api/activity/hill",
+            "hill-secret",
+            Value::Null,
+        )
+        .await;
+        let items = activity["items"].as_array().unwrap().len();
+        assert_eq!(activity["unread_count"], items, "{activity}");
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn read_all_leaves_moments_the_client_cannot_draw_unread() {
+        let (app, path) = fixture();
+        bring_bluma(&app).await;
+
+        // A message arrives after Bluma's moment, so the released client's latest row is newer.
+        {
+            let store = app.store.lock().unwrap();
+            let message = crate::notifications::Outgoing {
+                to: "hill",
+                from: "cerro",
+                title: "Hello",
+                body: "Keep going",
+                kind: "message",
+            };
+            let now = crate::app::now_ms();
+            crate::notifications::insert_notification(&store.conn, &message, 1, now, false)
+                .unwrap();
+        }
+
+        // A released client reads everything it lists, up to its latest row.
+        let activity = "/api/activity/hill";
+        let (_, released) = call(&app, "GET", activity, "hill-secret", Value::Null).await;
+        let through = json!({"through": released["latest_id"]});
+        let read = call(
+            &app,
+            "POST",
+            "/api/activity/hill/read",
+            "hill-secret",
+            through,
+        )
+        .await;
+        assert_eq!(read.0, StatusCode::NO_CONTENT);
+
+        // After an update that draws Bluma, her moment is still unread.
+        let rows = inbox(&app, activity, Some("aki, ankilope, cow")).await;
+        let bluma = rows
+            .iter()
+            .find(|row| row["moment"] == "companion:cow")
+            .expect("Bluma's moment");
+        assert_eq!(bluma["read_at"], Value::Null, "{bluma}");
+        cleanup(app, path);
+    }
+
+    #[test]
+    fn a_batch_of_unlocks_shows_only_where_every_unlock_is_drawn() {
+        let (store, path) = crate::test_support::temporary_store();
+        let now = crate::app::now_ms();
+
+        // More unlocks at once than get their own push share one row, without a win.
+        let batch = crate::notifications::Outgoing {
+            to: "hill",
+            from: "",
+            title: "4 new unlocks",
+            body: "Ankilope joined you!, Bluma joined you!",
+            kind: "celebration",
+        };
+        let id =
+            crate::notifications::insert_notification(&store.conn, &batch, 1, now, false).unwrap();
+        store
+            .conn
+            .execute(
+                "update notifications set topic = ?1 where id = ?2",
+                rusqlite::params![TOPIC, id],
+            )
+            .unwrap();
+
+        // Only a client that draws every live unlock can show the whole batch.
+        let every: Vec<&str> = live().map(Unlock::id).collect();
+        let some: Vec<&str> = every.iter().copied().filter(|id| *id != COW).collect();
+        let listed = |art: Option<&str>| {
+            let mut headers = HeaderMap::new();
+            if let Some(art) = art {
+                headers.insert(ART_HEADER, art.parse().unwrap());
+            }
+            let peers = crate::notifications::PeerStudy::Shown;
+            let rows = store
+                .notifications_for("hill", now, Drawable::of(&headers), peers)
+                .unwrap();
+            rows.len()
+        };
+        assert_eq!(listed(Some(&every.join(", "))), 1);
+        assert_eq!(listed(Some(&some.join(", "))), 0);
+        assert_eq!(listed(None), 0);
+        let peers = crate::notifications::PeerStudy::Shown;
+        let all = store.notifications_for("hill", now, Drawable::all(), peers);
+        assert_eq!(all.unwrap().len(), 1);
+        cleanup(store, path);
     }
 
     /// `POST /api/companion/hill` choosing `companion`, from a client that does or does not

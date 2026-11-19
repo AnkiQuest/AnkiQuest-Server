@@ -339,12 +339,101 @@ pub(crate) fn has_password(conn: &Connection, user: &str) -> Result<bool, Error>
     Ok(stored_hash(conn, user)?.is_some_and(|hash| !hash.is_empty()))
 }
 
+/// How a player can sign in again on a new device, as `sign_in` in `GET /api/sign-in/{user}`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SignIn {
+    /// With their password, and maybe a provider too.
+    Password,
+    /// With a linked provider the server offers; no password.
+    Provider,
+    /// Only with a device token: a player from the server configuration, who loses it when
+    /// the configuration drops them, or an account with neither a password nor a linked
+    /// provider the server offers.
+    TokenOnly,
+}
+
+/// Whether a player has an account, and whether that account has a password.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AccountKind {
+    /// No account: a player from the server configuration.
+    None,
+    /// An account without a password.
+    NoPassword,
+    /// An account with a password.
+    Password,
+}
+
+impl SignIn {
+    /// `providers` counts the linked providers the server offers.
+    pub(crate) fn of(account: AccountKind, providers: usize) -> Self {
+        match account {
+            AccountKind::None => Self::TokenOnly,
+            AccountKind::Password => Self::Password,
+            AccountKind::NoPassword if providers > 0 => Self::Provider,
+            AccountKind::NoPassword => Self::TokenOnly,
+        }
+    }
+}
+
+/// Makes the configured player `user` an account with the same name, display name and token,
+/// so devices signed in with that token stay signed in once the configuration drops them.
+/// `hash` is the password's, or empty for none. False when `user` already has an account.
+/// Callers run it in a transaction.
+pub(crate) fn adopt(
+    conn: &Connection,
+    user: &str,
+    display: &str,
+    token: &str,
+    hash: &str,
+    now: i64,
+) -> Result<bool, Error> {
+    if !create(conn, user, display, hash, now)? {
+        return Ok(false);
+    }
+    conn.execute(
+        "insert or ignore into account_tokens (token_hash, user, device, created_at) values (?1, ?2, ?3, ?4)",
+        params![token_hash(token), user, ADOPTED_DEVICE, now],
+    )?;
+    Ok(true)
+}
+
 impl App {
     /// Whether a new account may not take this name.
     pub(crate) fn name_taken(&self, user: &str) -> bool {
         self.config.users.contains_key(user)
             || self.config.devs.iter().any(|dev| dev == user)
             || self.accounts.contains(user)
+    }
+
+    /// Makes the configured player `user` an account with the password hashed as `hash`,
+    /// keeping their name, display name and configured token.
+    fn become_account(&self, user: &str, hash: &str) -> Result<(), Error> {
+        let token = self
+            .config
+            .token(user)
+            .ok_or("the configuration gives this player no token")?;
+        let display = self.display(user);
+
+        // The account and its token are saved together, or neither is.
+        let store = self.store.lock().unwrap();
+        let transaction = store.conn.unchecked_transaction()?;
+        if !adopt(&transaction, user, &display, token, hash, now_ms())? {
+            transaction.execute(
+                "update accounts set password_hash = ?2 where user = ?1",
+                params![user, hash],
+            )?;
+        }
+        transaction.commit()?;
+        drop(store);
+
+        self.accounts.insert(user, &display);
+        self.accounts
+            .tokens
+            .write()
+            .unwrap()
+            .insert(token_hash(token), user.to_string());
+        Ok(())
     }
 
     /// A new device token for an existing account, saved before it is handed out.
@@ -702,23 +791,21 @@ pub async fn change_devices(
 }
 
 /// Sets a new password. One the account already has must be given as `current`;
-/// an account that signs in with a provider can set its first one without.
+/// an account that signs in with a provider sets its first one after signing in with it
+/// again, and a player who signs in only with a device token sets it with that token,
+/// becoming an account if the configuration made them.
 /// `others` also signs out every other device. Returns the refusal, if the password was not saved.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn change_password(
     app: &App,
     user: &str,
     headers: &HeaderMap,
     client: IpAddr,
+    sign_in: SignIn,
     current: Option<&str>,
     password: &str,
     others: bool,
 ) -> Option<Response> {
-    if !app.accounts.contains(user) {
-        return Some(refuse(
-            StatusCode::CONFLICT,
-            "Players from the server configuration sign in with their token.",
-        ));
-    }
     if !(MIN_PASSWORD..=MAX_PASSWORD).contains(&password.chars().count()) {
         return Some(refuse(
             StatusCode::BAD_REQUEST,
@@ -732,38 +819,55 @@ pub(crate) async fn change_password(
             "Too many attempts. Try again in one minute.",
         ));
     }
-    let has_password = match has_password(&app.store.lock().unwrap().conn, user) {
-        Ok(has) => has,
-        Err(error) => return Some(internal(error)),
-    };
-    if has_password {
-        let Some(current) = current else {
-            return Some(refuse(
-                StatusCode::BAD_REQUEST,
-                "Enter your current password.",
-            ));
-        };
-        if !password_matches(app, user, current).await {
-            app.access.failure(client, now);
-            return Some(refuse(StatusCode::FORBIDDEN, "That password is not right."));
+
+    // What proves the request comes from the player depends on how they sign in.
+    match sign_in {
+        SignIn::Password => {
+            let Some(current) = current else {
+                return Some(refuse(
+                    StatusCode::BAD_REQUEST,
+                    "Enter your current password.",
+                ));
+            };
+            if !password_matches(app, user, current).await {
+                app.access.failure(client, now);
+                return Some(refuse(StatusCode::FORBIDDEN, "That password is not right."));
+            }
         }
-    } else if app
-        .access
-        .reauthenticated_until(headers, user, now)
-        .is_none()
-    {
-        // A first password would let whoever holds a signed-in device delete the account.
-        return Some(crate::access::reauth_first());
+        SignIn::Provider => {
+            // A first password would let whoever holds a signed-in device delete the account.
+            if app
+                .access
+                .reauthenticated_until(headers, user, now)
+                .is_none()
+            {
+                return Some(crate::access::reauth_first());
+            }
+        }
+        // The device token is the only proof there is of who the player is.
+        SignIn::TokenOnly => {}
     }
+
     let password = password.to_string();
     let Ok(Ok(hash)) = tokio::task::spawn_blocking(move || hash_password(&password)).await else {
         return Some(internal("password hashing failed".into()));
     };
-    if let Err(error) = app.store.lock().unwrap().conn.execute(
-        "update accounts set password_hash = ?2 where user = ?1",
-        params![user, hash],
-    ) {
-        return Some(internal(error.into()));
+    let saved = if app.accounts.contains(user) {
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .execute(
+                "update accounts set password_hash = ?2 where user = ?1",
+                params![user, hash],
+            )
+            .map(|_| ())
+            .map_err(Error::from)
+    } else {
+        app.become_account(user, &hash)
+    };
+    if let Err(error) = saved {
+        return Some(internal(error));
     }
     if others {
         return sign_out_others(app, user, &crate::access::credential(app, headers))
@@ -784,9 +888,19 @@ mod tests {
     use std::path::PathBuf;
     use tower::ServiceExt;
 
+    #[test]
+    fn sign_in_follows_the_account() {
+        assert_eq!(SignIn::of(AccountKind::None, 1), SignIn::TokenOnly);
+        assert_eq!(SignIn::of(AccountKind::Password, 0), SignIn::Password);
+        assert_eq!(SignIn::of(AccountKind::Password, 1), SignIn::Password);
+        assert_eq!(SignIn::of(AccountKind::NoPassword, 1), SignIn::Provider);
+        assert_eq!(SignIn::of(AccountKind::NoPassword, 0), SignIn::TokenOnly);
+    }
+
     fn fixture(registration: bool) -> (Arc<App>, PathBuf) {
         crate::test_support::app_with(serde_json::json!({
             "registration": registration,
+            "configured_tokens": "enabled",
             "users": {"alice": {"token": "alice-token"}}
         }))
     }
@@ -814,7 +928,7 @@ mod tests {
     #[test]
     fn usernames_passwords_and_tokens() {
         assert!(valid_username("hill") && valid_username("ana-2") && valid_username("9lives"));
-        for bad in ["ab", "Hill", "-hill", "hill!", "admin", &"a".repeat(33)] {
+        for bad in ["ab", "Aldana", "-hill", "hill!", "admin", &"a".repeat(33)] {
             assert!(!valid_username(bad), "{bad}");
         }
         let hash = hash_password("correct horse").unwrap();
@@ -1433,11 +1547,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_account_without_a_password_sets_one_and_configured_players_cannot() {
-        let (app, path) = fixture(true);
+    async fn a_provider_account_signs_in_again_before_its_first_password() {
+        let (app, path) = fixture_with_github();
         create(&app.store.lock().unwrap().conn, "ana", "Ana", "", now_ms()).unwrap();
         app.accounts.insert("ana", "Ana");
+        link_github(&app, "ana");
         let token = app.issue_token("ana", "Phone").unwrap();
+        assert_eq!(methods(&app, "ana", &token).await["sign_in"], "provider");
         assert!(
             sign_in(&app, "ana", "a new long password", "Check")
                 .await
@@ -1495,16 +1611,127 @@ mod tests {
             StatusCode::BAD_REQUEST,
             "now the current one is needed"
         );
+        cleanup(app, path);
+    }
 
+    /// [`fixture`] with registration, Alice's display name and GitHub offered.
+    fn fixture_with_github() -> (Arc<App>, PathBuf) {
+        crate::test_support::app_with(serde_json::json!({
+            "registration": true,
+            "configured_tokens": "enabled",
+            "users": {"alice": {"display": "Alice A.", "token": "alice-token"}},
+            "oauth": {"github": {"client_id": "github-app", "client_secret": "github-secret"}}
+        }))
+    }
+
+    fn link_github(app: &App, user: &str) {
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .execute(
+                "insert into sign_in_links (provider, subject, user, created_at) values ('github', ?1, ?1, 0)",
+                [user],
+            )
+            .unwrap();
+    }
+
+    /// `GET /api/sign-in/{user}` with `token`.
+    async fn methods(app: &Arc<App>, user: &str, token: &str) -> serde_json::Value {
+        let bearer = format!("Bearer {token}");
+        let (status, methods) = call(
+            app,
+            "GET",
+            &format!("/api/sign-in/{user}"),
+            &[("authorization", bearer.as_str())],
+            "",
+            "192.0.2.1",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{methods}");
+        methods
+    }
+
+    #[tokio::test]
+    async fn a_configured_player_sets_a_password_and_keeps_their_token() {
+        let (app, path) = fixture_with_github();
+        let before = methods(&app, "alice", "alice-token").await;
+        assert_eq!(before["sign_in"], "token_only");
+        assert_eq!(before["account"], false);
+
+        // The first password needs no current one and no provider: the token is all she has.
+        let first = serde_json::json!({"action": "password", "password": "a new long password"});
+        let (status, after) = post(
+            &app,
+            "/api/sign-in/alice",
+            &with_token("alice-token"),
+            first.clone(),
+            "192.0.2.1",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{after}");
+        assert_eq!(after["account"], true);
+        assert_eq!(after["password"], true);
+        assert_eq!(after["sign_in"], "password");
+        assert!(
+            sign_in(&app, "alice", "a new long password", "Laptop")
+                .await
+                .is_some()
+        );
+        let listed = list(&app, "alice", &with_token("alice-token")).await;
+        assert_eq!(listed["devices"][0]["name"], ADOPTED_DEVICE, "{listed}");
+        assert_eq!(listed["devices"][0]["current"], true);
         let (status, _) = post(
             &app,
             "/api/sign-in/alice",
             &with_token("alice-token"),
+            first,
+            "192.0.2.1",
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "now the current one is needed"
+        );
+
+        // Without her in the configuration, her token, name and display name still work.
+        let config = serde_json::from_value(serde_json::json!({"registration": true})).unwrap();
+        let later = Arc::new(crate::test_support::app_from(
+            crate::store::Store::open(&path).unwrap(),
+            config,
+        ));
+        assert_eq!(
+            methods(&later, "alice", "alice-token").await["sign_in"],
+            "password"
+        );
+        assert_eq!(later.display("alice"), "Alice A.");
+        drop(later);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn an_account_with_only_a_token_sets_a_first_password_with_it() {
+        let (app, path) = fixture_with_github();
+        create(&app.store.lock().unwrap().conn, "ana", "Ana", "", now_ms()).unwrap();
+        app.accounts.insert("ana", "Ana");
+        let token = app.issue_token("ana", ADOPTED_DEVICE).unwrap();
+        assert_eq!(methods(&app, "ana", &token).await["sign_in"], "token_only");
+        let (status, after) = post(
+            &app,
+            "/api/sign-in/ana",
+            &with_token(&token),
             serde_json::json!({"action": "password", "password": "a new long password"}),
             "192.0.2.1",
         )
         .await;
-        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(status, StatusCode::OK, "{after}");
+        assert_eq!(after["sign_in"], "password");
+        assert!(
+            sign_in(&app, "ana", "a new long password", "Laptop")
+                .await
+                .is_some()
+        );
         cleanup(app, path);
     }
 
@@ -1548,6 +1775,10 @@ mod tests {
         let (_, gone) = methods(app.clone()).await;
         assert_eq!(gone["providers"], serde_json::json!([]));
         assert_eq!(gone["linked_unavailable"], true);
+        assert_eq!(
+            gone["sign_in"], "token_only",
+            "a provider the server no longer offers cannot sign in"
+        );
         cleanup(app, path);
     }
 

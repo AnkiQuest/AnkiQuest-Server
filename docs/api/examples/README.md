@@ -53,6 +53,8 @@ Random values are replaced, numbered in order of appearance: device tokens by `e
 | `records.json` | `GET /api/records` |
 | `study.json` | `GET /api/study/{user}`: three study days and a day off |
 | `sign_in_methods.json` | `GET /api/sign-in/{user}`: a password and a linked GitHub |
+| `sign_in_methods_token_only.json` | `GET /api/sign-in/{user}` for a player from the configuration: `"sign_in": "token_only"` |
+| `password_set_token_only.json` | `POST /api/sign-in/{user}` `{"action": "password", "password", "sign_out_others": false}` from that player's token: now an account with a password |
 | `account.json` | `GET /api/accounts/{user}` |
 | `password_change.json` | `POST /api/sign-in/{user}` `{"action": "password", "current", "password", "sign_out_others": false}` |
 | `devices_sign_out.json` | `POST /api/devices/{user}` `{"action": "sign_out_others"}` |
@@ -69,6 +71,8 @@ Random values are replaced, numbered in order of appearance: device tokens by `e
 | `leaderboard_global_hidden.json` | `GET /api/leaderboard?scope=global` for a player with a private profile and `"shown": false`. The viewer gets a full row and sees summaries for public players outside their circle. |
 | `global_leaderboard_on.json` | `POST /api/decks/{user}` `{"decks": [], "global_leaderboard": true}` |
 | `leaderboard_global.json` | `GET /api/leaderboard?scope=global&period=day`: the viewer's own row and a stranger with a private profile who turned it on |
+| `crash_report.json` | the body of `POST /api/crash-reports`: an ACRA report as the app sends it, written by hand. The answer is `204` with no body |
+| `crash_report_stored.json` | what the server stores of `crash_report.json`, checked by `src/crash_reports.rs` |
 | `leaderboard_locked.json` | `GET /api/leaderboard` for a new account with no review uploaded yet, whose friend studies: empty, with `X-Ankiquest-Locked: upload_first` |
 | `activity_locked.json` | `GET /api/activity/{user}?limit=2` for the same account: `"locked": "upload_first"` |
 

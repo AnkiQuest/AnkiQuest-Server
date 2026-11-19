@@ -104,7 +104,8 @@ async function picture(data: Shared): Promise<Blob | null> {
   }
   ctx.fillStyle = "#ffffff";
   ctx.font = "800 30px system-ui, sans-serif";
-  ctx.fillText(data.display.toUpperCase(), size / 2, 590 - shift);
+  // The name keeps its own case: hill is written in lowercase.
+  ctx.fillText(data.display, size / 2, 590 - shift);
   // Translated headlines run longer; shrink them to fit rather than clip.
   let headlineSize = 92;
   do ctx.font = `900 ${headlineSize}px system-ui, sans-serif`;
