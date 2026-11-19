@@ -12,16 +12,19 @@ const selector = path.resolve(import.meta.dirname, "../../.github/scripts/ubuntu
 const HTTP_OK = 200;
 const HTTP_MOVED = 301;
 const HTTP_UNAVAILABLE = 503;
+const SOURCES = "Types: deb\nURIs: http://security.ubuntu.com/ubuntu/\nSuites: noble-security\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n";
 
 async function select(mirrors: string[], context: TestContext) {
   const directory = await mkdtemp(path.join(tmpdir(), "ankiquest-mirror-"));
   context.after(() => rm(directory, {recursive: true, force: true}));
+  await writeFile(path.join(directory, "ubuntu.sources"), SOURCES);
   // Capture selection and apt verification instead of writing /etc or installing packages.
   await writeFile(path.join(directory, "sudo"), `#!/usr/bin/env bash
 set -euo pipefail
 case "$1" in
     tee) cat > "$RUNNER_TEMP/selected" ;;
     apt-get) printf '%s\\n' "$*" >> "$RUNNER_TEMP/apt" ;;
+    sed) args=("\${@:2}"); args[-1]="$RUNNER_TEMP/ubuntu.sources"; sed "\${args[@]}" ;;
     *) exit 99 ;;
 esac
 `, {mode: 0o755});
@@ -45,7 +48,7 @@ test("the mirror probe follows redirects before selecting an archive", async con
     requests.push(url);
     if (url.startsWith("/redirect/")) {
       response.writeHead(HTTP_MOVED, {Location: "/unavailable"}).end();
-    } else if (url.startsWith("/healthy/")) {
+    } else if (url.startsWith("/healthy/") || (url.startsWith("/no-security/") && !url.endsWith("-security/InRelease"))) {
       response.writeHead(HTTP_OK).end("release data");
     } else {
       response.writeHead(HTTP_UNAVAILABLE).end("unavailable mirror");
@@ -57,11 +60,13 @@ test("the mirror probe follows redirects before selecting an archive", async con
     assert.ok(address && typeof address !== "string");
     const base = `http://127.0.0.1:${address.port}`;
 
-    const fallback = await select([`${base}/redirect`, `${base}/healthy`], context);
+    const fallback = await select([`${base}/redirect`, `${base}/no-security`, `${base}/healthy`], context);
     assert.equal(fallback.status, 0, fallback.errors);
     assert.equal(await readFile(path.join(fallback.directory, "selected"), "utf8"), `${base}/healthy/\n`);
     assert.ok(requests.includes("/unavailable"), "the redirect destination must be checked");
     assert.match(await readFile(path.join(fallback.directory, "apt"), "utf8"), /update.*Error-Mode=any/);
+    assert.equal(await readFile(path.join(fallback.directory, "ubuntu.sources"), "utf8"),
+      SOURCES.replace("http://security.ubuntu.com/ubuntu/", "mirror+file:/etc/apt/apt-mirrors.txt"));
 
     const unavailable = await select([`${base}/redirect`], context);
     assert.equal(unavailable.status, 1);
