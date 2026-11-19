@@ -63,7 +63,7 @@ async function fixture(t: TestContext, session: Session | null = saved, options:
       return route.fulfill({status:204});
     }
     let data: unknown;
-    if (url.pathname === '/api/community') data = { meta: {}, players: [{ user: 'cerro', display: 'Cerro' }, { user: 'hill', display: 'Hill' }] };
+    if (url.pathname === '/api/community') data = { meta: {}, players: [{ user: 'cerro', display: 'Cerro' }, { user: 'hill', display: 'hill' }] };
     else if (url.pathname.startsWith('/api/friend-nudges/')) {
       requests.push({url:url.pathname,auth:request.headers().authorization,method:request.method(),body:request.postDataJSON()});
       if(control.hold)await control.hold;
@@ -74,7 +74,7 @@ async function fixture(t: TestContext, session: Session | null = saved, options:
         else control.nudged=true;
         return route.fulfill({status:204});
       }
-      data={receiving:control.receiving,automatic_receiving:control.automatic,friends:[{user:'hill',display:'Hill',enabled:true,sent_today:control.nudged,muted_by_me:!!control.muted.hill},{user:'friend',display:'Friend',enabled:false,sent_today:false,muted_by_me:!!control.muted.friend}]};
+      data={receiving:control.receiving,automatic_receiving:control.automatic,friends:[{user:'hill',display:'hill',enabled:true,sent_today:control.nudged,muted_by_me:!!control.muted.hill},{user:'friend',display:'Friend',enabled:false,sent_today:false,muted_by_me:!!control.muted.friend}]};
     }
     else if (url.pathname.startsWith('/api/activity/')) {
       if(url.pathname.endsWith('/read')&&request.method()==='POST') {
@@ -105,7 +105,7 @@ async function fixture(t: TestContext, session: Session | null = saved, options:
       if (control.reject || (!cookieAuthorized && !['Bearer saved-token', 'Bearer hill-token'].includes(request.headers().authorization!))) return route.fulfill({ status: 401, body: '{}' });
       data = url.pathname.includes('/reminders/')
         ? { gentle_daily: false, reminder_hour: 18, quiet_start: 22, quiet_end: 9, daily_limit: 3, ...(request.method() === 'POST' ? request.postDataJSON() : {}) }
-        : { challenges: [], recipients: options.challengeRecipients ? [{user:'hill',display:'Hill'},{user:'cerro',display:'Cerro'}] : [] };
+        : { challenges: [], recipients: options.challengeRecipients ? [{user:'hill',display:'hill'},{user:'cerro',display:'Cerro'}] : [] };
     } else return route.fulfill({ status: 404, body: '' });
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
   });
@@ -155,12 +155,12 @@ test('Spanish friend nudges preserve the selected recipient and daily limit', as
 test('Spanish achievements and thanks preserve friend messages and send contextual replies', async t => {
   const now=Math.floor(Date.now()/1000);
   const {page,control}=await fixture(t,saved,{locale:'es-ES',activityItems:[
-    {id:1,sender:'hill',kind:'completion',title:'Deck complete',body:'Hill finished Friends::{0}.',created_at:now,read_at:null},
-    {id:2,sender:'hill',kind:'reply',title:'💬 Hill',body:'Good job!',created_at:now,read_at:null},
+    {id:1,sender:'hill',kind:'completion',title:'Deck complete',body:'hill finished Friends::{0}.',created_at:now,read_at:null},
+    {id:2,sender:'hill',kind:'reply',title:'💬 hill',body:'Good job!',created_at:now,read_at:null},
   ]});
   await page.getByRole('tab',{name:'Amigos',exact:true}).click();
   const feed=page.getByRole('region',{name:'Logros de tus amigos',exact:true});
-  await feed.getByText('Hill finished Friends::{0}.',{exact:true}).waitFor();
+  await feed.getByText('hill finished Friends::{0}.',{exact:true}).waitFor();
   await feed.getByRole('button',{name:'Felicitar',exact:true}).click();
   await feed.getByText('Felicitación enviada',{exact:true}).waitFor();
   await page.locator('#tab-activity').click();
@@ -186,9 +186,9 @@ test('community reminders reuse the saved account, including saves, without pers
 test('activity suggests congratulations only for deck completions and thanks for replies', async t => {
   const now = Math.floor(Date.now() / 1000);
   const activityItems: ActivityItem[] = [
-    {id:1,sender:'hill',kind:'completion',title:'Deck complete',body:'Hill finished Spanish.',created_at:now,read_at:null},
-    {id:2,sender:'hill',kind:'reply',title:'💬 Hill',body:'Good job!',created_at:now,read_at:null},
-    {id:3,sender:'hill',kind:'message',title:'A note from Hill',body:'Hello!',created_at:now,read_at:null},
+    {id:1,sender:'hill',kind:'completion',title:'Deck complete',body:'hill finished Spanish.',created_at:now,read_at:null},
+    {id:2,sender:'hill',kind:'reply',title:'💬 hill',body:'Good job!',created_at:now,read_at:null},
+    {id:3,sender:'hill',kind:'message',title:'A note from hill',body:'Hello!',created_at:now,read_at:null},
   ];
   const {page,control} = await fixture(t,saved,{activityItems});
   await page.goto(`${origin}/community#activity`);
@@ -284,7 +284,7 @@ test('a new browser sign-in restores Community after disconnect', async t => {
   await deliver();
   control.cookieUser = 'hill';
   await page.evaluate(() => AnkiQuestSite.status(true));
-  await view.locator('.auth-status strong').filter({hasText:'Hill'}).waitFor({timeout:2000});
+  await view.locator('.auth-status strong').filter({hasText:'hill'}).waitFor({timeout:2000});
   await view.locator('#reminder-form').waitFor();
   assert.ok(requests.filter(request => request.url.endsWith('/hill')).every(request => !request.auth));
 });
@@ -423,7 +423,7 @@ test('an account change ignores the old response and never mixes account credent
   control.hold = null;
   release();
   await page.locator('#reminder-form').waitFor();
-  assert.equal(await page.locator('#view-reminders .auth-status strong').innerText(), 'Hill');
+  assert.equal(await page.locator('#view-reminders .auth-status strong').innerText(), 'hill');
   assert.ok(requests.every(request => request.auth === (request.url.endsWith('/cerro') ? 'Bearer saved-token' : 'Bearer hill-token')));
 });
 
@@ -470,7 +470,7 @@ test('cookie account replacement clears Activity and uses the new owner for priv
   const {page,requests,control}=await fixture(t,null,{cookieUser:'cerro'});
   await page.locator('#reminder-form').waitFor();
   control.cookieUser='hill';await page.evaluate(()=>AnkiQuestSite.status(true));
-  await page.locator('#view-reminders .auth-status strong').filter({hasText:'Hill'}).waitFor();
+  await page.locator('#view-reminders .auth-status strong').filter({hasText:'hill'}).waitFor();
   assert(requests.filter(request=>request.url.endsWith('/hill')).length>=2);
   assert(requests.every(request=>!request.auth));
   control.cookieUser=null;await page.evaluate(()=>AnkiQuestSite.status(true));
@@ -553,13 +553,13 @@ test('friend nudge dialog discards pending private data when the account changes
 test('friends achievements show only shared friend completions and congratulate once', async t => {
   const now=Math.floor(Date.now()/1000);
   const {page,control}=await fixture(t,saved,{activityItems:[
-    {id:1,sender:'hill',kind:'completion',title:'Deck complete',body:'Hill finished Spanish.',created_at:now,read_at:null},
+    {id:1,sender:'hill',kind:'completion',title:'Deck complete',body:'hill finished Spanish.',created_at:now,read_at:null},
     {id:2,sender:'hill',kind:'reply',title:'Encouragement',body:'Good job!',created_at:now,read_at:null},
     {id:3,sender:'cerro',kind:'completion',title:'Deck complete',body:'Cerro finished Geography.',created_at:now,read_at:null},
   ]});
   await page.getByRole('tab',{name:'Friends',exact:true}).click();
   const feed=page.getByRole('region',{name:"Friends' achievements",exact:true});
-  await feed.getByText('Hill finished Spanish.',{exact:true}).waitFor();
+  await feed.getByText('hill finished Spanish.',{exact:true}).waitFor();
   assert.equal(await feed.locator('.friend-achievement').count(),1);
   assert.equal(await feed.getByText('Cerro finished Geography.',{exact:true}).count(),0);
   await feed.getByRole('button',{name:'Congratulate',exact:true}).click();

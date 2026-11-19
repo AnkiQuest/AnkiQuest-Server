@@ -2286,7 +2286,7 @@ mod tests {
         let at = reviews.last().unwrap().id;
         let profile = compute(
             "hill",
-            "Hill",
+            "hill",
             &reviews,
             &Clock::default(),
             &Week::default(),
@@ -2326,7 +2326,7 @@ mod tests {
         let at = reviews.last().unwrap().id;
         let clock = Clock::default();
         let week = Week::default();
-        let profile = compute("hill", "Hill", &reviews, &clock, &week, at + 60_000);
+        let profile = compute("hill", "hill", &reviews, &clock, &week, at + 60_000);
         assert_eq!(profile.conquests.len(), 1);
         assert_eq!(profile.lifetime.conquered, 1);
         assert!(
@@ -2335,7 +2335,7 @@ mod tests {
                 .iter()
                 .any(|e| e.key == format!("conquered:{at}"))
         );
-        let later = compute("hill", "Hill", &reviews, &clock, &week, at + 3 * DAY_MS);
+        let later = compute("hill", "hill", &reviews, &clock, &week, at + 3 * DAY_MS);
         assert!(
             !later.events.iter().any(|e| e.key.starts_with("conquered:")),
             "old conquests are listed, not announced"

@@ -62,7 +62,7 @@ pub(crate) fn fixture() -> (Arc<App>, PathBuf) {
         "configured_tokens": "enabled",
             "users": {
             "cerro": {"display": "Cerro", "token": "cerro-secret"},
-            "hill": {"display": "Hill", "token": "hill-secret"},
+            "hill": {"display": "hill", "token": "hill-secret"},
             "friend": {"token": "friend-secret"}
         }
     }))

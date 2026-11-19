@@ -14,7 +14,7 @@ async function fixture(t: TestContext,{language='en-US',suggested=true}={}) {
   const context=await browser.newContext({viewport:{width:390,height:844},locale:language});t.after(()=>context.close());
   const page=await context.newPage();page.setDefaultTimeout(10000);
   const errors: string[]=[],requests: Request[]=[];page.on('pageerror',e=>errors.push(e.message));t.after(()=>assert.deepEqual(errors,[]));
-  const now=Date.now(),suggestion={week_start:now-1000,expires_at:now+86400000,friend:{user:'hill',display:'Hill::{0}'},target:3,duration_days:7,dismissed:false,challenge_id:null as number|null};
+  const now=Date.now(),suggestion={week_start:now-1000,expires_at:now+86400000,friend:{user:'hill',display:'hill::{0}'},target:3,duration_days:7,dismissed:false,challenge_id:null as number|null};
   let challenges: Goal[]=[];
   const control: {hold:Promise<void>|null;fail:boolean}={hold:null,fail:false};
   const payload=()=>({challenges,recipients:[suggestion.friend],weekly_suggestion:suggested?suggestion:null});
@@ -26,7 +26,7 @@ async function fixture(t: TestContext,{language='en-US',suggested=true}={}) {
     if(await fulfillAsset(route,p))return;
     if(p==='/auth/status')return json({private_site:false,authenticated:true,member:null});
     if(p==='/api/avatars')return json({});
-    if(p==='/api/community')return json({meta:{},players:[{user:'cerro',display:'Cerro'},{user:'hill',display:'Hill::{0}'}]});
+    if(p==='/api/community')return json({meta:{},players:[{user:'cerro',display:'Cerro'},{user:'hill',display:'hill::{0}'}]});
     if(p.startsWith('/api/language/'))return route.fulfill({status:204});
     if(p.startsWith('/api/activity/')||p.startsWith('/api/sent/'))return json({items:[],unread_count:0,next_before:null});
     if(p.startsWith('/api/community/reminders/'))return json({gentle_daily:false,reminder_hour:18,quiet_start:22,quiet_end:9,daily_limit:3});
@@ -39,7 +39,7 @@ async function fixture(t: TestContext,{language='en-US',suggested=true}={}) {
       if(action==='dismiss')suggestion.dismissed=true;
       if(action==='invite') {
         suggestion.challenge_id=1;
-        challenges=[{id:1,title:'A week of steady studying',weekly:true,started:false,kind:'study_days',cooperative:false,creator:'cerro',start_at:now,end_at:suggestion.expires_at,target:3,status:'waiting',progress:0,members:[{user:'cerro',display:'Cerro',status:'accepted',progress:0},{user:'hill',display:'Hill::{0}',status:'invited',progress:0}]}];
+        challenges=[{id:1,title:'A week of steady studying',weekly:true,started:false,kind:'study_days',cooperative:false,creator:'cerro',start_at:now,end_at:suggestion.expires_at,target:3,status:'waiting',progress:0,members:[{user:'cerro',display:'Cerro',status:'accepted',progress:0},{user:'hill',display:'hill::{0}',status:'invited',progress:0}]}];
       }
       if(action==='accept')for(const goal of challenges){goal.started=true;goal.status='active';goal.start_at=Date.now();goal.end_at=goal.start_at+7*86400000;goal.members.forEach(member=>member.status='accepted');}
       return json(payload());
@@ -79,7 +79,7 @@ test('custom goals offer a start-after-acceptance choice and hide progress while
     kind:'reviews',cooperative:true,creator:'cerro',start_at:Date.now(),end_at:9223372036854775807,
     target:3,status:'waiting',progress:0,members:[
       {user:'cerro',display:'Cerro',status:'accepted',progress:0},
-      {user:'hill',display:'Hill',status:'invited',progress:0}]}]);
+      {user:'hill',display:'hill',status:'invited',progress:0}]}]);
   await page.reload();
   await page.getByText('Waiting for everyone',{exact:true}).waitFor();
   assert.match(await page.locator('.challenge-meta').innerText(),/Starts when everyone accepts/);
@@ -96,7 +96,7 @@ test('skipping persists and keeps custom goals available without inviting anyone
 test('weekly labels are Spanish and a friend name containing placeholders is preserved',async t=>{
   const {page}=await fixture(t,{language:'es-ES'});
   await page.getByRole('heading',{name:'Tu propuesta semanal'}).waitFor();
-  await page.locator('.weekly-suggestion').getByText('Hill::{0}',{exact:true}).waitFor();
+  await page.locator('.weekly-suggestion').getByText('hill::{0}',{exact:true}).waitFor();
   await page.getByText('Los siete días empiezan cuando ambos aceptéis.').waitFor();
   await page.locator('[data-weekly-action="invite"]').click();
   await page.getByText('Esperando a tu amigo',{exact:true}).waitFor();
@@ -111,7 +111,7 @@ test('the custom goal waiting choice and state are Spanish',async t=>{
     kind:'reviews',cooperative:true,creator:'cerro',start_at:Date.now(),end_at:9223372036854775807,
     target:3,status:'waiting',progress:0,members:[
       {user:'cerro',display:'Cerro',status:'accepted',progress:0},
-      {user:'hill',display:'Hill',status:'invited',progress:0}]}]);
+      {user:'hill',display:'hill',status:'invited',progress:0}]}]);
   await page.reload();
   await page.getByText('Esperando a todos',{exact:true}).waitFor();
   assert.match(await page.locator('.challenge-meta').innerText(),/Empieza cuando todos acepten/);
@@ -126,7 +126,7 @@ test('the custom goal choice follows French, German and Portuguese Anki locales'
     await page.locator('[data-create-challenge]').click();
     await page.getByText(label,{exact:true}).waitFor();
     assert.equal(await page.locator('html').getAttribute('lang'),language.slice(0,2));
-    await page.locator('.weekly-suggestion').getByText('Hill::{0}',{exact:true}).waitFor();
+    await page.locator('.weekly-suggestion').getByText('hill::{0}',{exact:true}).waitFor();
   }
 });
 test('double clicks do not duplicate requests and failed choices can be retried',async t=>{
@@ -148,7 +148,7 @@ test('without a weekly suggestion the custom goal creator still shows',async t=>
 });
 test('a recipient can agree before the progress display starts',async t=>{
   const {page,requests,suggestion,setGoals}=await fixture(t);
-  setGoals([{id:2,title:'A week of steady studying',weekly:true,started:false,kind:'study_days',cooperative:false,creator:'hill',start_at:Date.now(),end_at:suggestion.expires_at,target:3,status:'waiting',progress:0,members:[{user:'hill',display:'Hill',status:'accepted',progress:0},{user:'cerro',display:'Cerro',status:'invited',progress:0}]}]);
+  setGoals([{id:2,title:'A week of steady studying',weekly:true,started:false,kind:'study_days',cooperative:false,creator:'hill',start_at:Date.now(),end_at:suggestion.expires_at,target:3,status:'waiting',progress:0,members:[{user:'hill',display:'hill',status:'accepted',progress:0},{user:'cerro',display:'Cerro',status:'invited',progress:0}]}]);
   await page.reload();await page.getByText("You're invited",{exact:true}).waitFor();
   assert.equal(await page.locator('.challenge [role="progressbar"]').count(),0);
   await page.locator('[data-challenge-action="accept"]').click();await page.locator('.challenge [role="progressbar"]').waitFor();

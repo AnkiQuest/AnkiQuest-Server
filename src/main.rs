@@ -478,7 +478,7 @@ mod tests {
         )
         .await
         .unwrap();
-        // Hill, who has studied, looks at Cerro's profile in English.
+        // hill, who has studied, looks at Cerro's profile in English.
         with_reviews(&app, "hill", 1);
         let mut public = headers("hill");
         public.insert(header::ACCEPT_LANGUAGE, "en-US".parse().unwrap());
@@ -611,7 +611,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["friend", "hill"]
         );
-        assert_eq!(settings.recipients[1].display, "Hill");
+        assert_eq!(settings.recipients[1].display, "hill");
         let _ = set_decks(
             State(app.clone()),
             UrlPath("cerro".into()),
@@ -1324,7 +1324,7 @@ mod tests {
             .unwrap();
         let told: Vec<_> = inbox.iter().filter(|n| n.kind == "conquest").collect();
         assert_eq!(told.len(), 1, "telling twice does not repeat it: {inbox:?}");
-        assert_eq!(told[0].title, "Hill conquered a hard card");
+        assert_eq!(told[0].title, "hill conquered a hard card");
         assert_eq!(show("hill", at).await.unwrap().0.told, Some(true));
         cleanup(app, path);
     }

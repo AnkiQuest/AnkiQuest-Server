@@ -1,5 +1,5 @@
 /* Shared profile pictures. Tokens and selected photos live only in the open editor. */
-import {escape as esc, nativeAccount} from "./common";
+import {escape as esc, initials, nativeAccount} from "./common";
 import {send} from "./http";
 
 (() => {
@@ -12,10 +12,9 @@ import {send} from "./http";
   const key = (user: string, revision: string) => JSON.stringify([user, revision]);
 
   function markup(user: string, display = user) {
-    const initials = String(display || user).trim().split(/\s+/).map(part => Array.from(part)[0] || "").slice(0, 2).join("").toUpperCase();
     let hash = 0;
     for (const char of String(user)) hash = (hash * 31 + char.charCodeAt(0)) | 0;
-    return aqHtml`<span class="avatar" data-avatar-user="${esc(user)}" style="border-color:hsl(${Math.abs(hash) % 360} 55% 55%)" aria-hidden="true"><span class="avatar-initials">${esc(initials)}</span></span>`;
+    return aqHtml`<span class="avatar" data-avatar-user="${esc(user)}" style="border-color:hsl(${Math.abs(hash) % 360} 55% 55%)" aria-hidden="true"><span class="avatar-initials">${esc(initials(user, display))}</span></span>`;
   }
 
   function hydrate() {

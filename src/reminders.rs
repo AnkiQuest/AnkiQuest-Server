@@ -760,7 +760,7 @@ mod tests {
     fn profile(clock: &Clock, now: i64) -> Profile {
         game::compute_with_freezes(
             "hill",
-            "Hill",
+            "hill",
             &[Review {
                 id: now - DAY_MS,
                 cid: 1,
