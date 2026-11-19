@@ -44,6 +44,7 @@ pub(crate) fn app_from(store: Store, config: Config) -> App {
         standings: Default::default(),
         heartbeat: Default::default(),
         rank_weeks: Default::default(),
+        crash_reports: Default::default(),
     }
 }
 
@@ -58,7 +59,8 @@ pub(crate) fn app_with(config: serde_json::Value) -> (Arc<App>, PathBuf) {
 
 pub(crate) fn fixture() -> (Arc<App>, PathBuf) {
     app_with(serde_json::json!({
-        "users": {
+        "configured_tokens": "enabled",
+            "users": {
             "cerro": {"display": "Cerro", "token": "cerro-secret"},
             "hill": {"display": "Hill", "token": "hill-secret"},
             "friend": {"token": "friend-secret"}

@@ -1,18 +1,29 @@
 name: CI
 
 on:
-  # Pushes to the default branch, and every pull request. Pushes to other
-  # branches are left to their pull request: checking both ran every job
-  # twice on the same commit.
+  # Pushes to the default branch, every pull request and every merge queue
+  # group. Pushes to other branches are left to their pull request: checking
+  # both ran every job twice on the same commit.
   push:
     branches:
       - main
       - master
   pull_request:
+  # The jobs here are required checks; the merge queue waits for them on
+  # its temporary merge commit.
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  # A newer push to a pull request cancels its older run. Every other run
+  # (default branch pushes, dispatches, merge queue) gets a group of its own
+  # and always finishes.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   android-contract:
@@ -96,31 +107,42 @@ jobs:
 
       - name: Evaluate the NixOS module
         run: |
-          nix eval --impure --raw --expr '
-            let
-              flake = builtins.getFlake "git+file://'"$PWD"'";
-              system = flake.inputs.nixpkgs.lib.nixosSystem {
-                system = "x86_64-linux";
-                modules = [
-                  flake.nixosModules.default
-                  {
-                    boot.isContainer = true;
-                    system.stateVersion = "26.05";
-                    services.nginx.enable = true;
-                    security.acme.acceptTerms = true;
-                    security.acme.defaults.email = "ci@example.com";
-                    services.ankiquest = {
-                      enable = true;
-                      domain = "anki.example.com";
-                      privateSite = true;
-                      sitePasswordFile = "/run/secrets/ankiquest-site-password";
-                      ntfy = "https://ntfy.sh";
-                      users.hill = {
-                        ntfyTopic = "example";
-                        tokenFile = "/run/secrets/ankiquest-hill";
-                      };
-                    };
-                  }
-                ];
-              };
-            in system.config.system.build.toplevel.drvPath'
+          # The module with a player tokenFile, plus the settings in $1.
+          evaluate() {
+            nix eval --impure --raw --expr '
+              let
+                flake = builtins.getFlake "git+file://'"$PWD"'";
+                system = flake.inputs.nixpkgs.lib.nixosSystem {
+                  system = "x86_64-linux";
+                  modules = [
+                    flake.nixosModules.default
+                    {
+                      boot.isContainer = true;
+                      system.stateVersion = "26.05";
+                      services.nginx.enable = true;
+                      security.acme.acceptTerms = true;
+                      security.acme.defaults.email = "ci@example.com";
+                      services.ankiquest = {
+                        enable = true;
+                        domain = "anki.example.com";
+                        privateSite = true;
+                        sitePasswordFile = "/run/secrets/ankiquest-site-password";
+                        ntfy = "https://ntfy.sh";
+                        users.hill = {
+                          ntfyTopic = "example";
+                          tokenFile = "/run/secrets/ankiquest-hill";
+                        };
+                      } // '"$1"';
+                    }
+                  ];
+                };
+              in system.config.system.build.toplevel.drvPath'
+          }
+          evaluate '{ configuredTokens = "enabled"; }'
+
+          # Configured tokens are opt-in: without it the tokenFile is an error.
+          if evaluate '{ }' 2> refused.log; then
+            echo "a tokenFile without configuredTokens evaluated" >&2
+            exit 1
+          fi
+          grep -q configuredTokens refused.log || { cat refused.log; exit 1; }

@@ -1,6 +1,6 @@
 # private AnkiQuest access
 
-private mode protects the whole community: leaderboard periods, profiles, records, Community history, and their APIs. the public sign-in page and its static assets contain no player data. keep existing per-player tokens; members may sign in with a token or the server's shared website password.
+private mode protects the whole community: leaderboard periods, profiles, records, Community history, and their APIs. the public sign-in page and its static assets contain no player data. members sign in with their account, a token from the configuration (only with [configured tokens](server.md#configured-tokens) enabled), or the server's shared website password.
 
 ## server setup
 

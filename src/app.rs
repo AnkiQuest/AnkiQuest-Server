@@ -51,6 +51,8 @@ pub(crate) struct App {
     pub(crate) standings: StandingCache,
     pub(crate) heartbeat: worker::Heartbeat,
     pub(crate) rank_weeks: crate::boards::RankWeeks,
+    /// Crash reports each client address sent in the last hour.
+    pub(crate) crash_reports: crate::crash_reports::Limiter,
 }
 
 impl App {
@@ -134,11 +136,7 @@ impl App {
     }
 
     fn configured_with_token(&self, user: &str) -> bool {
-        self.config
-            .users
-            .get(user)
-            .and_then(|config| config.token.as_deref())
-            .is_some_and(|token| !token.is_empty())
+        self.config.token(user).is_some()
     }
 
     /// Players who can sign in: configured users with a token, and every account.

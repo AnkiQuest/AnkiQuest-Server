@@ -69,6 +69,10 @@ opt-level = 3
 [profile.dev.package.image]
 opt-level = 3
 
+# The Android art check encodes every drawable; unoptimised libwebp takes minutes.
+[profile.dev.package.libwebp-sys]
+opt-level = 3
+
 [profile.dev.package.png]
 opt-level = 3
 

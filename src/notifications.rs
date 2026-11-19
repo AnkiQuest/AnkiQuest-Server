@@ -1,5 +1,6 @@
 //! The durable inbox: notifications, the activity feed, replies, and the push queue.
 
+use crate::companions::Drawable;
 use crate::decks::completion_allowed_sql;
 use crate::game::{DAY_MS, Event};
 use crate::store::{Error, Store};
@@ -45,6 +46,8 @@ pub struct ActivityOptions {
     pub limit: u32,
     pub category: Option<ActivityCategory>,
     pub unread_only: bool,
+    /// The unlock moments the client can draw; see [`crate::companions::Drawable`].
+    pub drawable: Drawable,
     pub peer_study: PeerStudy,
 }
 
@@ -314,23 +317,26 @@ fn next_page<T>(items: &mut Vec<T>, limit: u32, id: impl Fn(&T) -> i64) -> Optio
 
 impl Store {
     pub fn notifications(&self, user: &str, now_ms: i64) -> Result<Vec<Notification>, Error> {
-        self.notifications_for(user, now_ms, PeerStudy::Shown)
+        self.notifications_for(user, now_ms, Drawable::all(), PeerStudy::Shown)
     }
 
-    /// [`Store::notifications`], leaving out others' study when `peer_study` says so.
+    /// [`Store::notifications`], leaving out unlock moments the client cannot draw, and
+    /// others' study when `peer_study` says so.
     pub fn notifications_for(
         &self,
         user: &str,
         now_ms: i64,
+        drawable: Drawable,
         peer_study: PeerStudy,
     ) -> Result<Vec<Notification>, Error> {
         let mut stmt = self.conn.prepare(&format!(
             "select {NOTICE_COLUMNS} from notifications n where n.id in (
                  select id from notifications where recipient=?1 and push_only=0
                  and created_at>=?3
-                 and {} and {}
+                 and {} and {} and {}
                  order by id desc limit 500) order by n.id",
             completion_visible_sql("notifications", "?1"),
+            drawable.sql("notifications"),
             peer_study_sql("notifications", "?1", peer_study)
         ))?;
         Ok(stmt
@@ -356,6 +362,7 @@ impl Store {
                 limit,
                 category: None,
                 unread_only: false,
+                drawable: Drawable::all(),
                 peer_study: PeerStudy::Shown,
             },
         )
@@ -373,15 +380,19 @@ impl Store {
             limit,
             category,
             unread_only,
+            drawable,
             peer_study,
         } = options;
+        // Rows the caller may see: only companions it can draw, and others' study only
+        // when `peer_study` shows it.
+        let shown = drawable.sql("n");
         let peers = peer_study_sql("n", "?1", peer_study);
         let cutoff = now_ms - i64::from(days) * DAY_MS;
         let category = category.map(ActivityCategory::as_str);
         let mut stmt = self.conn.prepare(&format!(
             "select {NOTICE_COLUMNS} from notifications n
             where n.recipient=?1 and n.push_only=0 and n.created_at>=?3 and (?4 is null or n.id<?4)
-            and {} and {peers}
+            and {} and {shown} and {peers}
             and (?6 is null or (?6='needs_action' and {ACTION_REQUIRED_SQL})
                 or (?6!='needs_action' and ({ACTIVITY_CATEGORY_SQL})=?6))
             and (?7=0 or n.read_at is null)
@@ -416,7 +427,7 @@ impl Store {
             &format!(
                 "select coalesce(sum(n.read_at is null),0),coalesce(sum({ACTION_REQUIRED_SQL}),0),max(n.id)
                  from notifications n where n.recipient=?1 and n.push_only=0 and n.created_at>=?3
-                 and {} and {peers}",
+                 and {} and {shown} and {peers}",
                 completion_visible_sql("n", "?1")
             ),
             params![user, now_ms, cutoff],
@@ -455,16 +466,21 @@ impl Store {
     }
 
     /// Marks everything up to `through` read, so items that arrived after the
-    /// reader's last refresh stay unread.
+    /// reader's last refresh stay unread. Moments the reader cannot draw were never
+    /// listed, so they stay unread too.
     pub fn read_all_activity(
         &mut self,
         user: &str,
         through: i64,
         now_ms: i64,
+        drawable: Drawable,
     ) -> Result<(), Error> {
         self.conn.execute(
-            "update notifications set read_at=?3 where recipient=?1 and id<=?2
-            and push_only=0 and read_at is null and created_at>=?4",
+            &format!(
+                "update notifications set read_at=?3 where recipient=?1 and id<=?2
+                and push_only=0 and read_at is null and created_at>=?4 and {}",
+                drawable.sql("notifications")
+            ),
             params![user, through, now_ms, now_ms - ACTIVITY_AGE_MS],
         )?;
         Ok(())
@@ -903,6 +919,7 @@ mod tests {
             limit: 1,
             category: Some(ActivityCategory::Messages),
             unread_only: false,
+            drawable: Drawable::all(),
             peer_study: PeerStudy::Shown,
         };
         let page = store.activity_filtered("hill", NOW, options).unwrap();
@@ -1001,6 +1018,7 @@ mod tests {
             limit: 20,
             category: Some(ActivityCategory::NeedsAction),
             unread_only: false,
+            drawable: Drawable::all(),
             peer_study: PeerStudy::Shown,
         };
         let pending = store.activity_filtered("hill", NOW, options).unwrap();
@@ -1057,7 +1075,9 @@ mod tests {
         let seen = send("hill");
         send("friend");
         let later = send("hill");
-        store.read_all_activity("hill", seen, NOW).unwrap();
+        store
+            .read_all_activity("hill", seen, NOW, Drawable::all())
+            .unwrap();
         let activity = store.activity("hill", NOW, 90, None, 100).unwrap();
         assert_eq!(activity.unread_count, 1);
         assert!(
@@ -1076,7 +1096,9 @@ mod tests {
                 .unread_count,
             1
         );
-        store.read_all_activity("hill", i64::MAX, NOW).unwrap();
+        store
+            .read_all_activity("hill", i64::MAX, NOW, Drawable::all())
+            .unwrap();
         assert_eq!(
             store
                 .activity("hill", NOW, 90, None, 100)

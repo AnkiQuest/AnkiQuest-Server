@@ -1,7 +1,7 @@
 //! Opt-in reminders, using the same durable inbox and retry queue as deck notices.
 use crate::access::require_owner;
 use crate::app::App;
-use crate::game::{Clock, DAY_MS, HOUR_MS, MAX_FREEZES, Profile, Week};
+use crate::game::{self, Clock, DAY_MS, HOUR_MS, MAX_FREEZES, Profile, Week};
 use crate::notifications::{Notification, Outgoing};
 use crate::store::{Error, Store};
 use crate::web_util::store_error;
@@ -330,8 +330,7 @@ pub fn delivery_guard(
             .iter()
             .any(|day| day.frozen && clock.day(day.at) == notice.day),
         "reminder_weekly_closing" => {
-            own_week_end(clock, week, created) == own_week_end(clock, week, now)
-                && own_week_xp(profile, clock, week, now) > 0
+            own_week_end(clock, created) == own_week_end(clock, now) && profile.own_week_xp() > 0
         }
         "reminder_weekly_recap" => week.end_after(created) == week.end_after(now),
         _ => false,
@@ -353,7 +352,7 @@ pub fn delivery_guard(
         return Ok(DeliveryGuard::Cancel);
     }
     if notice.kind == "reminder_weekly_closing"
-        && !deadline_window(&prefs, clock, now, own_week_end(clock, week, now))
+        && !deadline_window(&prefs, clock, now, own_week_end(clock, now))
     {
         return Ok(DeliveryGuard::Cancel);
     }
@@ -362,16 +361,10 @@ pub fn delivery_guard(
 
 /// Refresh time-sensitive wording immediately before returning or delivering
 /// an existing notice, including when freeze protection was changed meanwhile.
-pub fn current_body(
-    notice: &Notification,
-    profile: &Profile,
-    clock: &Clock,
-    week: &Week,
-    now: i64,
-) -> String {
+pub fn current_body(notice: &Notification, profile: &Profile, clock: &Clock, now: i64) -> String {
     match notice.kind.as_str() {
         "reminder_urgent" => urgent_body(profile, clock, now),
-        "reminder_weekly_closing" => closing_body(profile, clock, week, now),
+        "reminder_weekly_closing" => closing_body(profile, clock, now),
         _ => notice.body.clone(),
     }
 }
@@ -398,36 +391,21 @@ fn urgent_body(profile: &Profile, clock: &Clock, now: i64) -> String {
     )
 }
 
-/// When the shared week closes for this player. An Anki day counts toward the week its
-/// start falls in, so a day that began before the shared reset (Sunday evening in
-/// California for a reset at Monday 04:00 UTC) still counts toward the closing week
-/// until that day ends at the player's own rollover.
-fn own_week_end(clock: &Clock, week: &Week, now: i64) -> i64 {
-    let shared = week.end_after(clock.day_start_ms(clock.day(now)));
-    clock.day_start_ms(clock.day(shared - 1) + 1)
-}
-
-/// XP from the days that count toward the week [`own_week_end`] closes. After the shared
-/// reset this is still the closing week for a player whose day began before it, while the
-/// profile's `week_xp` has moved on to the new one.
-fn own_week_xp(profile: &Profile, clock: &Clock, week: &Week, now: i64) -> u64 {
-    let shared = week.end_after(clock.day_start_ms(clock.day(now)));
-    profile
-        .history
-        .iter()
-        .filter(|day| week.end_after(day.at) == shared)
-        .map(|day| day.xp)
-        .sum()
+/// When the week the player's current day counts toward closes for them: the start of
+/// their own next Monday. An Anki day counts toward the week of its own date, so this is
+/// before the board's switch for Berlin and after it for UTC-12 with a 04:00 rollover.
+fn own_week_end(clock: &Clock, now: i64) -> i64 {
+    clock.day_start_ms(game::monday_of(clock.day(now)) + 7)
 }
 
 /// The close in the player's own time, so a reset that falls on a Sunday evening in
 /// California or a Monday morning in Berlin reads as what it is for them.
-fn closing_body(profile: &Profile, clock: &Clock, week: &Week, now: i64) -> String {
-    let end = own_week_end(clock, week, now);
+fn closing_body(profile: &Profile, clock: &Clock, now: i64) -> String {
+    let end = own_week_end(clock, now);
     let hours = ((end - now + HOUR_MS - 1) / HOUR_MS).to_string();
     let minute = (end - local_midnight(clock, end)) / 60_000;
     let at = format!("{:02}:{:02}", minute / 60, minute % 60);
-    let xp = own_week_xp(profile, clock, week, now).to_string();
+    let xp = profile.own_week_xp().to_string();
     if hours == "1" {
         crate::i18n::english(
             "The weekly competition closes for you in 1 hour, at {0}. You have {1} XP this week.",
@@ -442,7 +420,7 @@ fn closing_body(profile: &Profile, clock: &Clock, week: &Week, now: i64) -> Stri
 }
 
 /// The player's own morning once their last day of the closed week is over: usually
-/// Monday, since a day counts toward the week its start falls in (see [`own_week_end`]).
+/// Monday, since a day counts toward the week of its own date (see [`own_week_end`]).
 /// Morning is the end of their quiet hours, or 09:00 without any; a last day that ends
 /// later than that, with a rollover at noon say, is recapped as soon as it ends.
 fn recap_due(prefs: &Settings, clock: &Clock, week_end: i64) -> i64 {
@@ -602,16 +580,16 @@ pub fn tick(
             topic: None,
         });
     }
-    let week_end = own_week_end(clock, week, now_ms);
+    let week_end = own_week_end(clock, now_ms);
     if prefs.weekly_closing
-        && own_week_xp(profile, clock, week, now_ms) > 0
+        && profile.own_week_xp() > 0
         && deadline_window(&prefs, clock, now_ms, week_end)
     {
         candidates.push(Candidate {
             kind: "reminder_weekly_closing",
             key: format!("reminder:weekly_closing:{week_end}"),
             title: "The weekly competition closes soon",
-            body: closing_body(profile, clock, week, now_ms),
+            body: closing_body(profile, clock, now_ms),
             day,
             topic: None,
         });
@@ -759,7 +737,7 @@ pub(crate) fn routes() -> Router<Arc<App>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::{self, FreezePolicy, HistoryDay, Review};
+    use crate::game::{FreezePolicy, HistoryDay, Review};
     use crate::test_support::*;
 
     const DATE: i64 = 20_000;
@@ -800,6 +778,18 @@ mod tests {
 
     fn run(store: &mut Store, profile: &Profile, clock: &Clock, now: i64) {
         tick(store, "hill", profile, clock, &Week::default(), now, None).unwrap();
+    }
+
+    #[test]
+    fn own_week_end_matches_fixture() {
+        for case in game::weekly_fixture::cases() {
+            assert_eq!(
+                own_week_end(&case.clock, case.now_ms),
+                case.expected.own_week_ends_at,
+                "{}",
+                case.name
+            );
+        }
     }
 
     #[test]
@@ -1514,9 +1504,7 @@ mod tests {
             store.notifications("hill", at(20)).unwrap().is_empty(),
             "no old recap when enabled"
         );
-        for day in &mut p.history {
-            day.xp = 0;
-        }
+        p.week_xp = 0;
         run(&mut store, &p, &clock, end - HOUR_MS);
         assert!(
             store
@@ -1524,7 +1512,7 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-        p.history.last_mut().unwrap().xp = 500;
+        p.week_xp = 500;
         run(&mut store, &p, &clock, end - HOUR_MS);
         let closing = &store.notifications("hill", end - HOUR_MS).unwrap()[0];
         assert_eq!(closing.kind, "reminder_weekly_closing");
@@ -1537,7 +1525,7 @@ mod tests {
             rollover_hour: 4,
         };
         assert!(
-            closing_body(&p, &pacific, &week, end - 3 * HOUR_MS)
+            closing_body(&p, &pacific, end - 3 * HOUR_MS)
                 .starts_with("The weekly competition closes for you in 10 hours, at 04:00.")
         );
         let recap = Recap {

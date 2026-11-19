@@ -26,7 +26,9 @@ const COMPANIONS: &[(&str, &str)] = &[
     ("cow", "cow"),
     ("anki_tan", "anki-tan"),
     ("anki_tan_chibi", "anki-tan/chibi"),
-    ("leech_tan", "leech-tan"),
+    ("quest_chan", "quest-chan"),
+    ("quest_chan_chibi", "quest-chan/chibi"),
+    ("leech_kun", "leech-kun"),
 ];
 
 /// Poses whose masters may still have the file name they had before the
