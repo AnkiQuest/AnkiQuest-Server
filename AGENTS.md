@@ -82,6 +82,7 @@ Companion art means every picture of a character: poses, moment and card picture
 - A new companion goes live only with every pose drawn.
 - A PR that adds a pose to the list adds its art for every live companion. CI fails a PR that adds a pose without it.
 - No placeholder pictures: no stand-in, recoloured or borrowed art for a missing pose.
+- One exception (hill, 2026-11-19): Anki-tan goes live before her missing extensions are drawn (`streak_hot`, `streak_blazing`, `frozen_2`, `frozen_3`, `abandoned`, `leech_defeated`, `winner`); they show their fallbacks until then. Drawing them comes first in AnkiQuest/AnkiQuest-Server#57. No other companion goes live with missing poses.
 - Until the missing poses are drawn (AnkiQuest/AnkiQuest-Server#57), the clients keep the current fallbacks: a missing extension shows the fallback the list gives it (a streak tier shows streak, frozen 3 shows frozen), and Bluma shows Ankilope's art recoloured where hers is missing. These are temporary. Once every live companion has every pose, remove them from the list and both clients.
 
 ## Writing

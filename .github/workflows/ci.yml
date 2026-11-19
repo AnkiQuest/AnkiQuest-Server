@@ -48,11 +48,11 @@ jobs:
 
       # A pose added to companion_poses.json needs a master for every live
       # companion. Comparing with the base commit's list keeps existing
-      # gaps from failing.
+      # gaps from failing. `event-base` picks the pull request's, the
+      # merge group's or the push's base.
       - name: Check added poses are drawn
-        env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
         run: |
+          BASE=$(cargo run -q -p ankiquest-xtask -- event-base)
           git fetch --depth=1 origin "$BASE"
           git show "$BASE:tests/fixtures/companion_poses.json" > "$RUNNER_TEMP/base-poses.json"
           cargo run -p ankiquest-xtask -- art-coverage --since "$RUNNER_TEMP/base-poses.json"
