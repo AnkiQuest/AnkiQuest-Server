@@ -150,6 +150,9 @@ jobs:
       - name: Format
         run: nix develop --command cargo fmt --all --check
 
+      - name: Nix format
+        run: nix fmt -- --check .
+
       - name: Test
         run: nix develop --command cargo test --workspace
 
