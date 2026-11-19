@@ -303,7 +303,9 @@ test('logout clears the native account even if the access refresh throws', async
   await view.locator('[data-disconnect]').click();
   await view.locator('[data-connect]').waitFor();
   assert.equal(control.cookieUser, null);
-  assert.equal(await page.evaluate(() => window.ankiquestSession), undefined);
+
+  // The lock shows the connect button before the access refresh throws; the session is cleared after.
+  await page.waitForFunction(() => window.ankiquestSession === undefined, undefined, {timeout:2000});
 });
 
 test('finishing a challenge save preserves a pending private reload', async t => {
