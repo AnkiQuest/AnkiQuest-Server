@@ -928,7 +928,7 @@ mod tests {
     #[test]
     fn usernames_passwords_and_tokens() {
         assert!(valid_username("hill") && valid_username("ana-2") && valid_username("9lives"));
-        for bad in ["ab", "Hill", "-hill", "hill!", "admin", &"a".repeat(33)] {
+        for bad in ["ab", "Aldana", "-hill", "hill!", "admin", &"a".repeat(33)] {
             assert!(!valid_username(bad), "{bad}");
         }
         let hash = hash_password("correct horse").unwrap();

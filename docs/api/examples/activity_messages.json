@@ -3,7 +3,7 @@
   "attention": [
     {
       "action_required": true,
-      "body": "Hill invited you to Spanish club.",
+      "body": "hill invited you to Spanish club.",
       "challenge_id": null,
       "created_at": 1793183400,
       "day": 20754,
@@ -30,11 +30,11 @@
       "replied": false,
       "route": null,
       "sender": "hill",
-      "title": "💬 Hill"
+      "title": "💬 hill"
     },
     {
       "action_required": true,
-      "body": "Hill invited you to Spanish club.",
+      "body": "hill invited you to Spanish club.",
       "challenge_id": null,
       "created_at": 1793183400,
       "day": 20754,

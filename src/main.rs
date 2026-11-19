@@ -23,6 +23,8 @@ mod companions;
 mod competition;
 mod config;
 mod conquests;
+mod crash_reports;
+mod crash_signature;
 #[cfg(test)]
 mod day_verdicts;
 mod deck_copies;
@@ -224,6 +226,7 @@ async fn main() -> Result<(), Error> {
         standings: Default::default(),
         heartbeat: Default::default(),
         rank_weeks: Default::default(),
+        crash_reports: Default::default(),
         store: Mutex::new(store),
     });
 
@@ -275,6 +278,7 @@ fn router(app: Arc<App>) -> Router {
         .merge(cards::routes())
         .merge(capabilities::routes())
         .merge(synced_settings::routes())
+        .merge(crash_reports::routes())
         .route("/api/health", get(worker::health))
         .route("/", get(index))
         .route("/records", get(index))
@@ -476,7 +480,7 @@ mod tests {
         )
         .await
         .unwrap();
-        // Hill, who has studied, looks at Cerro's profile in English.
+        // hill, who has studied, looks at Cerro's profile in English.
         with_reviews(&app, "hill", 1);
         let mut public = headers("hill");
         public.insert(header::ACCEPT_LANGUAGE, "en-US".parse().unwrap());
@@ -609,7 +613,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["friend", "hill"]
         );
-        assert_eq!(settings.recipients[1].display, "Hill");
+        assert_eq!(settings.recipients[1].display, "hill");
         let _ = set_decks(
             State(app.clone()),
             UrlPath("cerro".into()),
@@ -1322,7 +1326,7 @@ mod tests {
             .unwrap();
         let told: Vec<_> = inbox.iter().filter(|n| n.kind == "conquest").collect();
         assert_eq!(told.len(), 1, "telling twice does not repeat it: {inbox:?}");
-        assert_eq!(told[0].title, "Hill conquered a hard card");
+        assert_eq!(told[0].title, "hill conquered a hard card");
         assert_eq!(show("hill", at).await.unwrap().0.told, Some(true));
         cleanup(app, path);
     }

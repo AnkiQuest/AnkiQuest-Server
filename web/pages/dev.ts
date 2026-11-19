@@ -25,6 +25,18 @@ interface Announcement {
 
 interface LogEntry {at: number; user: string | null; message: string}
 
+/** `/api/dev/<user>/crash-reports` (`Group` in src/crash_reports.rs): one per signature. */
+interface CrashGroup {
+  signature: string;
+  count: number;
+  first_seen: number;
+  last_seen: number;
+  app_version: string | null;
+  app_versions: string[];
+  exception: string | null;
+  reports: number[];
+}
+
 const DAY_MS = 86_400_000;
 const app = document.getElementById("app")!;
 const num = (n: number) => n.toLocaleString("en");
@@ -73,6 +85,15 @@ function announcementView(announcement: Announcement) {
 
 function errorView(entry: LogEntry) {
   return `<li>${esc(entry.message)}<small>${time(entry.at)}${entry.user ? " · " + esc(entry.user) : ""}</small></li>`;
+}
+
+function crashView(group: CrashGroup) {
+  const reports = `${num(group.count)} report${group.count === 1 ? "" : "s"}`;
+  const versions = group.app_versions.length > 1 ? ` · ${group.app_versions.length} versions` : "";
+  const samples = group.reports.length
+    ? group.reports.map((id, index) => `<a href="${api(`crash-reports/${id}`)}" target="_blank" rel="noopener">sample ${index + 1}</a>`).join(" · ")
+    : "no sample kept";
+  return `<li><strong>${esc(group.exception ?? "No stack trace")}</strong><small>${reports} · ${esc(group.app_version ?? "unknown version")}${versions}</small><small>${time(group.first_seen)} – ${time(group.last_seen)} · ${samples}</small></li>`;
 }
 
 function composer(groups: GroupSummary[]) {
@@ -148,10 +169,11 @@ async function start() {
   }
   user = member;
   try {
-    const [stats, groups, errors] = await Promise.all([load<Stats>("stats"), load<GroupSummary[]>("groups"), load<LogEntry[]>("errors")]);
+    const [stats, groups, errors, crashes] = await Promise.all([load<Stats>("stats"), load<GroupSummary[]>("groups"), load<LogEntry[]>("errors"), load<CrashGroup[]>("crash-reports")]);
     app.innerHTML = `<h1>Dev</h1>${statsView(stats)}<div class="grid">${composer(groups)}
       <section class="card"><div class="card-head"><h2>Sent</h2></div><ul class="dev-list" id="dev-announcements"></ul></section></div>${daysView(stats)}
-      <section class="card"><div class="card-head"><h2>Errors</h2><small>last 7 days</small></div><ul class="dev-list" id="dev-errors">${errors.length ? errors.map(errorView).join("") : "<li>None.</li>"}</ul></section>`;
+      <section class="card"><div class="card-head"><h2>Errors</h2><small>last 7 days</small></div><ul class="dev-list" id="dev-errors">${errors.length ? errors.map(errorView).join("") : "<li>None.</li>"}</ul></section>
+      <section class="card"><div class="card-head"><h2>Crash reports</h2><small>from the app, by crash, latest first; 2 samples each, kept 30 days</small></div><ul class="dev-list" id="dev-crashes">${crashes.length ? crashes.map(crashView).join("") : "<li>None.</li>"}</ul></section>`;
     wire(document.getElementById("dev-announce") as HTMLFormElement);
     await refreshAnnouncements();
   } catch (error) {

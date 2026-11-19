@@ -42,6 +42,21 @@ const scaffold = html.match(/<body\b[^>]*>([\s\S]*?)<script>/)![1];
       const notices = await page.locator('.closing-week').allTextContents();
       assert.equal(notices.length,1);
       assert.match(notices[0]!,locale==='es-ES'?/La semana pasada aún cuenta: 1[., ]?234 XP · cierra a las \d\d:\d\d/:/Last week still counting: 1,234 XP · closes at \d\d:\d\d/);
+      // Before the board switches, a player whose Monday began already adds to next week.
+      await page.evaluate(() => {
+        const row = {user:'east',display:'East',xp:0,level:1,streak:0,today_reviews:3,streak_state:'pending',day_ends_at:Date.now()+3600000};
+        weekEnds = Date.now()+3600000;
+        app.innerHTML = board([{...row,next_xp:1234},{...row,user:'west',xp:5}],'me')
+          + nextWeek({xp:1234,starts_at:Date.now()+3600000}) + nextWeek({xp:5,starts_at:Date.now()-1000}) + nextWeek(undefined);
+      });
+      const next = await page.locator('.board .next-xp').allTextContents();
+      assert.equal(next.length,1);
+      assert.match(next[0]!,locale==='es-ES'?/1[.,\s\u00a0]?234 XP ya cuentan para la próxima semana/:/1,234 XP already counting for next week/);
+      const nextNotices = await page.locator('.next-week').allTextContents();
+      assert.equal(nextNotices.length,1);
+      assert.match(nextNotices[0]!,locale==='es-ES'?/La próxima semana ya cuenta: 1[.,\s\u00a0]?234 XP · la clasificación cambia a las \d\d:\d\d/:/Next week already counting: 1,234 XP · the board switches at \d\d:\d\d/);
+      // Once the board has switched, a cached next_xp no longer shows.
+      assert.equal(await page.evaluate(() => { weekEnds = 0; return board([{user:'east',display:'East',xp:0,level:1,streak:0,next_xp:9}],'me').includes('next-xp'); }),false);
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
       await page.evaluate(() => {
         const rows = ['studied','pending','protected'].map((streak_state,index) => ({user:streak_state,display:'Friend '+index,xp:100-index,level:1,streak:27,today_reviews:index===0?1:0,streak_state,day_ends_at:Date.now()+3600000}));

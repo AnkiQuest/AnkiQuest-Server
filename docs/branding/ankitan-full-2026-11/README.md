@@ -45,7 +45,7 @@ are kept byte for byte in `static/anki-tan/archive/`. The published generated
 frozen files remain in place. These canonical
 asleep and sad paths are exact copies of those approved masters.
 
-Hill requested one unlit headband star for neglected, two for abandoned and
+hill requested one unlit headband star for neglected, two for abandoned and
 three for dead in [#88](https://github.com/AnkiQuest/AnkiQuest-Desktop/issues/88#issuecomment-6920200927).
 Aldana approved the revised neglected image on 2026-11-16. Only neglected
 changes here; the other two poses remain future work. The earlier neglected

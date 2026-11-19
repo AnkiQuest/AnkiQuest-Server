@@ -1,7 +1,7 @@
 {
   "friends": [
     {
-      "display": "Hill",
+      "display": "hill",
       "user": "hill"
     }
   ],
@@ -10,7 +10,7 @@
   "invitations": [
     {
       "from": {
-        "display": "Hill",
+        "display": "hill",
         "user": "hill"
       },
       "group": 1,

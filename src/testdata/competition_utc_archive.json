@@ -1,0 +1,42 @@
+{
+  "_about": "An archive written by master a50d839 (shared-date allocation) for the players in competition::tests::an_archive_from_before_own_dates_keeps_its_finalized_rows, refreshed at 2026-09-13 13:00 and 2026-09-15 05:00 UTC.",
+  "meta": "{\"start_date\":\"2026-09-13\",\"start_source\":\"available_history\",\"initialized_at\":1789304400000,\"time_zone\":\"UTC\",\"rollover_hour\":4}",
+  "periods": [
+    {
+      "finalized": 1,
+      "key": "2026-09-13",
+      "kind": "day",
+      "payload": "{\"key\":\"2026-09-13\",\"start\":\"2026-09-13\",\"end\":\"2026-09-14\",\"kind\":\"day\",\"status\":\"final\",\"reconstructed\":false,\"partial\":false,\"winners\":[\"east\"],\"winning_margin\":10,\"standings\":[{\"user\":\"east\",\"display\":\"EAST\",\"xp\":20,\"reviews\":2,\"time_ms\":20000,\"new_cards\":0,\"days_active\":1,\"best_streak\":1,\"freezes_used\":0},{\"user\":\"utc\",\"display\":\"UTC\",\"xp\":10,\"reviews\":1,\"time_ms\":10000,\"new_cards\":0,\"days_active\":1,\"best_streak\":1,\"freezes_used\":0}]}"
+    },
+    {
+      "finalized": 0,
+      "key": "2026-09-14",
+      "kind": "day",
+      "payload": "{\"key\":\"2026-09-14\",\"start\":\"2026-09-14\",\"end\":\"2026-09-15\",\"kind\":\"day\",\"status\":\"provisional\",\"reconstructed\":false,\"partial\":false,\"winners\":[\"utc\"],\"winning_margin\":10,\"standings\":[{\"user\":\"utc\",\"display\":\"UTC\",\"xp\":10,\"reviews\":1,\"time_ms\":10000,\"new_cards\":0,\"days_active\":1,\"best_streak\":2,\"freezes_used\":0},{\"user\":\"east\",\"display\":\"EAST\",\"xp\":0,\"reviews\":0,\"time_ms\":0,\"new_cards\":0,\"days_active\":0,\"best_streak\":1,\"freezes_used\":0}]}"
+    },
+    {
+      "finalized": 0,
+      "key": "2026-09-15",
+      "kind": "day",
+      "payload": "{\"key\":\"2026-09-15\",\"start\":\"2026-09-15\",\"end\":\"2026-09-16\",\"kind\":\"day\",\"status\":\"ongoing\",\"reconstructed\":false,\"partial\":false,\"winners\":[],\"winning_margin\":0,\"standings\":[{\"user\":\"east\",\"display\":\"EAST\",\"xp\":0,\"reviews\":0,\"time_ms\":0,\"new_cards\":0,\"days_active\":0,\"best_streak\":0,\"freezes_used\":0},{\"user\":\"utc\",\"display\":\"UTC\",\"xp\":0,\"reviews\":0,\"time_ms\":0,\"new_cards\":0,\"days_active\":0,\"best_streak\":2,\"freezes_used\":0}]}"
+    },
+    {
+      "finalized": 0,
+      "key": "2026-09",
+      "kind": "month",
+      "payload": "{\"key\":\"2026-09\",\"start\":\"2026-09-01\",\"end\":\"2026-10-01\",\"kind\":\"month\",\"status\":\"ongoing\",\"reconstructed\":false,\"partial\":true,\"winners\":[\"east\",\"utc\"],\"winning_margin\":0,\"standings\":[{\"user\":\"east\",\"display\":\"EAST\",\"xp\":20,\"reviews\":2,\"time_ms\":20000,\"new_cards\":0,\"days_active\":1,\"best_streak\":1,\"freezes_used\":0},{\"user\":\"utc\",\"display\":\"UTC\",\"xp\":20,\"reviews\":2,\"time_ms\":20000,\"new_cards\":0,\"days_active\":2,\"best_streak\":2,\"freezes_used\":0}]}"
+    },
+    {
+      "finalized": 1,
+      "key": "2026-09-07",
+      "kind": "week",
+      "payload": "{\"key\":\"2026-09-07\",\"start\":\"2026-09-07\",\"end\":\"2026-09-14\",\"kind\":\"week\",\"status\":\"final\",\"reconstructed\":false,\"partial\":true,\"winners\":[\"east\"],\"winning_margin\":10,\"standings\":[{\"user\":\"east\",\"display\":\"EAST\",\"xp\":20,\"reviews\":2,\"time_ms\":20000,\"new_cards\":0,\"days_active\":1,\"best_streak\":1,\"freezes_used\":0},{\"user\":\"utc\",\"display\":\"UTC\",\"xp\":10,\"reviews\":1,\"time_ms\":10000,\"new_cards\":0,\"days_active\":1,\"best_streak\":1,\"freezes_used\":0}]}"
+    },
+    {
+      "finalized": 0,
+      "key": "2026-09-14",
+      "kind": "week",
+      "payload": "{\"key\":\"2026-09-14\",\"start\":\"2026-09-14\",\"end\":\"2026-09-21\",\"kind\":\"week\",\"status\":\"ongoing\",\"reconstructed\":false,\"partial\":false,\"winners\":[\"utc\"],\"winning_margin\":10,\"standings\":[{\"user\":\"utc\",\"display\":\"UTC\",\"xp\":10,\"reviews\":1,\"time_ms\":10000,\"new_cards\":0,\"days_active\":1,\"best_streak\":2,\"freezes_used\":0},{\"user\":\"east\",\"display\":\"EAST\",\"xp\":0,\"reviews\":0,\"time_ms\":0,\"new_cards\":0,\"days_active\":0,\"best_streak\":1,\"freezes_used\":0}]}"
+    }
+  ]
+}

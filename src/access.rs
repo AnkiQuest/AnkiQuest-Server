@@ -436,6 +436,7 @@ fn public_path(path: &str) -> bool {
                 | "/api/health"
         )
         || path == crate::capabilities::PATH
+        || path == crate::crash_reports::PATH
         || path == crate::robots::PATH
         || path.starts_with("/api/invites/")
         || path.starts_with("/auth/oauth/")

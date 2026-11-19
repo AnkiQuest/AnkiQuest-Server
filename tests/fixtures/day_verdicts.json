@@ -3,6 +3,7 @@
   "cases": [
     {
       "expected": {
+        "label": "studied",
         "met": true,
         "minutes": 11,
         "reviews": 2,
@@ -36,6 +37,7 @@
     },
     {
       "expected": {
+        "label": "short",
         "met": false,
         "minutes": 9,
         "reviews": 2,
@@ -69,6 +71,7 @@
     },
     {
       "expected": {
+        "label": "studied",
         "met": true,
         "minutes": 10,
         "reviews": 2,
@@ -102,6 +105,7 @@
     },
     {
       "expected": {
+        "label": "short",
         "met": false,
         "minutes": 9,
         "reviews": 1,
@@ -130,6 +134,7 @@
     },
     {
       "expected": {
+        "label": "studied",
         "met": true,
         "minutes": 10,
         "reviews": 2,
@@ -167,6 +172,7 @@
     },
     {
       "expected": {
+        "label": "studied",
         "met": true,
         "minutes": 11,
         "reviews": 2,
@@ -200,6 +206,7 @@
     },
     {
       "expected": {
+        "label": "short",
         "met": false,
         "minutes": 4,
         "reviews": 2,
@@ -233,6 +240,7 @@
     },
     {
       "expected": {
+        "label": "studied",
         "met": true,
         "minutes": 10,
         "reviews": 2,
@@ -266,6 +274,94 @@
     },
     {
       "expected": {
+        "label": "pending",
+        "met": false,
+        "minutes": 0,
+        "reviews": 0,
+        "streak": 1,
+        "streak_minutes": 10,
+        "streak_state": "pending",
+        "time_ms": 0,
+        "unsent": 0
+      },
+      "name": "nothing studied today",
+      "now_ms": 1762431600000,
+      "pending": [],
+      "server": {
+        "day_ends_at": 1762488000000,
+        "last_review_id": 1762344000000,
+        "streak": 1,
+        "streak_state": "pending",
+        "today": {
+          "minutes": 0,
+          "reviews": 0,
+          "starts_at": 1762401600000,
+          "streak_minutes": 10,
+          "time_ms": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "label": "protected",
+        "met": false,
+        "minutes": 0,
+        "reviews": 0,
+        "streak": 1,
+        "streak_minutes": 10,
+        "streak_state": "protected",
+        "time_ms": 0,
+        "unsent": 0
+      },
+      "name": "a frozen yesterday with nothing studied today",
+      "now_ms": 1762431600000,
+      "pending": [],
+      "server": {
+        "day_ends_at": 1762488000000,
+        "last_review_id": 1762257600000,
+        "streak": 1,
+        "streak_state": "protected",
+        "today": {
+          "minutes": 0,
+          "reviews": 0,
+          "starts_at": 1762401600000,
+          "streak_minutes": 10,
+          "time_ms": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "label": "short",
+        "met": false,
+        "minutes": 0,
+        "reviews": 1,
+        "streak": 1,
+        "streak_minutes": 10,
+        "streak_state": "protected",
+        "time_ms": 30000,
+        "unsent": 0
+      },
+      "name": "one review after a frozen yesterday is short, not unstudied",
+      "now_ms": 1762431600000,
+      "pending": [],
+      "server": {
+        "day_ends_at": 1762488000000,
+        "last_review_id": 1762430400000,
+        "streak": 1,
+        "streak_state": "protected",
+        "today": {
+          "minutes": 0,
+          "reviews": 1,
+          "starts_at": 1762401600000,
+          "streak_minutes": 10,
+          "time_ms": 30000
+        }
+      }
+    },
+    {
+      "expected": {
+        "label": "short",
         "met": false,
         "minutes": 9,
         "reviews": 2,
@@ -303,6 +399,7 @@
     },
     {
       "expected": {
+        "label": "unknown",
         "met": false,
         "minutes": 2,
         "reviews": 1,
@@ -340,6 +437,7 @@
     },
     {
       "expected": {
+        "label": "studied",
         "met": true,
         "minutes": 5,
         "reviews": 2,
@@ -373,6 +471,7 @@
     },
     {
       "expected": {
+        "label": "studied",
         "met": true,
         "minutes": 0,
         "reviews": 1,
@@ -406,6 +505,7 @@
     },
     {
       "expected": {
+        "label": "studied",
         "met": true,
         "minutes": 10,
         "reviews": 1,

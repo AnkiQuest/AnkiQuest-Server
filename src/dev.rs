@@ -6,7 +6,7 @@ use crate::decks::valid_message;
 use crate::game::{DAY_MS, Review};
 use crate::notifications::{Outgoing, insert_notification};
 use crate::store::{Error, Store};
-use crate::{access, app::App, app::now_ms, web_util::store_error};
+use crate::{access, app::App, app::now_ms, crash_reports, web_util::store_error};
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Html;
@@ -461,6 +461,29 @@ async fn get_errors(
         .map_err(store_error)
 }
 
+async fn get_crash_reports(
+    State(app): State<Arc<App>>,
+    Path(user): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<crash_reports::Group>>, StatusCode> {
+    check(&app, &user, &headers)?;
+    crash_reports::groups(&app.store.lock().unwrap().conn)
+        .map(Json)
+        .map_err(store_error)
+}
+
+async fn get_crash_report(
+    State(app): State<Arc<App>>,
+    Path((user, id)): Path<(String, i64)>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    check(&app, &user, &headers)?;
+    crash_reports::report(&app.store.lock().unwrap().conn, id)
+        .map_err(store_error)?
+        .map(Json)
+        .ok_or(StatusCode::NOT_FOUND)
+}
+
 async fn list(
     State(app): State<Arc<App>>,
     Path(user): Path<String>,
@@ -533,6 +556,8 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/dev/{user}/stats", get(get_stats))
         .route("/api/dev/{user}/groups", get(get_groups))
         .route("/api/dev/{user}/errors", get(get_errors))
+        .route("/api/dev/{user}/crash-reports", get(get_crash_reports))
+        .route("/api/dev/{user}/crash-reports/{id}", get(get_crash_report))
         .route("/api/dev/{user}/announcements", get(list).post(send))
 }
 
@@ -660,7 +685,13 @@ mod tests {
     #[tokio::test]
     async fn only_devs_reach_the_console_with_their_own_credentials() {
         let (app, path) = fixture();
-        for endpoint in ["stats", "groups", "errors", "announcements"] {
+        for endpoint in [
+            "stats",
+            "groups",
+            "errors",
+            "announcements",
+            "crash-reports",
+        ] {
             let mine = format!("/api/dev/hill/{endpoint}");
             let theirs = format!("/api/dev/cerro/{endpoint}");
             assert_eq!(get(&app, &mine, None).await.0, StatusCode::UNAUTHORIZED);
@@ -687,6 +718,83 @@ mod tests {
         );
         let theirs = get(&app, "/auth/status", Some("cerro-token")).await.1;
         assert!(theirs.get("dev").is_none());
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn devs_read_crash_signatures_newest_first_with_their_samples() {
+        /// Monday 16 November 2026, 09:00 UTC.
+        const NOW_MS: i64 = 1_794_819_600_000;
+        const A: &str = "java.lang.A: first 1\n\tat a.B.c(B.kt:1)";
+        const B: &str = "java.lang.B: second\n\tat b.C.d(C.kt:2)";
+        let (app, path) = fixture();
+
+        // A crashes three times across two versions, B once in between.
+        let sent = [
+            (A, 1, "2.21.0"),
+            (B, 1, "2.21.0"),
+            (A, 1, "2.21.0"),
+            (A, 2, "2.22.0"),
+        ];
+        for (index, (trace, code, name)) in sent.into_iter().enumerate() {
+            crate::app::fix_now_ms(Some(NOW_MS + index as i64 * 1_000));
+            let report = serde_json::json!({
+                "APP_VERSION_CODE": code,
+                "APP_VERSION_NAME": name,
+                "ANDROID_VERSION": "14",
+                "STACK_TRACE": trace.replace(" 1\n", &format!(" {index}\n")),
+                "USER_EMAIL": "player@example.com"
+            });
+            let sent = call(&app, "POST", "/api/crash-reports", None, report).await;
+            assert_eq!(sent.0, StatusCode::NO_CONTENT);
+        }
+
+        // One row per signature, last seen first, with the count and the latest version.
+        let (status, list) = get(&app, "/api/dev/hill/crash-reports", Some("hill-token")).await;
+        assert_eq!(status, StatusCode::OK);
+        let rows = list.as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+        let a = &rows[0];
+        assert_eq!(a["signature"], crate::crash_signature::of_trace(A));
+        assert_eq!(a["count"], 3);
+        assert_eq!(a["first_seen"], NOW_MS);
+        assert_eq!(a["last_seen"], NOW_MS + 3_000);
+        assert_eq!(a["app_version"], "2.22.0");
+        assert_eq!(a["app_versions"], serde_json::json!(["2.21.0", "2.22.0"]));
+        assert_eq!(
+            a["exception"], "java.lang.A: first 3",
+            "the latest report's"
+        );
+        assert_eq!(a["reports"].as_array().unwrap().len(), 2);
+        let b = &rows[1];
+        assert_eq!(b["signature"], crate::crash_signature::of_trace(B));
+        assert_eq!(
+            (b["count"].as_i64(), b["last_seen"].as_i64()),
+            (Some(1), Some(NOW_MS + 1_000))
+        );
+        assert_eq!(b["exception"], "java.lang.B: second");
+
+        // Each sample is the stored JSON, oldest first; only devs read it.
+        let one = format!("/api/dev/hill/crash-reports/{}", a["reports"][1]);
+        let (status, report) = get(&app, &one, Some("hill-token")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            report["STACK_TRACE"],
+            "java.lang.A: first 2\n\tat a.B.c(B.kt:1)"
+        );
+        assert!(report.get("USER_EMAIL").is_none());
+        let theirs = one.replace("/hill/", "/cerro/");
+        assert_eq!(
+            get(&app, &theirs, Some("cerro-token")).await.0,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            get(&app, "/api/dev/hill/crash-reports/999", Some("hill-token"))
+                .await
+                .0,
+            StatusCode::NOT_FOUND
+        );
+        crate::app::fix_now_ms(None);
         cleanup(app, path);
     }
 

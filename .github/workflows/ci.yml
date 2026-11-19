@@ -43,6 +43,31 @@ jobs:
       - name: Preserve Android's consumed API shapes
         run: cargo run -p ankiquest-xtask -- android-contract --android-resources android-client/AnkiDroid/src/test/resources
 
+  art:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      # The art backlog (#57); informational until every live companion
+      # has every pose.
+      - name: Report missing poses
+        run: cargo run -p ankiquest-xtask -- art-coverage --missing | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # A pose added to companion_poses.json needs a master for every live
+      # companion. Comparing with the base commit's list keeps existing
+      # gaps from failing. `event-base` picks the pull request's, the
+      # merge group's or the push's base.
+      - name: Check added poses are drawn
+        run: |
+          BASE=$(cargo run -q -p ankiquest-xtask -- event-base)
+          git fetch --depth=1 origin "$BASE"
+          git show "$BASE:tests/fixtures/companion_poses.json" > "$RUNNER_TEMP/base-poses.json"
+          cargo run -p ankiquest-xtask -- art-coverage --since "$RUNNER_TEMP/base-poses.json"
+
   web:
     runs-on: ubuntu-24.04
     env:

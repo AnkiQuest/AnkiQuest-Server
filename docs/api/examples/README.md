@@ -76,6 +76,8 @@ Random values are replaced, numbered in order of appearance: device tokens by `e
 | `leaderboard_global_hidden.json` | `GET /api/leaderboard?scope=global` for a player with a private profile and `"shown": false`. The viewer gets a full row and sees summaries for public players outside their circle. |
 | `global_leaderboard_on.json` | `POST /api/decks/{user}` `{"decks": [], "global_leaderboard": true}` |
 | `leaderboard_global.json` | `GET /api/leaderboard?scope=global&period=day`: the viewer's own row and a stranger with a private profile who turned it on |
+| `crash_report.json` | the body of `POST /api/crash-reports`: an ACRA report as the app sends it, written by hand. The answer is `204` with no body |
+| `crash_report_stored.json` | what the server stores of `crash_report.json`, checked by `src/crash_reports.rs` |
 | `leaderboard_locked.json` | `GET /api/leaderboard` for a new account with no review uploaded yet, whose friend studies: empty, with `X-Ankiquest-Locked: upload_first` |
 | `activity_locked.json` | `GET /api/activity/{user}?limit=2` for the same account: `"locked": "upload_first"` |
 

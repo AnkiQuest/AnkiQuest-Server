@@ -2,6 +2,7 @@
   "features": [
     "activity",
     "app_sign_in",
+    "companion_art",
     "companion_milestones",
     "companion_unlocks",
     "cookie_session",

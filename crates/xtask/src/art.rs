@@ -3,13 +3,14 @@
 //! Each drawable is a square lossy WebP with full-quality alpha, downscaled
 //! with Lanczos to about three times its largest place in the app and never
 //! upscaled. `--check` writes nothing and fails when a drawable is missing
-//! or has a different pixel size.
+//! or its bytes differ from what export would write. Exports are
+//! deterministic on Linux, where CI runs the check.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use ankiquest_art::{load, png_size, shrink, target};
+use ankiquest_art::{load, shrink, target};
 use image::RgbaImage;
 
 use crate::root;
@@ -46,6 +47,11 @@ const LINE_LUMA: f32 = 90.0;
 /// Alpha above which a pixel is part of the picture in [`Look::Outline`].
 const LINE_ALPHA: u8 = 128;
 
+/// How far [`Look::BoldOutline`] widens each line, in thousandths of the
+/// master's width: 5 px on a 1254 px master. Thinner lines fade out when a
+/// themed launcher icon is drawn at 48 dp.
+const BOLD_SPREAD: u32 = 4;
+
 /// How a drawable shows its master.
 #[derive(Clone, Copy, PartialEq)]
 enum Look {
@@ -54,6 +60,9 @@ enum Look {
     /// Only the master's dark line art, in black on transparent: the
     /// monochrome layer of a themed launcher icon, which keeps alpha only.
     Outline,
+    /// [`Look::Outline`] with every line widened by [`BOLD_SPREAD`], for
+    /// masters drawn with thin lines.
+    BoldOutline,
 }
 
 /// One drawable: name, master PNG, square size, WebP quality and look.
@@ -84,6 +93,17 @@ const fn outline(name: &'static str, source: &'static str, size: u32) -> Art {
         size,
         quality: QUALITY,
         look: Look::Outline,
+    }
+}
+
+/// A themed icon's monochrome layer from a master with thin line art.
+const fn bold_outline(name: &'static str, source: &'static str, size: u32) -> Art {
+    Art {
+        name,
+        source,
+        size,
+        quality: QUALITY,
+        look: Look::BoldOutline,
     }
 }
 
@@ -199,9 +219,14 @@ const ART: &[Art] = &[
         "static/anki-tan/emoji/Ankitan_00_smile.png",
         432,
     ),
+    // Ankilope and Bluma have no mood faces yet; the app shows the face for every mood.
+    art("ankilope_icon", "static/ankilope/face.png", 432),
+    bold_outline("ankilope_icon_mono", "static/ankilope/face.png", 432),
+    art("cow_icon", "static/cow/face.png", 432),
+    bold_outline("cow_icon_mono", "static/cow/face.png", 432),
 ];
 
-/// Whether to write drawables or only compare their sizes.
+/// Whether to write drawables or only compare them with a fresh export.
 #[derive(PartialEq)]
 enum Mode {
     Export,
@@ -223,9 +248,10 @@ pub fn run(args: &[String]) -> ExitCode {
         return usage();
     };
 
+    let all: Vec<&Art> = ART.iter().collect();
     let result = match mode {
-        Mode::Export => export(&android),
-        Mode::Check => check(&android),
+        Mode::Export => export(&android, &all),
+        Mode::Check => check(&android, &all),
     };
     match result {
         Ok(code) => code,
@@ -262,58 +288,74 @@ fn drawable(name: &str) -> String {
     format!("{DRAWABLES}/{name}.webp")
 }
 
-/// Writes every drawable into the checkout.
-fn export(android: &Path) -> Result<ExitCode, String> {
+/// What export writes for `art`: its pixel size and WebP bytes.
+fn render(art: &Art) -> Result<((u32, u32), Vec<u8>), String> {
+    let master = look(load(&root().join(art.source))?, art.look);
+    let (width, height) = target(master.width(), master.height(), art.size);
+    if (width, height) != (art.size, art.size) {
+        println!(
+            "{}: {} is {}x{}, kept at {width}x{height}",
+            art.name,
+            art.source,
+            master.width(),
+            master.height()
+        );
+    }
+
+    // Downscale and encode.
+    let image = shrink(master, width, height);
+    Ok(((width, height), encode(&image, art.quality)?))
+}
+
+/// Writes `arts` into the checkout.
+fn export(android: &Path, arts: &[&Art]) -> Result<ExitCode, String> {
     let folder = android.join(DRAWABLES);
     fs::create_dir_all(&folder).map_err(|e| format!("{}: {e}", folder.display()))?;
-    for art in ART {
-        let master = look(load(&root().join(art.source))?, art.look);
-        let (width, height) = target(master.width(), master.height(), art.size);
-        if (width, height) != (art.size, art.size) {
-            println!(
-                "{}: {} is {}x{}, kept at {width}x{height}",
-                art.name,
-                art.source,
-                master.width(),
-                master.height()
-            );
-        }
-
-        // Downscale, encode and write.
-        let image = shrink(master, width, height);
-        let bytes = encode(&image, art.quality)?;
-        let path = android.join(drawable(art.name));
-        fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    for art in arts {
+        let ((width, height), bytes) = render(art)?;
         let name = drawable(art.name);
+        let path = android.join(&name);
+        fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
         println!("{name}: {width}x{height}, {} bytes", bytes.len());
     }
     Ok(ExitCode::SUCCESS)
 }
 
-/// Compares every drawable's pixel size with what export would write.
-fn check(android: &Path) -> Result<ExitCode, String> {
-    let mut failed = false;
-    for art in ART {
-        let (width, height) = png_size(&root().join(art.source))?;
-        let expected = target(width, height, art.size);
-        let name = drawable(art.name);
-        let Some(actual) = webp_size(&android.join(&name))? else {
-            println!("missing: {name}");
-            failed = true;
-            continue;
-        };
-        if actual != expected {
-            let (aw, ah) = actual;
-            let (ew, eh) = expected;
-            println!("{name}: {aw}x{ah}, expected {ew}x{eh}");
-            failed = true;
-        }
+/// Compares `arts` in the checkout with a fresh export, byte for byte.
+fn check(android: &Path, arts: &[&Art]) -> Result<ExitCode, String> {
+    let failed = stale(android, arts)?;
+    for line in &failed {
+        println!("{line}");
     }
-    if failed {
+    if !failed.is_empty() {
         return Ok(ExitCode::FAILURE);
     }
-    println!("all {} drawables match", ART.len());
+    println!("all {} drawables match", arts.len());
     Ok(ExitCode::SUCCESS)
+}
+
+/// One line for each drawable that is missing or not what export writes.
+///
+/// A size check alone passes an edited or unrelated file of the right size
+/// (AnkiQuest-Android#314), so the bytes must match.
+fn stale(android: &Path, arts: &[&Art]) -> Result<Vec<String>, String> {
+    let mut failed = Vec::new();
+    for art in arts {
+        let name = drawable(art.name);
+        let Ok(committed) = fs::read(android.join(&name)) else {
+            failed.push(format!("missing: {name}"));
+            continue;
+        };
+        let (_, fresh) = render(art)?;
+        if committed != fresh {
+            failed.push(format!(
+                "{name}: not what export writes ({} bytes, export writes {})",
+                committed.len(),
+                fresh.len()
+            ));
+        }
+    }
+    Ok(failed)
 }
 
 /// The master as [`Look`] asks for it.
@@ -330,18 +372,45 @@ fn look(master: RgbaImage, look: Look) -> RgbaImage {
         let line = a > LINE_ALPHA && luma < LINE_LUMA;
         pixel.0 = if line { [0, 0, 0, 255] } else { [0, 0, 0, 0] };
     }
-    lines
+    if look == Look::Outline {
+        return lines;
+    }
+
+    // Widen the lines so they survive the downscale to launcher size.
+    let spread = (lines.width() * BOLD_SPREAD).div_ceil(1000);
+    let wide = widen(&lines, spread, Axis::Across);
+    widen(&wide, spread, Axis::Down)
 }
 
-/// A WebP's pixel size, or `None` when the file does not exist.
-fn webp_size(path: &Path) -> Result<Option<(u32, u32)>, String> {
-    if !path.exists() {
-        return Ok(None);
-    }
-    let bytes = fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let features =
-        webp::BitstreamFeatures::new(&bytes).ok_or(format!("{}: not a WebP", path.display()))?;
-    Ok(Some((features.width(), features.height())))
+/// Direction of one [`widen`] pass.
+#[derive(Clone, Copy, PartialEq)]
+enum Axis {
+    Across,
+    Down,
+}
+
+/// Makes every pixel opaque that has an opaque pixel within `spread`
+/// along `axis`; two passes widen lines by a square of that radius.
+fn widen(lines: &RgbaImage, spread: u32, axis: Axis) -> RgbaImage {
+    let (width, height) = lines.dimensions();
+    RgbaImage::from_fn(width, height, |x, y| {
+        let (at, end) = if axis == Axis::Across {
+            (x, width)
+        } else {
+            (y, height)
+        };
+        let from = at.saturating_sub(spread);
+        let to = (at + spread).min(end - 1);
+        let hit = (from..=to).any(|i| {
+            let (px, py) = if axis == Axis::Across { (i, y) } else { (x, i) };
+            lines.get_pixel(px, py)[3] > 0
+        });
+        if hit {
+            image::Rgba([0, 0, 0, 255])
+        } else {
+            image::Rgba([0, 0, 0, 0])
+        }
+    })
 }
 
 /// Encodes lossy WebP with full-quality alpha.
@@ -458,6 +527,29 @@ mod tests {
     }
 
     #[test]
+    fn check_compares_bytes() {
+        // The smallest drawable keeps the test fast.
+        let art = ART.iter().min_by_key(|art| art.size).unwrap();
+        let android = tempfile::tempdir().unwrap();
+        export(android.path(), &[art]).unwrap();
+        assert!(stale(android.path(), &[art]).unwrap().is_empty());
+
+        // Same size, other bytes: an edited file must fail.
+        let path = android.path().join(drawable(art.name));
+        let mut bytes = fs::read(&path).unwrap();
+        let middle = bytes.len() / 2;
+        bytes[middle] ^= 0xff;
+        fs::write(&path, &bytes).unwrap();
+        let failed = stale(android.path(), &[art]).unwrap();
+        assert_eq!(1, failed.len());
+        assert!(failed[0].contains("not what export writes"), "{failed:?}");
+
+        fs::remove_file(&path).unwrap();
+        let failed = stale(android.path(), &[art]).unwrap();
+        assert_eq!(vec![format!("missing: {}", drawable(art.name))], failed);
+    }
+
+    #[test]
     fn outline_keeps_only_dark_lines() {
         let mut image = RgbaImage::new(3, 1);
         image.put_pixel(0, 0, image::Rgba([10, 10, 10, 255]));
@@ -467,5 +559,33 @@ mod tests {
         assert_eq!([0, 0, 0, 255], lines.get_pixel(0, 0).0, "black line");
         assert_eq!(0, lines.get_pixel(1, 0)[3], "skin");
         assert_eq!(0, lines.get_pixel(2, 0)[3], "faint dark pixel");
+    }
+
+    #[test]
+    fn bold_outline_widens_lines() {
+        // One dark pixel in the middle of a 1000 px row spreads 4 px each way.
+        let mut image = RgbaImage::from_pixel(1000, 9, image::Rgba([250, 200, 180, 255]));
+        image.put_pixel(500, 4, image::Rgba([10, 10, 10, 255]));
+        let lines = look(image, Look::BoldOutline);
+        assert_eq!(255, lines.get_pixel(504, 8)[3], "within the spread");
+        assert_eq!(0, lines.get_pixel(505, 4)[3], "beyond the spread");
+        assert_eq!(0, lines.get_pixel(0, 0)[3], "skin");
+    }
+
+    #[test]
+    fn every_companion_has_launcher_icons() {
+        // AnkiQuest-Android AnkiquestIcon shows these; a missing one fell back to Aki (#313 there).
+        for name in [
+            "aki_icon_happy",
+            "anki_tan_icon",
+            "anki_tan_icon_mono",
+            "ankilope_icon",
+            "ankilope_icon_mono",
+            "cow_icon",
+            "cow_icon_mono",
+        ] {
+            let art = ART.iter().find(|art| art.name == name);
+            assert!(art.is_some_and(|art| art.size == 432), "{name}");
+        }
     }
 }

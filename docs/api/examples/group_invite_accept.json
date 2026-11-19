@@ -1,7 +1,7 @@
 {
   "friends": [
     {
-      "display": "Hill",
+      "display": "hill",
       "user": "hill"
     }
   ],
@@ -15,7 +15,7 @@
           "user": "cerro"
         },
         {
-          "display": "Hill",
+          "display": "hill",
           "user": "hill"
         }
       ],

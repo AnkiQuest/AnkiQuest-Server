@@ -1108,7 +1108,7 @@ pub(crate) mod tests {
         assert!(!store.begin_push(retry, NOW + PUSH_LEASE_MS).unwrap());
         assert!(
             store
-                .reply("hill", "Hill", selected, "Hidden", NOW)
+                .reply("hill", "hill", selected, "Hidden", NOW)
                 .unwrap()
                 .is_none()
         );
@@ -2056,7 +2056,7 @@ pub(crate) mod tests {
         }];
         let recipients = vec![Recipient {
             user: "hill".into(),
-            display: "Hill".into(),
+            display: "hill".into(),
         }];
         for users in [
             vec![],
@@ -2137,7 +2137,7 @@ pub(crate) mod tests {
                 .map(|r| r.user)
                 .collect::<Vec<_>>()
         };
-        // Hill and friend can sign in but never have.
+        // hill and friend can sign in but never have.
         assert_eq!(offered(&app), vec!["push-only"]);
         crate::test_support::used_app(&app, &["friend"]);
         {
