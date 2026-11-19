@@ -401,6 +401,10 @@ the app's native records and study history screens read the same JSON as the web
 
 `GET /api/study/{user}?year=YYYY` is the owner's own study calendar, for the year asked or the player's current one: `{ "year", "years", "days", "last_review_at", "last_received_at", "latest_session" }`. `years` lists every year with history, newest first. `days` has one entry per Anki day from the player's first study day on (days without reviews included, with zeros), each with `date` (`YYYY-MM-DD`, following the player's cutoff), `at` (when that day began, ms), `reviews`, `time_ms`, `xp`, `new_cards`, `streak` (the streak on that day) and `frozen` (a streak freeze covered it), `streak_minutes` (what the day needed) and `state` (the server's verdict, as in the heatmap; see [day verdicts](#day-verdicts)). `last_review_at` is the newest uploaded review (ms) and `last_received_at` when reviews last arrived; either is null before the first upload. `latest_session` is null or `{ "started_at", "ended_at", "reviews", "time_ms", "new_cards" }`. Another player's history is `401` or `403`, a year outside the supported range `400`. example: `study.json`.
 
+## review rows
+
+Each row of `POST /api/reviews/{user}` and `POST /api/preview/{user}` is a revlog row answered with a button (`ease > 0`) and of type below 4: `id`, `cid`, `last_ivl` (`lastIvl`), `ivl`, `time_ms` (`time`), `kind` (`type`) and `ease`, the button pressed (1 Again, 2 Hard, 3 Good, 4 Easy). The server counts a review row as a lapse when `ease` is 1; rows without `ease` fall back to a negative `ivl` (see `docs/server.md`, "conquered cards"). `ease` is optional: older servers ignore it and older clients leave it out, so no capability check is needed.
+
 ## community calendar, reminders and conquered cards
 
 the app's native community calendar, reminder settings and conquered-card screens read the same JSON as the website's `/community#calendar`, `/community#reminders` and `/conquered/{user}/{at}` pages.

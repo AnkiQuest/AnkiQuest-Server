@@ -31,6 +31,8 @@ pub const HOUR_MS: i64 = 3_600_000;
 /// Milliseconds in a UTC day.
 pub const DAY_MS: i64 = 86_400_000;
 const MATURE_IVL: i64 = 21;
+/// The revlog `ease` of the Again button.
+const AGAIN: u8 = 1;
 const QUEST_XP: u64 = 50;
 const ALL_QUESTS_XP: u64 = 100;
 const RECENT_DAYS: usize = 14;
@@ -62,6 +64,10 @@ pub struct Review {
     pub ivl: Option<i64>,
     pub time_ms: i64,
     pub kind: u8,
+    /// The button pressed, from the revlog: 1 Again, 2 Hard, 3 Good, 4 Easy.
+    /// Clients that predate it leave it out.
+    #[serde(default)]
+    pub ease: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
@@ -1752,11 +1758,13 @@ pub struct Conquest {
 
 /// Hard cards learned at last, oldest first.
 ///
-/// A lapse is a review answered into relearning: a negative new interval, or, from
-/// clients that do not send it, a relearning step right after the review. A card is
+/// A lapse is a review answered Again. From clients that do not send the button, it is a
+/// review answered into relearning: a negative new interval, or, from clients that do not
+/// send that either, a relearning step right after the review. A card is
 /// conquered when an answer gives it a mature interval after its latest lapse; without
 /// the new interval, when a review finds it after a mature interval and it is not failed.
-/// Lapses without relearning steps cannot be told from a pass, so they go uncounted.
+/// Without the button, lapses without relearning steps cannot be told from a pass, so they
+/// go uncounted, and forks that log intraday review intervals count their passes as lapses.
 pub fn conquests(reviews: &[Review], now_ms: i64) -> Vec<Conquest> {
     let mut cards: HashMap<i64, Vec<&Review>> = HashMap::new();
     for r in reviews {
@@ -1769,9 +1777,10 @@ pub fn conquests(reviews: &[Review], now_ms: i64) -> Vec<Conquest> {
         for (i, r) in rows.iter().enumerate() {
             let next = rows.get(i + 1);
             let failed = r.kind == 1
-                && match r.ivl {
-                    Some(ivl) => ivl < 0,
-                    None => next.is_some_and(|n| n.kind == 2),
+                && match (r.ease, r.ivl) {
+                    (Some(ease), _) => ease == AGAIN,
+                    (None, Some(ivl)) => ivl < 0,
+                    (None, None) => next.is_some_and(|n| n.kind == 2),
                 };
             if failed {
                 lapses += 1;
@@ -2048,6 +2057,7 @@ mod tests {
             cid: ms,
             last_ivl: 0,
             ivl: None,
+            ease: None,
             time_ms: 5_000,
             kind: 1,
         };
@@ -2138,6 +2148,7 @@ mod tests {
                     cid: cid + i,
                     last_ivl: 0,
                     ivl: None,
+                    ease: None,
                     time_ms: 5_000,
                     kind: 1,
                 })
@@ -2205,6 +2216,7 @@ mod tests {
                     cid: 500 + index as i64,
                     last_ivl: 0,
                     ivl: None,
+                    ease: None,
                     time_ms: 5_000,
                     kind: 1,
                 })
@@ -2533,9 +2545,18 @@ mod tests {
                     review.last_ivl,
                     review.ivl,
                     review.time_ms,
-                    i64::from(review.kind)
+                    i64::from(review.kind),
+                    review.ease.map(i64::from)
                 ),
-                (row[0], row[1], row[2], Some(row[3]), row[4], row[5])
+                (
+                    row[0],
+                    row[1],
+                    row[2],
+                    Some(row[3]),
+                    row[4],
+                    row[5],
+                    Some(row[6])
+                )
             );
         }
     }

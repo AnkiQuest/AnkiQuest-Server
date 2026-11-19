@@ -250,6 +250,7 @@ fn review(at: i64, time_ms: i64) -> Review {
         cid: id,
         last_ivl: 0,
         ivl: Some(1),
+        ease: None,
         time_ms,
         kind: 1,
     }

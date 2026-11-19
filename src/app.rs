@@ -357,6 +357,7 @@ fn merge_upload(old: &[Review], new: &[Review], deleted: &[i64]) -> Option<Vec<R
             (Some(a), Some(b)) if a.id == b.id => {
                 let review = Review {
                     ivl: a.ivl.or(b.ivl),
+                    ease: None,
                     ..**a
                 };
                 kept.next();
@@ -397,6 +398,7 @@ mod tests {
             cid: id,
             last_ivl: 1,
             ivl,
+            ease: None,
             time_ms: 4000,
             kind: 1,
         };
