@@ -17,6 +17,8 @@ const initial = () => ({
   // A server before milestones has no unlocks; `companionHeader` is what the last companion save sent.
   unlocks:null as null|{unlocks:string[],progress:Record<string,{kind:string,value:number,goal:number}>},
   companionHeader:null as string|null,
+  // The companions the last activity request said this page draws.
+  artHeader:null as string|null,
   freezes:{enabled:false,freezes:1,capacity:3},
   nudges:{receiving:true,automatic_receiving:false,friends:[{user:'bob',display:'Bob',muted_by_me:false,enabled:true,sent_today:false}]},
   subscriptions:{enabled:true,unsubscribed_senders:[],muted_senders:['carol'],sharing_senders:['bob'],senders:[{user:'bob',display:'Bob'}]},
@@ -37,7 +39,7 @@ async function fixture(browser: Browser, options: {member?:boolean,locale?:strin
     if(pathname==='/auth/logout'){data.member=false;return route.fulfill({json:{}});}
     if(pathname==='/api/profile/alice')return route.fulfill({json:data.profile});
     if(pathname==='/api/study/alice')return route.fulfill({json:url.searchParams.get('year')==='2025'?{...data.study,year:2025,days:[{date:'2025-06-20',reviews:4,time_ms:120000,xp:40,new_cards:1,streak:1,frozen:false}]}:data.study});
-    if(pathname==='/api/activity/alice')return route.fulfill({json:data.activity});
+    if(pathname==='/api/activity/alice'){data.artHeader=route.request().headers()['x-ankiquest-companion-art']??null;return route.fulfill({json:data.activity});}
     if(pathname==='/api/community/challenges/alice')return route.fulfill({json:data.challenges});
     if(pathname==='/api/unlocks/alice'&&data.unlocks)return route.fulfill({json:data.unlocks});
     if(pathname==='/api/companion/alice'&&method==='POST')data.companionHeader=route.request().headers()['x-ankiquest-companions']??null;
@@ -75,6 +77,7 @@ async function noOverflow(page: Page,label: string){const size=await page.evalua
       await f.page.getByRole('heading',{name:/Alice/}).waitFor();
       assert.equal(await f.page.locator('img[onerror]').count(),0);
       assert.equal(await f.page.locator('.personal-quest').count(),2);
+      assert.equal(f.data.artHeader,'aki, ankilope, cow');
       assert.equal(await f.page.locator('.personal-summary strong').first().textContent(),'2');
       assert.match((await f.page.locator('.personal-stamp').textContent())!,/Study data updated/);
       assert.match((await f.page.locator('#closing-week').textContent())!,/^Last week still counting: 1,234 XP · closes at \d\d:\d\d(\s?[AP]M)?$/);

@@ -55,11 +55,26 @@ impl Fixture {
     }
 
     async fn call(&self, method: &str, uri: &str, token: Option<&str>, body: Value) -> Value {
+        self.call_with(method, uri, token, body, &[]).await
+    }
+
+    /// [`Self::call`] with extra request `headers`.
+    async fn call_with(
+        &self,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+        headers: &[(&str, &str)],
+    ) -> Value {
         let mut request = Request::builder()
             .method(method)
             .uri(uri)
             .header("content-type", "application/json")
             .header("accept-language", "en");
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
         if let Some(token) = token {
             request = request.header("authorization", format!("Bearer {token}"));
         }
@@ -1034,11 +1049,13 @@ async fn examples_match_the_handlers() {
     }
     examples.push((
         "notifications_companion",
-        f.call(
+        // Only a client that names the cow among the companions it draws is told she joined.
+        f.call_with(
             "GET",
             "/api/notifications/cerro",
             Some("cerro-secret"),
             Value::Null,
+            &[("x-ankiquest-companion-art", "aki, ankilope, cow")],
         )
         .await,
     ));

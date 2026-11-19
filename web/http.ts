@@ -18,9 +18,15 @@ export interface RequestFailure extends Error {
 
 const reads = new Set(["GET", "HEAD"]);
 
-/** The bearer token of `session`, and the JSON headers when there is a `body`. */
+/** The companions web/aki.ts draws, sent with every request so the inbox leaves out moments
+    about any other (docs/mobile-api.md, study companion). */
+const DRAWS = {"X-AnkiQuest-Companion-Art": "aki, ankilope, cow"};
+
+/** The companions this page draws, the bearer token of `session`, and the JSON headers when
+    there is a `body`. */
 export function ownerHeaders(session: OwnerSession | null | undefined, body?: unknown): Record<string, string> {
   return {
+    ...DRAWS,
     ...(session?.token ? {Authorization: "Bearer " + session.token} : {}),
     ...(body === undefined ? {} : {"Content-Type": "application/json", "X-Ankiquest-CSRF": "1"}),
   };
