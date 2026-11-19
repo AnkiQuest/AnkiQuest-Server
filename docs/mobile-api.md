@@ -204,6 +204,24 @@ new event kinds are `challenge_invite`, `challenge_accepted`, and `challenge_com
 
 repeated successful accept, decline, leave, and creator cancel operations are idempotent. accept retries never reset `joined_at`. accepting or declining an invitation also marks that invitation read. acting as a nonmember is forbidden; all challenge endpoints still require the URL owner's credential. clients should reload challenge details before presenting available actions, since Activity can outlive an invitation, membership, or the challenge deadline.
 
+### the community page
+
+`/community` opens on **Friends**: invitations first, then current goals, with past goals folded away. a new goal opens in a dialog that suggests three study days per person over seven days. **Activity** lists the inbox above, **History** the overview, calendar, trophies, records and year review, and **Reminders** the reminder preferences. a personal target asks each accepted member to reach it alone; a shared total adds up the accepted members' study. only study after accepting counts, and streak freezes are not study days.
+
+apps can link straight to a view. every route also works with `?embed=1` before the hash:
+
+| destination | route |
+|---|---|
+| friends and invitations | `/community#challenges` |
+| one goal | `/community#challenge-<id>` |
+| activity | `/community#activity` |
+| reminder preferences | `/community#reminders` |
+| history overview | `/community#overview` |
+| calendar, trophies, records, year review | `/community#calendar`, `#trophies`, `#records`, `#year` |
+| player profile | `/week#<user>` |
+
+an unknown view opens Friends. a goal the player cannot see, or one that no longer exists, shows a message instead of another player's data. `tests/mobile_web.test.ts` (part of `npm run test:web`) checks these routes, the member session and the goal and Activity flows in a browser against a built server.
+
 ### friend goals for apps
 
 `GET /api/community/challenges/{user}` answers `{ "challenges", "recipients", "weekly_suggestion" }`, newest goal first. `challenges` holds every open goal the player is invited to or has joined, and the latest 100 that are over; a goal the player declined or left is not listed. each goal has `id`, `title`, `kind` (`study_days` or `reviews`), `cooperative`, `creator`, `start_at` and `end_at` (Unix milliseconds), `target`, `progress` (the members' sum), `status`, `weekly`, `started`, `start_when_ready`, and `members`, each with `user`, `display`, `status` (`invited`, `accepted`, `declined` or `left`) and `progress`. a goal's `status` is `active`, `upcoming`, `waiting` (not `started`: it starts once everyone accepts), `complete` (reached, still open until `end_at`), `ended`, `cancelled` (ended early by its creator) or `declined` (a goal waiting for everyone that an invitee declined). an invitation is a goal whose member entry for the player is `invited`. a cooperative goal counts `progress` against `target`, an individual one each accepted member's own. `recipients` are the people the player can invite, as `{ "user", "display" }`. `weekly_suggestion` is null or this week's suggested friend: `week_start`, `expires_at`, `friend`, `target`, `duration_days`, `dismissed` and `challenge_id`, the goal its invitation created.
