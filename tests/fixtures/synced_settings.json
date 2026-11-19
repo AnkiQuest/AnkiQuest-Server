@@ -1121,6 +1121,24 @@
       "refused": true
     },
     {
+      "name": "a countdown date written with digits other than 0 to 9 refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "countdowns": {
+          "value": [
+            {
+              "name": "Spanish exam",
+              "date": "\uff12\uff10\uff12\uff16-12-01",
+              "deck": null
+            }
+          ],
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
       "name": "a deck name over the longest length refuses the whole change",
       "now_ms": 1793183400000,
       "stored": {},
