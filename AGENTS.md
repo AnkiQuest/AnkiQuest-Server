@@ -18,6 +18,8 @@ These rules apply to every agent (Claude, Codex, others) and to people too. Ever
 
 Never call a person "the owner"; name them. "Code owner" describes how you treat the code, not who decides. "The owners" means hill and Aldana together. Name the person who approved something: "hill approved…", "Aldana approved…". An agent passing on an approval links the person's own words.
 
+When a decision or action is left for hill, ask hill a question with the options, the recommended one first, instead of listing it as an open item. In chat, use the tool for questions with options, if there is one.
+
 ## Glossary
 
 - Companion: a character (Aki, Ankilope, Bluma, Anki-tan).
