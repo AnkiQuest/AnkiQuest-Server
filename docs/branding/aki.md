@@ -68,8 +68,8 @@ yet: they are not embedded in the server binary and are not public paths.
 | `leech.png` | `aki_leech` | A leech tamed |
 | `at_risk.png` | `aki_at_risk` | Still time to secure the streak |
 | `sad.png` | `aki_sad` | Streak mood: a streak and no study yet today |
-| `hopeful.png` | `aki_hopeful` | Streak mood: half of today's minimum studied; also `almost` (three quarters) until it has art |
-| `frozen.png` | `aki_frozen` | Streak mood: a freeze kept the days before today (1, 2 or 3+ days), under a quarter of today's minimum studied; also `thawing` (a quarter) until it has art |
+| `hopeful.png` | `aki_hopeful` | Streak mood: half of today's minimum studied; also the `almost` mood (three quarters) |
+| `frozen.png` | `aki_frozen` | Streak mood: a freeze kept the days before today (1, 2 or 3+ days), under a quarter of today's minimum studied; also the `thawing` mood (a quarter) |
 | `neglected.png` | `aki_neglected` | Core pose for a long absence; no streak mood shows it yet |
 | `backlog.png` | `aki_backlog` | Calmly sorting overdue flashcards, one small step at a time |
 | `place_1.png` | `aki_place_1` | Weekly first place, gold medal and a friendly wave |

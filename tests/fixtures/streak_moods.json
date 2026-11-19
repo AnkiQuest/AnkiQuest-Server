@@ -1,5 +1,5 @@
 {
-  "_about": "Today's streak mood, and the companion pose it shows. `today.state` is the day verdict: studied (today counts, or will once unsent reviews arrive), protected, short (reviews short of the minimum), pending (no reviews) or unknown. `time_ms` is today's review time so far and `streak_minutes` the streak minimum, as the day verdict measures them (day_verdicts.json). `frozen_days` counts the heatmap's frozen days in a row ending yesterday (frozen_run). A counted day or a reached goal is fire, by heat: 1-6 streak, 7-29 streak_hot, 30-99 streak_blazing, 100+ streak_legend. Before that, the mood follows the stage of today's progress toward the minimum (`stages`). After a freeze (a protected day, or frozen days): frozen (by its level) in the first stage, thawing in the second, hopeful in the third, almost in the fourth. With a streak and no freeze: sad in the first two stages, hopeful in the third, almost in the fourth. Without a streak: asleep before any review, hopeful after one, almost in the fourth stage. `pose` names a pose from companion_poses.json, not a picture: each companion draws it with its own art, and shows the pose's fallback where it has none (Aki has no frozen_2, frozen_3, thawing or almost art, so those show her frozen and hopeful poses). The desktop add-on (addon/moods.py, tests/test_streak_moods.py) checks it; the Android app keeps a copy for AnkiquestMood. `pictures` are the streak share pictures, drawn with Aki's art. `flames` is the flame beside the streak number for each mood (AnkiquestMood.flame): lit once today counts, unlit (grey) for a streak today has not counted for yet, icy (blue) while a freeze still shows (frozen or thawing), none without a streak or when nothing is known about today. `messages` is the Today/Home line for a mood (AnkiquestAki.message, moods.mood), first match wins: sad is waiting; frozen_1-3 is freeze; every deck in `decks_due` done (none due, at least one deck) after `reviews` today is celebrate; cards due in the next deck (`focus_due`) is review; fire is streak; otherwise welcome. thawing and almost have no line of their own and follow the later rules, as hopeful does. Review is a kind, not a line: clients show no line for it. The kinds are the add-on's names; Android's AnkiquestAki.Message calls celebrate COMPLETE and freeze PROTECTED.",
+  "_about": "Today's streak mood, and the companion pose it shows. `today.state` is the day verdict: studied (today counts, or will once unsent reviews arrive), protected, short (reviews short of the minimum), pending (no reviews) or unknown. `time_ms` is today's review time so far and `streak_minutes` the streak minimum, as the day verdict measures them (day_verdicts.json). `frozen_days` counts the heatmap's frozen days in a row ending yesterday (frozen_run). A counted day or a reached goal is fire, by heat: 1-6 streak, 7-29 streak_hot, 30-99 streak_blazing, 100+ streak_legend. Before that, the mood follows the stage of today's progress toward the minimum (`stages`). After a freeze (a protected day, or frozen days): frozen (by its level) in the first stage, thawing in the second, hopeful in the third, almost in the fourth. With a streak and no freeze: sad in the first two stages, hopeful in the third, almost in the fourth. Without a streak: asleep before any review, hopeful after one, almost in the fourth stage. `pose` names a pose from companion_poses.json, not a picture: each companion draws it with its own art, and shows the pose's fallback where it has none (Aki has no frozen_2 or frozen_3 art, so those show her frozen pose). thawing and almost are moods, not poses: thawing shows frozen and almost shows hopeful. The desktop add-on (addon/moods.py, tests/test_streak_moods.py) checks it; the Android app keeps a copy for AnkiquestMood. `pictures` are the streak share pictures, drawn with Aki's art. `flames` is the flame beside the streak number for each mood (AnkiquestMood.flame): lit once today counts, unlit (grey) for a streak today has not counted for yet, icy (blue) while a freeze still shows (frozen or thawing), none without a streak or when nothing is known about today. `messages` is the Today/Home line for a mood (AnkiquestAki.message, moods.mood), first match wins: sad is waiting; frozen_1-3 is freeze; every deck in `decks_due` done (none due, at least one deck) after `reviews` today is celebrate; cards due in the next deck (`focus_due`) is review; fire is streak; otherwise welcome. thawing and almost have no line of their own and follow the later rules, as hopeful does. Review is a kind, not a line: clients show no line for it. The kinds are the add-on's names; Android's AnkiquestAki.Message calls celebrate COMPLETE and freeze PROTECTED.",
   "stages": {
     "_about": "A stage starts once time_ms reaches from_percent of streak_minutes; compare in whole numbers (time_ms * 100 >= from_percent * streak_minutes * 60000) so no rounding moves a boundary. Without a minimum (streak_minutes 0) the day counts at the first review, so before it the stage is started.",
     "starts": [
@@ -592,7 +592,7 @@
       },
       "expected": {
         "mood": "thawing",
-        "pose": "thawing"
+        "pose": "frozen"
       }
     },
     {
@@ -608,7 +608,7 @@
       },
       "expected": {
         "mood": "thawing",
-        "pose": "thawing"
+        "pose": "frozen"
       }
     },
     {
@@ -624,7 +624,7 @@
       },
       "expected": {
         "mood": "thawing",
-        "pose": "thawing"
+        "pose": "frozen"
       }
     },
     {
@@ -672,7 +672,7 @@
       },
       "expected": {
         "mood": "almost",
-        "pose": "almost"
+        "pose": "hopeful"
       }
     },
     {
@@ -688,7 +688,7 @@
       },
       "expected": {
         "mood": "almost",
-        "pose": "almost"
+        "pose": "hopeful"
       }
     },
     {
@@ -704,7 +704,7 @@
       },
       "expected": {
         "mood": "thawing",
-        "pose": "thawing"
+        "pose": "frozen"
       }
     },
     {
@@ -800,7 +800,7 @@
       },
       "expected": {
         "mood": "almost",
-        "pose": "almost"
+        "pose": "hopeful"
       }
     },
     {
@@ -816,7 +816,7 @@
       },
       "expected": {
         "mood": "almost",
-        "pose": "almost"
+        "pose": "hopeful"
       }
     },
     {
@@ -864,7 +864,7 @@
       },
       "expected": {
         "mood": "almost",
-        "pose": "almost"
+        "pose": "hopeful"
       }
     },
     {
