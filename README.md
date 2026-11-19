@@ -55,7 +55,7 @@ npm run test:web
 Repository tools are in `crates/xtask` (`cargo run -p ankiquest-xtask -- <command>`), including the exporters that write companion art from `static/` into an Android or Desktop checkout. See [development](docs/server.md#development).
 
 - [Client API](docs/mobile-api.md) and recorded [API examples](docs/api/examples/). Clients copy the examples and fixtures at a pinned commit of this repository.
-- `tests/fixtures/*.json`: rules both clients compute (streak verdicts, heatmap, card labels, deck names, companion poses). The server and both clients test against these cases.
+- `tests/fixtures/*.json`: rules both clients compute (streak verdicts, heatmap, study time, card labels, deck names, companion poses). The server and both clients test against these cases.
 - The banner above shows the website. `npm run screenshots` regenerates every picture: it renders the pages in `static/` into `docs/screenshots/web/`, answering every API call from `docs/api/examples/`, then draws `docs/graphics/banner_readme.png` and `social_preview.png` with `cargo run -p ankiquest-xtask -- banner [--social]`. The render pins Playwright's own Chromium (from the locked `playwright` package), the fonts (Roboto, DejaVu from npm, Noto Color Emoji v2.051 checked by hash; no system fonts), the clock, locale, time zone, viewport and device scale. It runs on Linux (fontconfig); the CI `screenshots` job runs it and fails unless the committed files are byte-identical, and uploads its renders when they differ.
 
 ## License
