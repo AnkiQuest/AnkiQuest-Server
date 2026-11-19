@@ -8,11 +8,11 @@ declare global {
   // web/pages/index.ts
   var app: HTMLElement;
   function board(rows: object[], me: string): string;
-  function closingWeek(closing: {xp: number; ends_at: number} | undefined): string;
-  function nextWeek(next: {xp: number; starts_at: number} | undefined): string;
   var weekEnds: number;
   function heat(cells: object[]): string;
   function view(profile: object, rows: object[], canEditAvatar?: boolean): string;
+  // web/common.ts, bundled into the index page
+  function weekNotice(closing: {xp: number; ends_at: number} | undefined, next: {xp: number; starts_at: number} | undefined, classes?: string): string;
   // web/pages/community.ts
   var state: {data: unknown};
   function avatar(user: string, display?: string): string;
