@@ -11,7 +11,11 @@ use serde_json::Value;
 /// The only date format a countdown accepts, such as `2026-11-25`.
 const DATE_FORMAT: &str = "%Y-%m-%d";
 
-/// `YYYY-MM-DD` is ten characters; chrono alone would also accept `2026-1-5`.
+/// Where `YYYY-MM-DD` has its dashes; every other byte is an ASCII digit. chrono alone would
+/// also accept `2026-1-5` and `+2026-1-05`.
+const DATE_DASHES: [usize; 2] = [4, 7];
+
+/// `YYYY-MM-DD` is ten bytes.
 const DATE_LEN: usize = 10;
 
 /// How long a countdown list and its fields may be.
@@ -56,8 +60,24 @@ fn chars(text: &str) -> usize {
     text.chars().count()
 }
 
+/// Whether `date` is written exactly as `YYYY-MM-DD` and exists.
 fn valid_date(date: &str) -> bool {
-    date.len() == DATE_LEN && NaiveDate::parse_from_str(date, DATE_FORMAT).is_ok()
+    canonical(date) && NaiveDate::parse_from_str(date, DATE_FORMAT).is_ok()
+}
+
+/// Whether `date` has the shape `YYYY-MM-DD`: ten bytes, dashes at 4 and 7, digits elsewhere.
+fn canonical(date: &str) -> bool {
+    if date.len() != DATE_LEN {
+        return false;
+    }
+
+    date.bytes().enumerate().all(|(index, byte)| {
+        if DATE_DASHES.contains(&index) {
+            byte == b'-'
+        } else {
+            byte.is_ascii_digit()
+        }
+    })
 }
 
 #[cfg(test)]
