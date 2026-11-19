@@ -55,10 +55,14 @@ test("the frozen moods fall back to the frozen pose", () => {
   }
 });
 
-test("the progress poses fall back to frozen and hopeful", () => {
-  // thawing and almost have no art yet; companions show these core poses instead.
-  assert.equal(core("thawing"), "frozen");
-  assert.equal(core("almost"), "hopeful");
+test("thawing and almost are moods mapped to frozen and hopeful", () => {
+  // They need no picture of their own, so they are not poses (AGENTS.md, Glossary).
+  const shows = new Map(moods.moods.map(({expected}) => [expected.mood, expected.pose]));
+  assert.equal(shows.get("thawing"), "frozen");
+  assert.equal(shows.get("almost"), "hopeful");
+  for (const mood of ["thawing", "almost"]) {
+    assert.ok(!poses.core.includes(mood) && !(mood in poses.extensions), `${mood} is not a pose`);
+  }
 });
 
 type Stages = {
