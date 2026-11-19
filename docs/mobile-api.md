@@ -8,7 +8,7 @@ these additions preserve bearer authentication and the existing notification arr
 `GET /api/capabilities` needs no sign-in, also on a private site, and may be cached for five minutes (`Cache-Control: max-age=300`). It answers what this server supports, so a client can turn a feature on when the server has it instead of waiting for a deploy:
 
 ```json
-{ "version": 1, "features": ["activity", "app_sign_in", "companion_art", "companion_milestones", "companion_unlocks", "cookie_session", "deck_share", "devices", "global_leaderboard_hide", "goal_backlog_days", "group_invites", "messages", "mute", "reactions", "review_offsets", "settings_sync", "share_cards", "share_moments", "share_undo_send", "upload_first", "wins"], "public_url": "https://anki.example.test" }
+{ "version": 1, "features": ["activity", "app_sign_in", "companion_art", "companion_milestones", "companion_unlocks", "cookie_session", "deck_share", "devices", "global_leaderboard_hide", "goal_backlog_days", "group_invites", "messages", "mute", "reactions", "review_ease", "review_offsets", "settings_sync", "share_cards", "share_moments", "share_undo_send", "upload_first", "wins"], "public_url": "https://anki.example.test" }
 ```
 
 `public_url` is the server's main address, without a trailing slash, and is present only when the server has `public_url` configured. A client that saved another address for the same server (an old address that proxies to it) may move to this one: it checks that its saved token works there with one signed-in request that needs it, such as `GET /api/devices/{user}` (the profile also answers without a token), and only then saves the new address and moves anything it keeps per address. Clients only move to an `https` address, keep the saved one when the check fails or they are offline, and ignore the field otherwise.
@@ -29,6 +29,7 @@ these additions preserve bearer authentication and the existing notification arr
 | `messages` | sending a friend a message, `POST /api/messages/{user}` (below, messages between friends) |
 | `mute` | muting a person, `POST /api/social/{user}` `{ "action": "mute" \| "unmute", "user" }`; `muted` in the social overview (see [community.md](community.md)) |
 | `reactions` | cheering a friend's share, `POST /api/react/{user}` |
+| `review_ease` | the server stores the button of each review row (`ease`) and fills it in on a resend of a row it has without one (see "review rows"). Clients resend their whole history once to a server that names it, so it can correct the reviews it stored without the button |
 | `review_offsets` | an uploaded review row may carry `offset_west_min`, the device's UTC offset when the review was made, and the server dates time-zone changes from it (see `docs/server.md`, "getting reviews in"). Older servers ignore the field, so sending it is harmless |
 | `settings_sync` | player preferences kept the same on every device, `/api/settings/{user}` (below) |
 | `share_cards` | server-drawn cards and public pages under `/w/` |
@@ -403,7 +404,7 @@ the app's native records and study history screens read the same JSON as the web
 
 ## review rows
 
-Each row of `POST /api/reviews/{user}` and `POST /api/preview/{user}` is a revlog row answered with a button (`ease > 0`) and of type below 4: `id`, `cid`, `last_ivl` (`lastIvl`), `ivl`, `time_ms` (`time`), `kind` (`type`) and `ease`, the button pressed (1 Again, 2 Hard, 3 Good, 4 Easy). The server counts a review row as a lapse when `ease` is 1; rows without `ease` fall back to a negative `ivl` (see `docs/server.md`, "conquered cards"). `ease` is optional: older servers ignore it and older clients leave it out, so no capability check is needed.
+Each row of `POST /api/reviews/{user}` and `POST /api/preview/{user}` is a revlog row answered with a button (`ease > 0`) and of type below 4: `id`, `cid`, `last_ivl` (`lastIvl`), `ivl`, `time_ms` (`time`), `kind` (`type`) and `ease`, the button pressed (1 Again, 2 Hard, 3 Good, 4 Easy). The server counts a review row as a lapse when `ease` is 1; rows without `ease` fall back to a negative `ivl` (see `docs/server.md`, "conquered cards"). `ease` is optional: older servers ignore it and older clients leave it out, so sending it needs no capability check. A resent row fills in a missing `ease` and never changes a known one. Rows stored before the server kept `ease` have none, so a client resends its whole review history once, in uploads of at most 5000 rows, to a server whose capabilities name `review_ease`, and then remembers that it did.
 
 ## community calendar, reminders and conquered cards
 
