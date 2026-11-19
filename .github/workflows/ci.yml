@@ -1,18 +1,29 @@
 name: CI
 
 on:
-  # Pushes to the default branch, and every pull request. Pushes to other
-  # branches are left to their pull request: checking both ran every job
-  # twice on the same commit.
+  # Pushes to the default branch, every pull request and every merge queue
+  # group. Pushes to other branches are left to their pull request: checking
+  # both ran every job twice on the same commit.
   push:
     branches:
       - main
       - master
   pull_request:
+  # The jobs here are required checks; the merge queue waits for them on
+  # its temporary merge commit.
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  # A newer push to a pull request cancels its older run. Every other run
+  # (default branch pushes, dispatches, merge queue) gets a group of its own
+  # and always finishes.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   android-contract:
