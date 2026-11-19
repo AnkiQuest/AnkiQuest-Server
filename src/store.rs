@@ -161,6 +161,7 @@ impl Store {
              ) without rowid;",
         )?;
         crate::accounts::initialize(&conn)?;
+        crate::two_factor::initialize(&conn)?;
         crate::oauth::initialize(&conn)?;
         crate::social::initialize(&conn)?;
         crate::avatars::initialize(&conn)?;
