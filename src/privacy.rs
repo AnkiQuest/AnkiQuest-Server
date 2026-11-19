@@ -34,8 +34,10 @@ const EXPORT: &[(&str, &str)] = &[
     ("devices", "select t.device, t.created_at, u.last_used_at from account_tokens t
          left join account_token_uses u on u.token_hash = t.token_hash where t.user = ?1"),
     ("sign_in_links", "select provider, subject, created_at from sign_in_links where user = ?1"),
+    // Whether two-factor is on, not its secret: a download should not be a way to copy it.
+    ("two_factor", "select state, updated_at from two_factor where user = ?1"),
     ("visibility", "select public from visibility where user = ?1"),
-    ("reviews", "select id, cid, last_ivl, ivl, time_ms, kind from reviews where user = ?1 order by id"),
+    ("reviews", "select id, cid, last_ivl, ivl, time_ms, kind, ease from reviews where user = ?1 order by id"),
     ("anki_day", "select offset_west_min, rollover_hour from clocks where user = ?1"),
     ("anki_day_history", "select effective_from_ms, offset_west_min, rollover_hour
          from clock_history where user = ?1 order by effective_from_ms"),
@@ -64,7 +66,10 @@ const EXPORT: &[(&str, &str)] = &[
     ("deck_recipients", "select deck_id, recipient from deck_recipients where owner = ?1"),
     ("deck_completions", "select deck_id, day from deck_completions where owner = ?1 order by day"),
     ("notifications_received", "select * from notifications where recipient = ?1 order by id"),
-    ("messages_sent", "select * from notifications where sender = ?1 order by id"),
+    // What the sender wrote, without delivery state, which would show who muted them.
+    ("messages_sent", "select id, recipient, kind, title, body, day, created_at, read_at, replied,
+         reply_to_title, reply_to_body, note, challenge_id, group_id, win_id
+         from notifications where sender = ?1 order by id"),
     ("deck_copies_sent", "select o.id, o.deck, o.created_at, length(o.package) as bytes, group_concat(r.recipient) as recipients
          from deck_copy_offers o left join deck_copy_recipients r on r.offer = o.id where o.sender = ?1 group by o.id"),
     ("deck_copies_received", "select o.id, o.sender, o.deck, o.created_at from deck_copy_offers o
@@ -74,6 +79,10 @@ const EXPORT: &[(&str, &str)] = &[
     ("challenge_requests", "select request_id, challenge, payload from community_requests where creator = ?1"),
     ("weekly_suggestions", "select * from community_weekly_suggestions where owner = ?1 or friend = ?1"),
     ("groups", "select g.id, g.name, m.owner, m.joined_at from group_members m join groups g on g.id = m.group_id where m.user = ?1"),
+    // Only the invitee sees whether they declined, as the app shows the owner no difference.
+    ("group_invitations", "select group_id, user, invited_by, created_at,
+         case when user = ?1 then state end as state from group_invitations
+         where user = ?1 or invited_by = ?1 order by created_at"),
     ("friendships", "select case when a = ?1 then b else a end as friend, requested_by, accepted, created_at
          from friendships where a = ?1 or b = ?1"),
     ("avatar", "select revision, image from avatars where user = ?1"),
@@ -104,6 +113,10 @@ const NOT_EXPORTED: &[(&str, &str)] = &[
         "a queue the server empties within a minute",
     ),
     ("win_auto_queue", "a queue the server empties within a tick"),
+    (
+        "two_factor_recovery",
+        "hashes of single-use recovery codes, which cannot be read back",
+    ),
     (
         "sync_signatures",
         "file times and sizes of the sync server's copy, to skip unchanged imports",
@@ -161,6 +174,7 @@ const OWNED: &[(&str, &str)] = &[
     ("community_requests", "creator = ?1"),
     ("community_weekly_suggestions", "owner = ?1 or friend = ?1"),
     ("friendships", "a = ?1 or b = ?1 or requested_by = ?1"),
+    ("group_invitations", "user = ?1 or invited_by = ?1"),
     ("avatars", "user = ?1"),
     (
         "win_receipts",
@@ -176,6 +190,8 @@ const OWNED: &[(&str, &str)] = &[
     ("freeze_grants", "user = ?1"),
     ("freeze_grant_reloads", "user = ?1"),
     ("sign_in_links", "user = ?1"),
+    ("two_factor", "user = ?1"),
+    ("two_factor_recovery", "user = ?1"),
     (
         "win_auto_queue",
         "win in (select id from wins where user = ?1)",
@@ -229,6 +245,8 @@ pub(crate) const NAMED: &[(&str, &str)] = &[
     ("global_board_hides", "viewer"),
     ("global_board_hides", "target"),
     ("goals", "user"),
+    ("group_invitations", "invited_by"),
+    ("group_invitations", "user"),
     ("group_members", "user"),
     ("groups", "created_by"),
     ("incoming_muted_senders", "recipient"),
@@ -257,6 +275,8 @@ pub(crate) const NAMED: &[(&str, &str)] = &[
     ("subscription_baselines", "sender"),
     ("sync_signatures", "user"),
     ("synced_settings", "user"),
+    ("two_factor", "user"),
+    ("two_factor_recovery", "user"),
     ("unsubscribed_decks", "recipient"),
     ("unsubscribed_decks", "sender"),
     ("visibility", "user"),
@@ -302,6 +322,7 @@ const NOT_NAMES: &[&str] = &[
     "decks.name",
     "freeze_grants.date",
     "goals.mode",
+    "group_invitations.state",
     "groups.invite",
     "groups.name",
     "languages.language",
@@ -327,6 +348,9 @@ const NOT_NAMES: &[&str] = &[
     "sync_signatures.files",
     "synced_settings.key",
     "synced_settings.value",
+    "two_factor.secret",
+    "two_factor.state",
+    "two_factor_recovery.code_hash",
     "unsubscribed_decks.deck_id",
     "wins.art",
     "wins.body",
@@ -545,7 +569,7 @@ fn unload(app: &App, user: &str) {
     app.access.revoke_member(user);
 }
 
-/// Removes the accounts an admin asked to remove with `admin remove-account`.
+/// Removes the accounts an admin asked to remove with `admin remove-player`.
 pub fn carry_out_removals(app: &App, conn: &Connection) -> rusqlite::Result<()> {
     let users: Vec<String> = conn
         .prepare("select user from account_removals")?
@@ -1191,30 +1215,31 @@ mod tests {
         let (app, path) = fixture();
         let ana = sign_up(&app, "ana").await;
         seed(&app, "ana", "alice");
+        let backups = path.join("backups");
         let run = |user: &str| {
-            crate::admin::run(
-                &path,
-                app.config.settings(),
-                crate::admin::Command::RemoveAccount(user.into()),
+            crate::admin::people(
+                &crate::admin::Setup {
+                    state_dir: &path,
+                    backups: &backups,
+                    configured: ["alice".to_owned()].into(),
+                    sync_base: None,
+                },
+                crate::admin::Command::RemovePlayer(user.into()),
                 now_ms(),
             )
         };
-        assert!(
-            run("alice").is_err(),
-            "configured players are removed from the configuration"
-        );
         assert!(run("nobody").is_err());
         assert!(run("ana").unwrap().contains("within a minute"));
         assert!(
             app.accounts.contains("ana"),
-            "nothing happens until the service picks it up"
+            "the service unloads it when it picks the removal up"
         );
-        carry_out_removals(&app, &app.store.lock().unwrap().conn).unwrap();
-        assert!(!app.accounts.contains("ana"));
         assert_eq!(
             count(&app, "select count(*) from reviews where user = 'ana'"),
             0
         );
+        carry_out_removals(&app, &app.store.lock().unwrap().conn).unwrap();
+        assert!(!app.accounts.contains("ana"));
         assert_eq!(count(&app, "select count(*) from account_removals"), 0);
         assert_eq!(
             count(&app, "select count(*) from reviews where user = 'alice'"),

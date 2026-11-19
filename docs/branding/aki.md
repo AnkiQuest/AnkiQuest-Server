@@ -21,9 +21,9 @@ branding works offline.
 
 the Android app ships WebP copies of the Aki and Ankilope art in `drawable-nodpi`. after changing a PNG in `static/`, run `cargo run -p ankiquest-xtask -- export-android-art <android-checkout>` to rewrite them, and `--check` to confirm every drawable is byte for byte what export writes (export on Linux; CI checks there).
 
-the desktop add-on ships 256 px palette PNGs of the poses it shows in `addon/art` of AnkiQuest-Desktop, and its two faces in `addon/*_face.png`; that checkout's `art-exports.json` lists them. `cargo run -p ankiquest-xtask -- export-addon-art <desktop-checkout>` rewrites those whose picture changed, keeps the replaced files in the checkout's `assets/retired/`, and records their SHA-256, and `--check` fails while one is missing, edited, or differs from a fresh export of its master. Which pose shows for today's streak, and which line the Today panel and Home card show with it, is one rule for both clients, pinned by `tests/fixtures/streak_moods.json`.
+the desktop add-on ships 256 px palette PNGs of the poses it shows in `addon/art` of AnkiQuest-Desktop, and its two faces in `addon/*_face.png`; that checkout's `art-exports.json` lists them. `cargo run -p ankiquest-xtask -- export-addon-art <desktop-checkout>` rewrites those whose picture changed, keeps the replaced files in the checkout's `assets/retired/`, and records their SHA-256, and `--check` fails while one is missing, edited, or differs from a fresh export of its master. Which pose shows for today's streak, and which line the Today panel and Home card show with it, is one rule for both clients, pinned by `tests/fixtures/streak_moods.json`; it names poses from `tests/fixtures/companion_poses.json`, and each client draws them with the chosen companion's art.
 
-the duo also leads the README banner (`docs/graphics/banner_readme.png`) and the repository's social preview (`docs/graphics/social_preview.png`). `npm run screenshots:web` renders the website pages into `docs/screenshots/web/`, `cargo run -p ankiquest-xtask -- banner` draws the banner from the duo and those screenshots, `banner --social` the preview; `cargo test -p ankiquest-xtask` fails while either is stale. Android's README banner shows the duo too, and its social preview comes from `banner --social --out <android-checkout>/docs/graphics/logos/social_preview.png`.
+the duo also leads the README banner (`docs/graphics/banner_readme.png`) and the repository's social preview (`docs/graphics/social_preview.png`). `npm run screenshots` renders the website pages into `docs/screenshots/web/` and draws the banner (`cargo run -p ankiquest-xtask -- banner`) from the duo and those screenshots and the preview (`banner --social`); the CI `screenshots` job fails while any of them is stale. Android's README banner shows the duo too, and its social preview comes from `banner --social --out <android-checkout>/docs/graphics/logos/social_preview.png`.
 
 [A single source for companion art](mascot-source.md) describes how every
 copy is made from the masters and checked.
@@ -67,6 +67,10 @@ yet: they are not embedded in the server binary and are not public paths.
 | `deck_conquered.png` | `aki_deck_conquered` | A deck conquered |
 | `leech.png` | `aki_leech` | A leech tamed |
 | `at_risk.png` | `aki_at_risk` | Still time to secure the streak |
+| `sad.png` | `aki_sad` | Streak mood: a streak and no study yet today |
+| `hopeful.png` | `aki_hopeful` | Streak mood: half of today's minimum studied; also the `almost` mood (three quarters) |
+| `frozen.png` | `aki_frozen` | Streak mood: a freeze kept the days before today (1, 2 or 3+ days), under a quarter of today's minimum studied; also the `thawing` mood (a quarter) |
+| `neglected.png` | `aki_neglected` | Core pose for a long absence; no streak mood shows it yet |
 | `backlog.png` | `aki_backlog` | Calmly sorting overdue flashcards, one small step at a time |
 | `place_1.png` | `aki_place_1` | Weekly first place, gold medal and a friendly wave |
 | `place_2.png` | `aki_place_2` | Weekly second place, proudly holding a silver medal |

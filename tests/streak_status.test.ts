@@ -34,7 +34,7 @@ const scaffold = html.match(/<body\b[^>]*>([\s\S]*?)<script>/)![1];
       await page.evaluate(() => {
         const row = {user:'west',display:'West',xp:0,level:1,streak:0,today_reviews:3,streak_state:'pending',day_ends_at:Date.now()+3600000};
         app.innerHTML = board([{...row,xp:5},{...row,user:'east',closing_xp:1234},{...row,user:'stale',closing_xp:9,day_ends_at:Date.now()-1000}],'me')
-          + closingWeek({xp:1234,ends_at:Date.now()+3600000}) + closingWeek({xp:5,ends_at:Date.now()-1000}) + closingWeek(undefined);
+          + weekNotice({xp:1234,ends_at:Date.now()+3600000},undefined) + weekNotice({xp:5,ends_at:Date.now()-1000},undefined) + weekNotice(undefined,undefined);
       });
       const closing = await page.locator('.board .closing-xp').allTextContents();
       assert.equal(closing.length,1);
@@ -47,7 +47,7 @@ const scaffold = html.match(/<body\b[^>]*>([\s\S]*?)<script>/)![1];
         const row = {user:'east',display:'East',xp:0,level:1,streak:0,today_reviews:3,streak_state:'pending',day_ends_at:Date.now()+3600000};
         weekEnds = Date.now()+3600000;
         app.innerHTML = board([{...row,next_xp:1234},{...row,user:'west',xp:5}],'me')
-          + nextWeek({xp:1234,starts_at:Date.now()+3600000}) + nextWeek({xp:5,starts_at:Date.now()-1000}) + nextWeek(undefined);
+          + weekNotice(undefined,{xp:1234,starts_at:Date.now()+3600000}) + weekNotice(undefined,{xp:5,starts_at:Date.now()-1000}) + weekNotice(undefined,undefined);
       });
       const next = await page.locator('.board .next-xp').allTextContents();
       assert.equal(next.length,1);

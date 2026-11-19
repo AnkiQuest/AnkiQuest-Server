@@ -52,3 +52,29 @@ export function day(value: unknown, options: Intl.DateTimeFormatOptions = {month
   const parsed = new Date(String(value).slice(0, 10) + "T12:00:00Z");
   return Number.isNaN(parsed.getTime()) ? String(value) : new Intl.DateTimeFormat(AnkiQuestI18n.language, {...options, timeZone: "UTC"}).format(parsed);
 }
+
+/** The closing week, still counting the player's current day (`ClosingWeek` in src/game.rs). */
+export interface ClosingWeek { xp: number; ends_at: number; }
+
+/** The week the board switches to next, already counting the player's current day (`NextWeek` in src/game.rs). */
+export interface NextWeek { xp: number; starts_at: number; }
+
+/**
+ * The notice for the other week the player's current day counts toward: the week the board has
+ * just left, until that day ends, or the week it has yet to reach, until the board switches.
+ * Empty when neither applies. `classes` adds the page's layout classes.
+ */
+export function weekNotice(closing: ClosingWeek | null | undefined, next: NextWeek | null | undefined, classes = ""): string {
+  const clock = (at: number) => new Date(at).toLocaleTimeString(AnkiQuestI18n.language, {hour: "2-digit", minute: "2-digit"});
+  const notice = (id: string, text: string) => `<p class="${["notice", id, classes].filter(Boolean).join(" ")}" id="${id}" role="status">${escape(text)}</p>`;
+  const {t} = AnkiQuestI18n;
+
+  // The board has either reset or not, so at most one of the two applies.
+  if (closing && Number(closing.ends_at) > Date.now()) {
+    return notice("closing-week", t`Last week still counting: ${number(closing.xp)} XP · closes at ${clock(Number(closing.ends_at))}`);
+  }
+  if (next && Number(next.starts_at) > Date.now()) {
+    return notice("next-week", t`Next week already counting: ${number(next.xp)} XP · the board switches at ${clock(Number(next.starts_at))}`);
+  }
+  return "";
+}

@@ -1,0 +1,6 @@
+[bindings.kotlin]
+package_name = "org.ankiquest.rules"
+cdylib_name = "ankiquest_rules"
+
+[bindings.python]
+cdylib_name = "ankiquest_rules"

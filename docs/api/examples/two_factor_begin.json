@@ -1,0 +1,7 @@
+{
+  "available": true,
+  "otpauth_uri": "otpauth://totp/AnkiQuest:ana?secret=example-secret-1&issuer=AnkiQuest&algorithm=SHA1&digits=6&period=30",
+  "recovery_codes_left": 0,
+  "secret": "example-secret-1",
+  "state": "pending"
+}
