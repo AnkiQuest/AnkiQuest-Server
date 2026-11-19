@@ -38,7 +38,7 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
 
-    // A broken catalog, pin or file fails the job instead of skipping it.
+    // A missing or broken catalog, pin or file fails the job.
     let errors = match check(&args.server, &args.resources) {
         Ok(errors) => errors,
         Err(error) => {
@@ -47,14 +47,6 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
 
-    // Android has not published its catalog yet: notice, not failure.
-    let Some(errors) = errors else {
-        println!(
-            "::notice::Android names.json is not published yet; \
-             compatibility guard awaits Android #203."
-        );
-        return ExitCode::SUCCESS;
-    };
     if errors.is_empty() {
         println!("Android's consumed example names, key paths and JSON types are preserved.");
         return ExitCode::SUCCESS;
@@ -240,13 +232,10 @@ fn compare(name: &str, old: &Path, new: &Path) -> Result<Vec<String>, String> {
         .collect())
 }
 
-/// All incompatibilities, or `None` while Android has no catalog.
-fn check(server: &Path, resources: &Path) -> Result<Option<Vec<String>>, String> {
+/// All incompatibilities; a missing catalog is an error.
+fn check(server: &Path, resources: &Path) -> Result<Vec<String>, String> {
     let examples = resources.join("ankiquest-api");
     let catalog = examples.join("names.json");
-    if !catalog.exists() {
-        return Ok(None);
-    }
 
     // The pin proves which server commit the vendored data came from.
     let pin_file = resources.join("ankiquest-server.sha");
@@ -261,7 +250,7 @@ fn check(server: &Path, resources: &Path) -> Result<Option<Vec<String>>, String>
         let file = format!("{name}.json");
         errors.extend(compare(&name, &examples.join(&file), &server.join(&file))?);
     }
-    Ok(Some(errors))
+    Ok(errors)
 }
 
 #[cfg(test)]
@@ -300,7 +289,7 @@ mod tests {
             write(&self.api(), "names", &groups);
         }
 
-        fn check(&self) -> Result<Option<Vec<String>>, String> {
+        fn check(&self) -> Result<Vec<String>, String> {
             check(&self.server, &self.android)
         }
     }
@@ -352,9 +341,9 @@ mod tests {
     }
 
     #[test]
-    fn only_absent_names_skip() {
+    fn missing_catalog_fails() {
         let fixture = Fixture::new();
-        assert_eq!(Ok(None), fixture.check());
+        assert!(fixture.check().unwrap_err().contains("names.json: "));
         fixture.catalog(json!({"unused": []}));
         assert!(fixture.check().unwrap_err().contains("consumed"));
     }
@@ -374,18 +363,18 @@ mod tests {
             write(&fixture.server, name, &json!({"id": 2, "new": true}));
         }
         write(&fixture.server, "new_endpoint", &json!({"anything": []}));
-        assert_eq!(Ok(Some(Vec::new())), fixture.check());
+        assert_eq!(Ok(Vec::new()), fixture.check());
 
         fs::remove_file(fixture.server.join("profile.json")).unwrap();
         let removed = vec!["Consumed example profile.json was removed".to_owned()];
-        assert_eq!(Ok(Some(removed)), fixture.check());
+        assert_eq!(Ok(removed), fixture.check());
     }
 
     #[test]
     fn missing_or_invalid_cannot_pass() {
         let fixture = Fixture::new();
         fixture.catalog(json!({"consumed": ["profile"]}));
-        let errors = fixture.check().unwrap().unwrap();
+        let errors = fixture.check().unwrap();
         assert!(errors[0].contains("vendored example is missing"));
 
         fixture.catalog(json!({"consumed": ["../secret"]}));
