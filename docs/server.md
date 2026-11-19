@@ -32,6 +32,7 @@ these five check everything first and change nothing when a name is wrong. then 
 on start, the service warns in the server log (`logs --level warning`) about every player who still has rows but is neither configured, nor an account, nor in the sync folder, for example someone taken out of the configuration, with how many rows each table holds. it deletes nothing; check, then use `remove-player`.
 - `set-password <user>` gives a self-service account a new random password (16 letters and digits, in groups of four) and prints it once, for someone who forgot theirs. it works straight away, also for an account that signs in with a provider; their devices stay signed in. pass it on privately and ask them to change it under Settings. the log records that it happened, not the password.
 - `adopt-players` turns every configured player with a token into a regular account with the same name, display name and token, so their devices stay signed in. players who already have an account are left alone, and running it twice is safe. afterwards remove them from `users` in the configuration and restart; they keep all their history, friends and groups. their devices are listed as "Earlier sign-in". they have no password yet: give them one with `set-password`, or let them link a sign-in provider.
+- `sign-ins` lists how each player with a token in the configuration signs in (`password`, `provider` or `token only`), says which of them can leave the configuration, and then lists the other accounts that have only a device token. the apps ask every `token only` player to set a password (see `docs/mobile-api.md`); once a configured player shows `password` or `provider`, remove their `token`/`tokenFile` from the configuration and restart. a `provider` there means a linked provider the configuration names.
 
 ## dev console
 
@@ -101,11 +102,29 @@ cargo run -- ankiquest.json
   "review_weighting": "flat",
   "log_retention_days": 90,
   "streak_minutes": 0,
+  "registration": true,
   "users": {
-    "hill": { "display": "hill", "ntfy_topic": "some-secret-topic", "token_file": "hill.token" }
+    "hill": { "display": "hill", "ntfy_topic": "some-secret-topic" }
   }
 }
 ```
+
+players sign up for accounts and sign in with a password or a provider. `users` gives players a display name and an ntfy topic, for example players whose reviews come from `sync_base`; it signs nobody in by itself. a name in `users` is taken: nobody can sign up with it, by password or provider. so list `hill` only once hill has an account, or adopt a configured player with `adopt-players` (see [configured tokens](#configured-tokens)).
+
+### configured tokens
+
+a server can instead declare its players in the configuration, each with a `token` or a `token_file` their apps sign in with. this is off by default; opt in with `"configured_tokens": "enabled"` (NixOS: `configuredTokens = "enabled"`). a `token` or `token_file` while it is `"disabled"` is an error: the server refuses to start, `ankiquest-admin` refuses to run, and NixOS fails evaluation, each naming the players, so an operator never drops or keeps these sign-ins by accident. accounts and their device tokens work either way.
+
+```json
+{
+  "configured_tokens": "enabled",
+  "users": {
+    "hill": { "display": "hill", "token_file": "hill.token" }
+  }
+}
+```
+
+to leave a declared user base: keep `configured_tokens` enabled, let each player set a password (the apps ask them) or run `adopt-players`, check `ankiquest-admin sign-ins`, then remove every `token`/`token_file` and `configured_tokens`, and restart.
 
 open `/#<user>` for a profile, `/` for the leaderboard. `/hour`, `/day`, `/week`, `/month`, `/year` and `/all` show the same board for another period, as does `GET /api/leaderboard?period=<name>`; each standing carries `xp` for the requested period and `periods` with all of them. the hour is the last 60 minutes and counts review XP only, the day is each player's own Anki day, and month and year follow the calendar in `week_timezone`. the leaderboard week runs Monday to Sunday in `week_timezone` and turns over at `week_rollover_hour` for everyone at once; each Anki day counts towards the week it started in. so for a player whose day began before the reset, the board already shows the new week while that day still counts for the old one; until their day ends their profile carries `closing_week` (`xp`, `ends_at`) and their board row `closing_xp`, and the website, the add-on and the app show that week as still counting, with its XP and when it closes for them. streaks, quests and "today" still follow each player's own Anki day. the board shows a player's friends and groups; `?scope=group&group=<id>` shows one group and `?scope=global` every public profile (profiles are public until their player makes them private) except players who turned the global leaderboard off, and private profiles that turned it on, with only name, picture, level, XP and streak for those strangers (see [mobile-api.md](mobile-api.md#the-global-leaderboard)). a player sees others only after uploading a review, and a visitor who is not signed in sees no one (see [mobile-api.md](mobile-api.md#seeing-other-players-upload-first)). `/robots.txt` asks every crawler to stay out, except link-preview bots on the `/w/` pages players share, and every answer carries `X-Robots-Tag: noindex`.
 
@@ -119,7 +138,7 @@ under Settings a player changes their password and sees and signs out their devi
 
 | endpoint | does |
 | --- | --- |
-| `POST /api/sign-in/<user>` `{"action": "password", "current": "…", "password": "…", "sign_out_others": false}` | sets a new password of 10 to 256 characters and returns the sign-in methods. `current` is needed when the account has a password; one that signs in with a provider sets its first without, after signing in with it again (see above; otherwise `403` with `"reauth": true`). a wrong `current` is `403` and counts towards the same per-address limit as signing in (`429`). players from the configuration get `409`. devices stay signed in unless `sign_out_others` is true. |
+| `POST /api/sign-in/<user>` `{"action": "password", "current": "…", "password": "…", "sign_out_others": false}` | sets a new password of 10 to 256 characters and returns the sign-in methods. `current` is needed when the account has a password; one that signs in with a provider sets its first without, after signing in with it again (see above; otherwise `403` with `"reauth": true`). a wrong `current` is `403` and counts towards the same per-address limit as signing in (`429`). a player who signs in only with a device token (`"sign_in": "token_only"`: from the configuration, or an account with neither a password nor a linked provider the server offers) sets their first password with that token alone; a player from the configuration becomes an account with the same name, display name and token, so their devices stay signed in after they leave the configuration. devices stay signed in unless `sign_out_others` is true. |
 | `GET /api/devices/<user>` | `{"devices": [{"id", "kind", "name", "created_at", "last_used_at", "current"}]}`, the requesting device first, then newest. `last_used_at` is when a device token last reached the server, saved at most once an hour per token, so it can be up to an hour old; it is null for browser sessions and for tokens not used since the server started recording it. `kind` is `app` for a device token (`name` is the device it signed in as) or `web` for a website session signed in with a password or a provider (`name` is null). a website session opened with a device token, such as AnkiDroid's, counts as that device. `id` is the start of a hash, never a secret. |
 | `POST /api/devices/<user>` `{"action": "sign_out", "id": "…"}` | signs that device out and returns the list; `404` when it is not one of the player's. |
 | `POST /api/devices/<user>` `{"action": "sign_out_others"}` | signs out every token and website session except the one making the request, and returns the list. |
@@ -183,7 +202,7 @@ the leaderboard, profiles, records, and Community share the same navigation, col
 }
 ```
 
-add these fields to your existing configuration. store the shared member password in the named file, readable only by the service and server administrator; do not commit the password or put it in the Nix store. existing nonempty player upload tokens also unlock the website. the shared password is optional when at least one player has a token. private mode refuses to start without a usable password or token. existing installations remain public until `private_site` is enabled.
+add these fields to your existing configuration. store the shared member password in the named file, readable only by the service and server administrator; do not commit the password or put it in the Nix store. with [configured tokens](#configured-tokens) enabled, nonempty player tokens also unlock the website, and the shared password is optional when at least one player has one. private mode refuses to start without a usable password or token. existing installations remain public until `private_site` is enabled.
 
 for NixOS, add these options to the existing service definition:
 
@@ -290,12 +309,12 @@ services.ankiquest = {
   domain = "anki.example.com";
   weekTimezone = "Europe/Berlin";
   ntfy = "https://ntfy.sh";
-  users.hill = {
-    tokenFile = "/etc/nixos/secrets/ankiquest-hill";
-    ntfyTopic = "some-secret-topic";
-  };
+  registration = true;
+  users.hill.ntfyTopic = "some-secret-topic";
 };
 ```
+
+as in the JSON configuration, `users.hill` takes the name `hill`: hill needs an account before this, or is adopted from a configured token. for [configured tokens](#configured-tokens), set `configuredTokens = "enabled";` and give each player `tokenFile = "/etc/nixos/secrets/ankiquest-hill";`, a runtime file the module loads as a systemd credential.
 
 the module runs the server in a tight sandbox. systemd holds the port and
 passes it in, and the service may not connect to loopback or private

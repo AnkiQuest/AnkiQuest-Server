@@ -49,7 +49,7 @@ The Android app's account settings are native and use these endpoints with the d
 
 | request | answers |
 |---|---|
-| `GET /api/sign-in/{user}` | `account`, `password`, `providers` (`provider`, `name`, `linked`; only those the server offers) and `linked_unavailable` (the account linked a provider the server no longer offers; absent from older servers) |
+| `GET /api/sign-in/{user}` | `account`, `password`, `providers` (`provider`, `name`, `linked`; only those the server offers), `linked_unavailable` (the account linked a provider the server no longer offers; absent from older servers) and `sign_in` (below; absent from older servers) |
 | `POST /api/sign-in/{user}` `{"action": "unlink", "provider"}` | the same, after unlinking |
 | `POST /api/sign-in/{user}` `{"action": "password", "current", "password", "sign_out_others"}` | the same, after the change |
 | `POST /api/sign-in/{user}` `{"action": "browser", "provider", "purpose"}` | `url` to open in the browser, `expires_at` |
@@ -58,7 +58,23 @@ The Android app's account settings are native and use these endpoints with the d
 | `GET /api/export/{user}` | the data download, saved by the app as it came |
 | `DELETE /api/accounts/{user}` `{"password"}`, or no body for an account without a password that signed in again | `204` |
 
-The `403` with `"reauth": true` described under capabilities applies to the first password and to deleting an account without a password. An account without a password and without a linked provider the server offers cannot sign in again, so only the server operator can give it a first password (`set-password`); apps say so instead of asking it to sign in again.
+The `403` with `"reauth": true` described under capabilities applies to the first password of an account that signs in with a provider, and to deleting an account without a password.
+
+### signing in with more than a token
+
+`sign_in` says how the player can sign in on a new device:
+
+| `sign_in` | means |
+|---|---|
+| `password` | with their password (and maybe a provider too) |
+| `provider` | with a linked provider the server offers; no password |
+| `token_only` | only with a device token: a player from the server configuration, or an account with neither a password nor a linked provider the server offers |
+
+A configured player loses their token when the operator removes them from the configuration, so every `token_only` player should set a password. While `sign_in` is `token_only`, clients show a card on Home that never blocks studying, in this order: the title "Set a password", "You sign in with a token only. Set a password so you can still sign in on a new device or if the token stops working.", a **Set a password** button and a **Not now** button. **Not now** hides the card on that device for three days. **Set a password** opens a form titled "Set a password" with "New password" and "New password again", **Cancel** and **Save**; it refuses a password outside 10 to 256 characters ("Use 10 to 256 characters.") or two that differ ("The two passwords are not the same.") before sending. Clients that do not see `sign_in` (older servers) show nothing.
+
+The form sends `POST /api/sign-in/{user}` `{"action": "password", "password", "sign_out_others": false}` with the device token and no `current`: for a `token_only` player the token is enough. The server makes a configured player an account with the same name, display name and token (listed under devices as "Earlier sign-in"), so every device signed in with that token stays signed in, also after the operator drops them from the configuration. The answer is the sign-in methods, now with `"sign_in": "password"`; clients then hide the card and say "Password saved." Errors are as for any password change (`400` for one under 10 characters, `429` after too many attempts). Examples: [sign_in_methods_token_only.json](api/examples/sign_in_methods_token_only.json), [password_set_token_only.json](api/examples/password_set_token_only.json).
+
+The operator sees who still signs in only with a configured token with `ankiquest-admin sign-ins` (see `docs/server.md`).
 
 ## study companion
 

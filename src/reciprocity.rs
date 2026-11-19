@@ -122,6 +122,7 @@ mod tests {
     fn fixture() -> (Arc<App>, PathBuf) {
         app_with(json!({
             "registration": true,
+            "configured_tokens": "enabled",
             "users": {"alice": {"display": "Alice", "token": "alice-token"}}
         }))
     }
