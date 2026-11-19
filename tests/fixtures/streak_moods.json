@@ -1,5 +1,5 @@
 {
-  "_about": "Aki's streak mood for today, and its pose. `today.state` is the day verdict: studied (today counts, or will once unsent reviews arrive), protected, short (reviews short of the minimum), pending (no reviews) or unknown. `frozen_days` counts the heatmap's frozen days in a row ending yesterday (frozen_run). A counted day or a reached goal is fire, by heat: 1-6 aki_streak, 7-29 aki_streak_hot, 30-99 aki_streak_blazing, 100+ aki_streak_legend. Poses are Aki's; other companions map them to their own art. The desktop add-on (addon/moods.py, tests/test_streak_moods.py) checks it; the Android app keeps a copy for AnkiquestMood. `flames` is the flame beside the streak number for each mood (AnkiquestMood.flame): lit once today counts, unlit (grey) for a streak today has not counted for yet, icy (blue) when a freeze kept the days before today, none without a streak or when nothing is known about today. `picture_style` is shared by every streak picture: `ink` is the text colour, `number` the streak number colour and `hero` the companion art size in px. `pictures` gives, for a streak length, the picture's gradient (`top` to `bottom`), its pose and the `next` milestone, null from 365 on.",
+  "_about": "Aki's streak mood for today, and its pose. `today.state` is the day verdict: studied (today counts, or will once unsent reviews arrive), protected, short (reviews short of the minimum), pending (no reviews) or unknown. `frozen_days` counts the heatmap's frozen days in a row ending yesterday (frozen_run). A counted day or a reached goal is fire, by heat: 1-6 aki_streak, 7-29 aki_streak_hot, 30-99 aki_streak_blazing, 100+ aki_streak_legend. Poses are Aki's; other companions map them to their own art. The desktop add-on (addon/moods.py, tests/test_streak_moods.py) checks it; the Android app keeps a copy for AnkiquestMood. `flames` is the flame beside the streak number for each mood (AnkiquestMood.flame): lit once today counts, unlit (grey) for a streak today has not counted for yet, icy (blue) when a freeze kept the days before today, none without a streak or when nothing is known about today. `picture_style` is shared by every streak picture: `ink` is the text colour, `number` the streak number colour and `hero` the companion art size in px. `pictures` gives, for a streak length, the picture's gradient (`top` to `bottom`), its pose and the `next` milestone, null from 365 on. `messages` is the Today/Home line for a mood (AnkiquestAki.message, moods.mood), first match wins: sad is waiting; frozen_1-3 is freeze; every deck in `decks_due` done (none due, at least one deck) after `reviews` today is celebrate; cards due in the next deck (`focus_due`) is review; fire is streak; otherwise welcome. Review is a kind, not a line: clients show no line for it. The kinds are the add-on's names; Android's AnkiquestAki.Message calls celebrate COMPLETE and freeze PROTECTED.",
   "moods": [
     {
       "name": "nothing is known about today",
@@ -694,6 +694,181 @@
     {
       "mood": "fire",
       "flame": "lit"
+    }
+  ],
+  "messages": [
+    {
+      "name": "a waiting streak with cards due",
+      "mood": "sad",
+      "reviews": 0,
+      "decks_due": [
+        12,
+        0
+      ],
+      "focus_due": 12,
+      "expected": "waiting"
+    },
+    {
+      "name": "a waiting streak with every deck done",
+      "mood": "sad",
+      "reviews": 0,
+      "decks_due": [
+        0,
+        0
+      ],
+      "focus_due": 0,
+      "expected": "waiting"
+    },
+    {
+      "name": "a waiting streak without decks",
+      "mood": "sad",
+      "reviews": 0,
+      "decks_due": [],
+      "focus_due": 0,
+      "expected": "waiting"
+    },
+    {
+      "name": "one frozen day with cards due",
+      "mood": "frozen_1",
+      "reviews": 0,
+      "decks_due": [
+        12
+      ],
+      "focus_due": 12,
+      "expected": "freeze"
+    },
+    {
+      "name": "two frozen days with every deck done",
+      "mood": "frozen_2",
+      "reviews": 0,
+      "decks_due": [
+        0
+      ],
+      "focus_due": 0,
+      "expected": "freeze"
+    },
+    {
+      "name": "three frozen days without decks",
+      "mood": "frozen_3",
+      "reviews": 0,
+      "decks_due": [],
+      "focus_due": 0,
+      "expected": "freeze"
+    },
+    {
+      "name": "every deck done after a counted day",
+      "mood": "fire",
+      "reviews": 20,
+      "decks_due": [
+        0,
+        0
+      ],
+      "focus_due": 0,
+      "expected": "celebrate"
+    },
+    {
+      "name": "every deck done after some study",
+      "mood": "hopeful",
+      "reviews": 3,
+      "decks_due": [
+        0
+      ],
+      "focus_due": 0,
+      "expected": "celebrate"
+    },
+    {
+      "name": "every deck done before any review",
+      "mood": "asleep",
+      "reviews": 0,
+      "decks_due": [
+        0,
+        0
+      ],
+      "focus_due": 0,
+      "expected": "welcome"
+    },
+    {
+      "name": "no decks after some study",
+      "mood": "hopeful",
+      "reviews": 3,
+      "decks_due": [],
+      "focus_due": 0,
+      "expected": "welcome"
+    },
+    {
+      "name": "cards due on a counted day",
+      "mood": "fire",
+      "reviews": 20,
+      "decks_due": [
+        0,
+        4
+      ],
+      "focus_due": 4,
+      "expected": "review"
+    },
+    {
+      "name": "cards due after some study",
+      "mood": "hopeful",
+      "reviews": 3,
+      "decks_due": [
+        9
+      ],
+      "focus_due": 9,
+      "expected": "review"
+    },
+    {
+      "name": "cards due without a streak",
+      "mood": "asleep",
+      "reviews": 0,
+      "decks_due": [
+        9
+      ],
+      "focus_due": 9,
+      "expected": "review"
+    },
+    {
+      "name": "cards due while nothing is known about today",
+      "mood": "unknown",
+      "reviews": 4,
+      "decks_due": [
+        9
+      ],
+      "focus_due": 9,
+      "expected": "review"
+    },
+    {
+      "name": "a reached goal before any review with every deck done",
+      "mood": "fire",
+      "reviews": 0,
+      "decks_due": [
+        0
+      ],
+      "focus_due": 0,
+      "expected": "streak"
+    },
+    {
+      "name": "a counted day without decks",
+      "mood": "fire",
+      "reviews": 20,
+      "decks_due": [],
+      "focus_due": 0,
+      "expected": "streak"
+    },
+    {
+      "name": "no streak and no decks",
+      "mood": "asleep",
+      "reviews": 0,
+      "decks_due": [],
+      "focus_due": 0,
+      "expected": "welcome"
+    },
+    {
+      "name": "nothing known about today and no decks",
+      "mood": "unknown",
+      "reviews": 0,
+      "decks_due": [],
+      "focus_due": 0,
+      "expected": "welcome"
     }
   ]
 }
