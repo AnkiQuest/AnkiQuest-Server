@@ -109,6 +109,7 @@ pub(crate) fn initialize(conn: &Connection) -> Result<(), Error> {
              user text not null,
              day integer not null,
              cards integer not null,
+             read_at_ms integer not null,
              primary key (user, day)
          ) without rowid;",
     )?;
@@ -196,6 +197,12 @@ fn record_card(
     clock: &ClockHistory,
 ) -> Result<Change, Error> {
     let before = baseline(conn, user, card.cid)?;
+
+    // A snapshot read before the saved one is a late retry: its differences are already counted
+    // or taken back, and comparing with it could undo a newer answer or restore an undone one.
+    if before.is_some_and(|saved| read_at_ms < saved.read_at_ms) {
+        return Ok(Change::Unchanged);
+    }
     let change = game::observe(card.cid, before.as_ref(), &card.state, clock);
 
     // New answers are added; undone ones go, newest first.
@@ -269,12 +276,15 @@ fn record(
             Change::Unchanged => {}
         }
     }
+    // A day's count replaces one read at the same time or earlier, never a newer one.
     let mut days = tx.prepare(
-        "insert into observed_days (user, day, cards) values (?1, ?2, ?3)
-         on conflict (user, day) do update set cards = excluded.cards",
+        "insert into observed_days (user, day, cards, read_at_ms) values (?1, ?2, ?3, ?4)
+         on conflict (user, day) do update set
+             cards = excluded.cards, read_at_ms = excluded.read_at_ms
+         where excluded.read_at_ms >= observed_days.read_at_ms",
     )?;
     for day in &upload.days {
-        days.execute(params![user, day.day, day.cards as i64])?;
+        days.execute(params![user, day.day, day.cards as i64, upload.read_at_ms])?;
     }
     drop(days);
     tx.commit()?;

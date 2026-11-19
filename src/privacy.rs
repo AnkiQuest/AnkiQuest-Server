@@ -46,7 +46,7 @@ const EXPORT: &[(&str, &str)] = &[
          from observed_cards where user = ?1 order by cid"),
     ("observed_answers", "select cid, at, kind, last_ivl, ivl, timing
          from observed_answers where user = ?1 order by at, cid"),
-    ("observed_days", "select day, cards from observed_days where user = ?1 order by day"),
+    ("observed_days", "select day, cards, read_at_ms from observed_days where user = ?1 order by day"),
     ("language", "select language from languages where user = ?1"),
     ("companion", "select companion from companion_preferences where user = ?1"),
     ("companion_unlocks", "select unlock, unlocked_at from companion_unlocks where user = ?1 order by unlock"),
