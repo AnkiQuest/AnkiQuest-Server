@@ -79,6 +79,16 @@
       "default": true,
       "desktop": null,
       "android": "ankiquestStreakCue"
+    },
+    {
+      "key": "countdowns",
+      "type": "countdowns",
+      "max_events": 20,
+      "max_name_chars": 60,
+      "max_deck_chars": 200,
+      "default": [],
+      "desktop": "countdowns",
+      "android": "ankiquestCountdowns"
     }
   ],
   "server_merge": [
@@ -586,6 +596,582 @@
         }
       },
       "refused": true
+    },
+    {
+      "name": "a countdown list is stored, the whole list as one value",
+      "now_ms": 1793183400000,
+      "stored": {
+        "countdowns": {
+          "value": [
+            {
+              "name": "Biology test",
+              "date": "2026-11-18",
+              "deck": null
+            }
+          ],
+          "updated_at": 1793180000000
+        }
+      },
+      "incoming": {
+        "countdowns": {
+          "value": [
+            {
+              "name": "Spanish exam",
+              "date": "2026-11-25",
+              "deck": "Spanish::A1"
+            },
+            {
+              "name": "Driving theory",
+              "date": "2026-12-01",
+              "deck": null
+            }
+          ],
+          "updated_at": 1793183000000
+        }
+      },
+      "expected": {
+        "countdowns": {
+          "value": [
+            {
+              "name": "Spanish exam",
+              "date": "2026-11-25",
+              "deck": "Spanish::A1"
+            },
+            {
+              "name": "Driving theory",
+              "date": "2026-12-01",
+              "deck": null
+            }
+          ],
+          "updated_at": 1793183000000
+        }
+      }
+    },
+    {
+      "name": "an empty countdown list is stored",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "countdowns": {
+          "value": [],
+          "updated_at": 1793183000000
+        }
+      },
+      "expected": {
+        "countdowns": {
+          "value": [],
+          "updated_at": 1793183000000
+        }
+      }
+    },
+    {
+      "name": "the most countdowns a player may keep are stored",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "countdowns": {
+          "value": [
+            {
+              "name": "Exam 0",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 1",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 2",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 3",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 4",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 5",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 6",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 7",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 8",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 9",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 10",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 11",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 12",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 13",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 14",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 15",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 16",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 17",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 18",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 19",
+              "date": "2026-12-01",
+              "deck": null
+            }
+          ],
+          "updated_at": 1793183000000
+        }
+      },
+      "expected": {
+        "countdowns": {
+          "value": [
+            {
+              "name": "Exam 0",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 1",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 2",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 3",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 4",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 5",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 6",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 7",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 8",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 9",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 10",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 11",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 12",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 13",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 14",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 15",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 16",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 17",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 18",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 19",
+              "date": "2026-12-01",
+              "deck": null
+            }
+          ],
+          "updated_at": 1793183000000
+        }
+      }
+    },
+    {
+      "name": "more countdowns than a player may keep refuse the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "countdowns": {
+          "value": [
+            {
+              "name": "Exam 0",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 1",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 2",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 3",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 4",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 5",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 6",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 7",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 8",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 9",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 10",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 11",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 12",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 13",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 14",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 15",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 16",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 17",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 18",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 19",
+              "date": "2026-12-01",
+              "deck": null
+            },
+            {
+              "name": "Exam 20",
+              "date": "2026-12-01",
+              "deck": null
+            }
+          ],
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a countdown name of the longest length is stored",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "countdowns": {
+          "value": [
+            {
+              "name": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+              "date": "2026-12-01",
+              "deck": null
+            }
+          ],
+          "updated_at": 1793183000000
+        }
+      },
+      "expected": {
+        "countdowns": {
+          "value": [
+            {
+              "name": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+              "date": "2026-12-01",
+              "deck": null
+            }
+          ],
+          "updated_at": 1793183000000
+        }
+      }
+    },
+    {
+      "name": "a countdown name over the longest length refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "countdowns": {
+          "value": [
+            {
+              "name": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              "date": "2026-12-01",
+              "deck": null
+            }
+          ],
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a blank countdown name refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "countdowns": {
+          "value": [
+            {
+              "name": "   ",
+              "date": "2026-12-01",
+              "deck": null
+            }
+          ],
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a countdown on a date that does not exist refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "countdowns": {
+          "value": [
+            {
+              "name": "Spanish exam",
+              "date": "2026-02-30",
+              "deck": null
+            }
+          ],
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a countdown date not written as YYYY-MM-DD refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "countdowns": {
+          "value": [
+            {
+              "name": "Spanish exam",
+              "date": "2026-1-5",
+              "deck": null
+            }
+          ],
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a deck name over the longest length refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "countdowns": {
+          "value": [
+            {
+              "name": "Spanish exam",
+              "date": "2026-12-01",
+              "deck": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+            }
+          ],
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "an empty deck name refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "countdowns": {
+          "value": [
+            {
+              "name": "Spanish exam",
+              "date": "2026-12-01",
+              "deck": ""
+            }
+          ],
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a countdown field the server does not know refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "countdowns": {
+          "value": [
+            {
+              "name": "Spanish exam",
+              "date": "2026-12-01",
+              "deck": null,
+              "colour": "red"
+            }
+          ],
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a countdown list that is not a list refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "countdowns": {
+          "value": {
+            "name": "Spanish exam",
+            "date": "2026-12-01",
+            "deck": null
+          },
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
     }
   ],
   "client_merge": [
@@ -721,6 +1307,96 @@
       },
       "expected": {
         "value": 3,
+        "changed_at": 1793180000000,
+        "push": null
+      }
+    },
+    {
+      "name": "a newer remote countdown list replaces the local one",
+      "key": "countdowns",
+      "local": {
+        "value": [
+          {
+            "name": "Biology test",
+            "date": "2026-11-18",
+            "deck": null
+          }
+        ],
+        "changed_at": 1793180000000
+      },
+      "remote": {
+        "value": [
+          {
+            "name": "Spanish exam",
+            "date": "2026-11-25",
+            "deck": "Spanish::A1"
+          },
+          {
+            "name": "Driving theory",
+            "date": "2026-12-01",
+            "deck": null
+          }
+        ],
+        "updated_at": 1793183000000
+      },
+      "expected": {
+        "value": [
+          {
+            "name": "Spanish exam",
+            "date": "2026-11-25",
+            "deck": "Spanish::A1"
+          },
+          {
+            "name": "Driving theory",
+            "date": "2026-12-01",
+            "deck": null
+          }
+        ],
+        "changed_at": 1793183000000,
+        "push": null
+      }
+    },
+    {
+      "name": "a countdown list the client cannot use is ignored and the local one stays",
+      "key": "countdowns",
+      "local": {
+        "value": [
+          {
+            "name": "Spanish exam",
+            "date": "2026-11-25",
+            "deck": "Spanish::A1"
+          },
+          {
+            "name": "Driving theory",
+            "date": "2026-12-01",
+            "deck": null
+          }
+        ],
+        "changed_at": 1793180000000
+      },
+      "remote": {
+        "value": [
+          {
+            "name": "Spanish exam",
+            "date": "2026-02-30",
+            "deck": null
+          }
+        ],
+        "updated_at": 1793183000000
+      },
+      "expected": {
+        "value": [
+          {
+            "name": "Spanish exam",
+            "date": "2026-11-25",
+            "deck": "Spanish::A1"
+          },
+          {
+            "name": "Driving theory",
+            "date": "2026-12-01",
+            "deck": null
+          }
+        ],
         "changed_at": 1793180000000,
         "push": null
       }

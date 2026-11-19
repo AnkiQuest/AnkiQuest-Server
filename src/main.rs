@@ -23,6 +23,7 @@ mod companions;
 mod competition;
 mod config;
 mod conquests;
+mod countdowns;
 mod crash_reports;
 mod crash_signature;
 #[cfg(test)]
