@@ -50,7 +50,7 @@ async function main() {
     for(let ago=16;ago>=1;ago--)for(let n=0;n<20+index*7;n++)insert.run(user,midnight-ago*86400000+12*3600000+n*5000,ago*1000+n,1,5000,1);
   }
   db.exec('COMMIT');db.close();
-  server=await startServer(run,{private_site:true,site_password_file:path.join(run,'password'),week_timezone:'UTC',week_rollover_hour:4,users:{alice:{display:'Alice <team>',token},bob:{display:'Bob Rivera',token:bobToken},cleo:{display:'Cléo Martín',token:'test-cleo-token'}}});base=server.base;
+  server=await startServer(run,{private_site:true,site_password_file:path.join(run,'password'),week_timezone:'UTC',week_rollover_hour:4,configured_tokens:'enabled',users:{alice:{display:'Alice <team>',token},bob:{display:'Bob Rivera',token:bobToken},cleo:{display:'Cléo Martín',token:'test-cleo-token'}}});base=server.base;
   for(const name of ['welcome','review','celebrate','streak','freeze','winner','face','face-192','face-32']) {
     const art=await fetch(base+'/aki/'+name+'.png');assert.equal(art.status,200);assert.equal(art.headers.get('content-type'),'image/png');
   }

@@ -171,6 +171,86 @@
         "fr": "Ne plus afficher ceci",
         "pt": "Não voltar a mostrar"
       }
+    },
+    {
+      "android_resource": "ankiquest_password_set_title",
+      "source": "Set a password",
+      "translations": {
+        "es": "Crear una contraseña",
+        "de": "Passwort festlegen",
+        "fr": "Définir un mot de passe",
+        "pt": "Definir palavra-passe"
+      }
+    },
+    {
+      "android_resource": "ankiquest_password_prompt_body",
+      "source": "You sign in with a token only. Set a password so you can still sign in on a new device or if the token stops working.",
+      "translations": {
+        "es": "Solo inicias sesión con un token. Crea una contraseña para poder iniciar sesión en un dispositivo nuevo o si el token deja de funcionar.",
+        "de": "Du meldest dich nur mit einem Token an. Lege ein Passwort fest, damit du dich auch auf einem neuen Gerät anmelden kannst oder wenn das Token nicht mehr funktioniert.",
+        "fr": "Tu te connectes uniquement avec un jeton. Définis un mot de passe pour pouvoir te connecter sur un nouvel appareil ou si le jeton ne fonctionne plus.",
+        "pt": "Só inicias sessão com um token. Define uma palavra-passe para poderes iniciar sessão num dispositivo novo ou se o token deixar de funcionar."
+      }
+    },
+    {
+      "android_resource": "ankiquest_deck_share_not_now",
+      "source": "Not now",
+      "translations": {
+        "es": "Ahora no",
+        "de": "Jetzt nicht",
+        "fr": "Pas maintenant",
+        "pt": "Agora não"
+      }
+    },
+    {
+      "android_resource": "ankiquest_password_new",
+      "source": "New password",
+      "translations": {
+        "es": "Contraseña nueva",
+        "de": "Neues Passwort",
+        "fr": "Nouveau mot de passe",
+        "pt": "Nova palavra-passe"
+      }
+    },
+    {
+      "android_resource": "ankiquest_password_repeat",
+      "source": "New password again",
+      "translations": {
+        "es": "Repite la contraseña nueva",
+        "de": "Neues Passwort wiederholen",
+        "fr": "Répète le nouveau mot de passe",
+        "pt": "Repete a nova palavra-passe"
+      }
+    },
+    {
+      "android_resource": "ankiquest_password_length",
+      "source": "Use 10 to 256 characters.",
+      "translations": {
+        "es": "Usa de 10 a 256 caracteres.",
+        "de": "Verwende 10 bis 256 Zeichen.",
+        "fr": "Utilise de 10 à 256 caractères.",
+        "pt": "Usa 10 a 256 caracteres."
+      }
+    },
+    {
+      "android_resource": "ankiquest_password_mismatch",
+      "source": "The two passwords are not the same.",
+      "translations": {
+        "es": "Las dos contraseñas no coinciden.",
+        "de": "Die beiden Passwörter stimmen nicht überein.",
+        "fr": "Les deux mots de passe ne sont pas identiques.",
+        "pt": "As duas palavras-passe não são iguais."
+      }
+    },
+    {
+      "android_resource": "ankiquest_password_saved",
+      "source": "Password saved.",
+      "translations": {
+        "es": "Contraseña guardada.",
+        "de": "Passwort gespeichert.",
+        "fr": "Mot de passe enregistré.",
+        "pt": "Palavra-passe guardada."
+      }
     }
   ]
 }

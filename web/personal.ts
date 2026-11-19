@@ -12,7 +12,7 @@ import {failure, refused, request as call, send} from "./http";
   interface GoalProgress extends Goal { progress?: number | null; reached?: boolean; day?: number | null }
   interface Sharing { policies: Record<string, Policy>; daily_cap: number }
   interface Win { id: number; kind: string; created_at: number; title: string; body: string; policy: Policy; shared_with_friends: boolean; link: {url: string; image: string} | null }
-  interface Profile { user: string; display: string; level: number; streak: number; today: {reviews: number; xp: number; minutes?: number; streak_minutes?: number}; quests: Quest[]; day_ends_at?: number; goal?: GoalProgress | null; closing_week?: {xp: number; ends_at: number} }
+  interface Profile { user: string; display: string; level: number; streak: number; today: {reviews: number; xp: number; minutes?: number; streak_minutes?: number}; quests: Quest[]; day_ends_at?: number; goal?: GoalProgress | null; closing_week?: {xp: number; ends_at: number}; next_week?: {xp: number; starts_at: number} }
   /** `state` and `streak_minutes` are the server's verdict on the day; older servers leave them out. */
   interface StudyDay { date: string; reviews: number; time_ms: number; xp: number; new_cards: number; streak: number; frozen: boolean; streak_minutes?: number; state?: "met" | "short" | "frozen" | "skipped" | "none" }
   interface StudySession { started_at: number; ended_at: number; reviews: number; time_ms: number; new_cards: number }
@@ -35,7 +35,8 @@ import {failure, refused, request as call, send} from "./http";
   /** `/api/deck-subscriptions/{user}` (`ReceivingSettings` in src/decks.rs). */
   interface Subscriptions { enabled: boolean; senders: Person[]; unsubscribed_senders: string[]; sharing_senders: string[]; muted_senders?: string[] }
   interface Account { created_at: number; password?: boolean; confirmed_until?: number | null }
-  interface SignIn { account: boolean; password: boolean; providers: {provider: string; name: string; linked: boolean}[] }
+  /** `sign_in` is absent from older servers. */
+  interface SignIn { account: boolean; password: boolean; providers: {provider: string; name: string; linked: boolean}[]; sign_in?: "password" | "provider" | "token_only" }
   interface Device { id: string; kind: "app" | "web"; name: string | null; created_at: number; last_used_at?: number | null; current: boolean }
   interface Group { id: number; name: string; owner: boolean; invite: string | null; members: Person[] }
   interface Social { groups: Group[]; friends: Person[]; incoming: Person[]; outgoing: Person[]; public: boolean; muted: Person[] }
@@ -269,12 +270,18 @@ import {failure, refused, request as call, send} from "./http";
     $("personal-content").innerHTML = html`<section class="personal-lead"><div class="eyebrow">${tr("Your Anki day")}</div><h2>${profile ? tr`Hello, ${esc(profile.display)}.` : tr("A fresh page for today.")}</h2><p>${lead}</p><div class="personal-actions">${link("/community#challenges",tr("See friend goals"),true)}${link("/history",tr("View study history"))}<a class="button-link" href="https://ankiweb.net/decks" target="_blank" rel="noopener noreferrer">${tr("Study in AnkiWeb ↗")}</a></div>${freshness()}</section><div class="kpis">${site.kpi(tr("Reviews today"),number(today.reviews),tr("Synced from Anki"),"blue")}${site.kpi(tr("Today's XP"),number(today.xp),tr("Every card counts"),"gold")}${site.kpi(tr("Current streak"),number(profile?.streak || 0),streakNote,"green")}${site.kpi(tr("Level"),number(profile?.level || 1),tr("Keep moving forward"))}</div>${closingWeek()}${goalMeter()}<div class="grid"><article class="card"><div class="card-head"><div><h2>${tr("Today's quests")}</h2><p>${tr("Three small wins to aim for.")}</p></div></div>${quests.length ? html`<div class="stack">${quests.map(quest).join("")}</div>` : html`<p class="personal-empty">${tr("Upload some reviews to see your quests.")}</p>`}</article>${activeGoals()}</div><article class="card personal-wins" id="today-wins">${winsBody()}</article>${recap()}`;
     loadCards();
   }
-  /** The week that already reset on the board but still counts today, until today ends. */
+  /** The week the board shows but no longer counts today, or the one it has yet to reach but already does. */
   function closingWeek() {
+    const clock = (at: number) => new Date(at).toLocaleTimeString(AnkiQuestI18n.language, {hour:"2-digit", minute:"2-digit"});
     const closing = state.profile?.closing_week;
-    if (!closing || !(Number(closing.ends_at) > Date.now())) return "";
-    const at = new Date(Number(closing.ends_at)).toLocaleTimeString(AnkiQuestI18n.language, {hour:"2-digit", minute:"2-digit"});
-    return html`<p class="notice personal-closing" id="closing-week" role="status">${esc(tr`Last week still counting: ${number(closing.xp)} XP · closes at ${at}`)}</p>`;
+    if (closing && Number(closing.ends_at) > Date.now()) {
+      return html`<p class="notice personal-closing" id="closing-week" role="status">${esc(tr`Last week still counting: ${number(closing.xp)} XP · closes at ${clock(Number(closing.ends_at))}`)}</p>`;
+    }
+    const next = state.profile?.next_week;
+    if (next && Number(next.starts_at) > Date.now()) {
+      return html`<p class="notice personal-closing" id="next-week" role="status">${esc(tr`Next week already counting: ${number(next.xp)} XP · the board switches at ${clock(Number(next.starts_at))}`)}</p>`;
+    }
+    return "";
   }
   function ankiToday(profile: Profile | null | undefined) {
     const offset = new Date().getTimezoneOffset() * 60000;
@@ -654,14 +661,16 @@ import {failure, refused, request as call, send} from "./http";
   }
   function signInCard() {
     const methods = state.signIn;
-    if (!methods || (!methods.providers.length && !methods.account)) return "";
+    // A player who signs in only with a token sets a first password with that token.
+    const tokenOnly = methods?.sign_in === "token_only";
+    if (!methods || (!methods.providers.length && !methods.account && !tokenOnly)) return "";
     const last = methods.account && !methods.password && methods.providers.filter(item => item.linked).length === 1;
     const rows = methods.providers.map(item => html`<div class="sign-in-row"><strong>${esc(item.name)}</strong>${item.linked
       ? html`<button type="button" data-unlink="${esc(item.provider)}" ${last ? "disabled" : ""}>${tr("Unlink")}</button>`
       : confirmed() ? html`<a class="button-link" href="/auth/oauth/${esc(item.provider)}?link=1">${tr("Link")}</a>`
       : html`<button type="button" disabled>${tr("Link")}</button>`}</div>`).join("");
     const token = methods.account && methods.providers.length ? html`<div class="setting-actions"><button type="button" id="new-device-token">${tr("New device token")}</button></div><p class="settings-hint">${tr("For Anki and AnkiDroid: sign in there with your username and this token.")}</p><code id="device-token" class="device-token" hidden></code>` : "";
-    return html`<article class="card"><h2>${tr("Sign-in methods")}</h2>${rows}${last ? html`<p class="settings-hint">${tr("Link another sign-in before unlinking this one.")}</p>` : ""}${token}<p id="sign-in-status" class="status" role="status"></p>${methods.account ? confirmed() ? passwordForm(methods.password) : reauthBlock() : ""}</article>`;
+    return html`<article class="card"><h2>${tr("Sign-in methods")}</h2>${rows}${last ? html`<p class="settings-hint">${tr("Link another sign-in before unlinking this one.")}</p>` : ""}${token}<p id="sign-in-status" class="status" role="status"></p>${tokenOnly ? passwordForm(false) : methods.account ? confirmed() ? passwordForm(methods.password) : reauthBlock() : ""}</article>`;
   }
   function passwordForm(has: boolean) {
     const current = has ? html`<label class="field"><span>${tr("Current password")}</span><input name="current" type="password" required autocomplete="current-password" maxlength="256"></label>` : "";

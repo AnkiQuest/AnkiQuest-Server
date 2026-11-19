@@ -16,6 +16,7 @@ pub(crate) const PATH: &str = "/api/capabilities";
 pub(crate) const FEATURES: &[&str] = &[
     "activity",
     "app_sign_in",
+    crate::companions::ART_FEATURE,
     "companion_milestones",
     "companion_unlocks",
     "cookie_session",
@@ -73,6 +74,7 @@ mod tests {
     async fn capabilities_are_public_cached_and_list_stable_names() {
         let (app, path) = crate::test_support::app_with(json!({
             "private_site": true,
+            "configured_tokens": "enabled",
             "users": {"alice": {"token": "alice-token"}}
         }));
         let response = crate::router(app.clone())

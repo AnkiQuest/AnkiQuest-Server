@@ -2,6 +2,7 @@
 
 use crate::access::require_owner;
 use crate::app::{App, now_ms};
+use crate::companions::Drawable;
 use crate::web_util::{base_url, failed_for, store_error};
 use crate::{challenges, decks, i18n, notifications, reminders, shares, wins};
 use axum::extract::{Path as UrlPath, Query, State};
@@ -31,7 +32,7 @@ pub(crate) async fn get_notifications(
     let base = base_url(&app, &headers);
     let language = i18n::owned(&headers, &store, &user).map_err(store_error)?;
     for mut notice in store
-        .notifications_for(&user, now, peer_study)
+        .notifications_for(&user, now, Drawable::of(&headers), peer_study)
         .map_err(store_error)?
     {
         if notice.kind.starts_with("reminder_") {
@@ -44,7 +45,7 @@ pub(crate) async fn get_notifications(
             {
                 continue;
             }
-            notice.body = reminders::current_body(&notice, profile, clock, &app.week, now);
+            notice.body = reminders::current_body(&notice, profile, clock, now);
         }
         shares::share_words(&store.conn, &user, &mut notice, &language).map_err(store_error)?;
         let sender_display = app.display(&notice.sender);
@@ -109,6 +110,7 @@ async fn activity(
                 limit,
                 category: query.category,
                 unread_only: query.unread_only.unwrap_or(false),
+                drawable: Drawable::of(&headers),
                 peer_study: peer_study(&app, &user),
             },
         )
@@ -158,7 +160,7 @@ async fn read_activity(
     }
     let mut store = app.store.lock().unwrap();
     match request.through {
-        Some(through) => store.read_all_activity(&user, through, now_ms()),
+        Some(through) => store.read_all_activity(&user, through, now_ms(), Drawable::of(&headers)),
         None => store.read_activity(&user, &request.ids, now_ms()),
     }
     .map_err(store_error)?;

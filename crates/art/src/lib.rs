@@ -27,11 +27,6 @@ pub fn load(path: &Path) -> Result<RgbaImage, String> {
     Ok(image.into_rgba8())
 }
 
-/// A PNG's pixel size, read from its header.
-pub fn png_size(path: &Path) -> Result<(u32, u32), String> {
-    image::image_dimensions(path).map_err(|e| format!("{}: {e}", path.display()))
-}
-
 /// The size that fits `width` by `height` into `size` square, never upscaled.
 pub fn target(width: u32, height: u32, size: u32) -> (u32, u32) {
     let scale = (f64::from(size) / f64::from(width.max(height))).min(1.0);

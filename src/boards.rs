@@ -34,10 +34,14 @@ pub(crate) struct Standing {
     today_minutes: u64,
     /// Review minutes today needs for the streak; 0 when any review counts.
     streak_minutes: u64,
-    /// XP still counting toward the week that just reset, while this player's current day
-    /// began before the reset; see [`game::ClosingWeek`]. Left out otherwise.
+    /// XP still counting toward the week the board has just left, while this player's
+    /// Sunday is still running; see [`game::ClosingWeek`]. Left out otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     closing_xp: Option<u64>,
+    /// XP already counting toward the week the board switches to next, while this
+    /// player's Monday began before the switch; see [`game::NextWeek`]. Left out otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_xp: Option<u64>,
 }
 
 #[derive(Deserialize, Default)]
@@ -359,7 +363,14 @@ pub(crate) fn standings(
             today_reviews: p.today.reviews,
             today_minutes: p.today.minutes,
             streak_minutes: p.today.streak_minutes,
-            closing_xp: p.closing_week.map(|closing| closing.xp),
+            closing_xp: match p.own_week {
+                Some(game::OwnWeek::Closing(closing)) => Some(closing.xp),
+                _ => None,
+            },
+            next_xp: match p.own_week {
+                Some(game::OwnWeek::Next(next)) => Some(next.xp),
+                _ => None,
+            },
         })
         .collect();
     standings.sort_by(|a, b| {
@@ -831,6 +842,7 @@ mod tests {
     async fn an_order_seen_before_the_reset_is_not_compared_across_time_zones() {
         let (store, path) = temporary_store();
         let config = serde_json::from_value(serde_json::json!({
+            "configured_tokens": "enabled",
             "users": {
                 "cerro": {"display": "Cerro", "token": "cerro-secret"},
                 "hill": {"display": "Hill", "token": "hill-secret"}

@@ -278,6 +278,7 @@ mod tests {
     fn fixture_with_private_site(private_site: bool) -> (Arc<App>, PathBuf) {
         crate::test_support::app_with(serde_json::json!({
             "private_site": private_site,
+            "configured_tokens": "enabled",
             "users": {"cerro": {"token": "cerro-secret"}, "hill": {"token": "hill-secret"}}
         }))
     }
@@ -468,10 +469,7 @@ mod tests {
         Arc::get_mut(&mut app)
             .unwrap()
             .config
-            .users
-            .get_mut("hill")
-            .unwrap()
-            .token = Some("cerro-secret".into());
+            .set_token("hill", "cerro-secret");
         for user in ["cerro", "hill"] {
             for method in ["POST", "DELETE"] {
                 assert_eq!(

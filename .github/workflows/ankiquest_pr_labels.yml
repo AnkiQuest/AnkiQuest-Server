@@ -13,13 +13,17 @@ name: Pull Request Labels
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed]
+  # A merge queue group has no pull request to label. Both jobs are skipped
+  # there, which counts as passing, so the queue never waits for them.
+  merge_group:
+    types: [checks_requested]
 
 permissions:
   contents: read
 
 jobs:
   area:
-    if: github.event.action != 'closed'
+    if: github.event_name == 'pull_request_target' && github.event.action != 'closed'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -30,7 +34,7 @@ jobs:
           sync-labels: true
 
   status:
-    if: github.event.action != 'synchronize'
+    if: github.event_name == 'pull_request_target' && github.event.action != 'synchronize'
     runs-on: ubuntu-latest
     permissions:
       contents: read
