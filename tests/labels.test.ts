@@ -2,8 +2,8 @@
 // the workflows, the labeler config and Dependabot apply. The copy check in
 // ankiquest_labels.yml compares every shared labelling file with
 // AnkiQuest-Server's and runs whenever one of them changes. The pull request
-// status script adds and removes "Needs Review" as a pull request moves
-// between draft and ready.
+// status script keeps "Needs Review" on open, ready pull requests that no
+// other member has approved.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import fs from 'node:fs';
@@ -72,24 +72,62 @@ function jobScript(file: string, job: string): string {
 }
 
 interface Call {action: string; labels: string[]}
+interface Review {login: string; state: string; association?: string}
 
-// Runs the pull request status script for one event and returns the label
-// changes it makes.
-async function status(action: string, draft: boolean, labels: string[] = []): Promise<Call[]> {
+// One pull request as the status script sees it: the event that ran it and
+// the pull request and reviews the GitHub API returns.
+interface Pull {
+  event?: string;
+  action: string;
+  draft?: boolean;
+  state?: string;
+  labels?: string[];
+  reviews?: Review[];
+  fork?: boolean;
+}
+
+const REPO = {owner: 'AnkiQuest', repo: 'test'};
+const AUTHOR = 'author';
+
+// Runs one job's github-script for one event against a fake GitHub API and
+// returns the label changes it makes.
+async function run(job: string, pull: Pull, association = 'MEMBER'): Promise<Call[]> {
   const calls: Call[] = [];
+  const labels = (pull.labels ?? []).map(name => ({name}));
+  const head = {repo: {full_name: pull.fork ? 'someone/test' : 'AnkiQuest/test'}};
+  const pr = {
+    number: 1, state: pull.state ?? 'open', draft: pull.draft ?? false, labels, head,
+    user: {login: AUTHOR}, author_association: association,
+  };
+  const reviews = (pull.reviews ?? []).map((review, index) => ({
+    id: index, user: {login: review.login}, state: review.state,
+    author_association: review.association ?? 'MEMBER',
+  }));
   const issues = {
     addLabels: async (args: {labels: string[]}) => { calls.push({action: 'add', labels: args.labels}); },
     removeLabel: async (args: {name: string}) => { calls.push({action: 'remove', labels: [args.name]}); },
   };
-  const context = {
-    repo: {owner: 'AnkiQuest', repo: 'test'},
-    payload: {action, pull_request: {number: 1, draft, author_association: 'MEMBER', labels: labels.map(name => ({name}))}},
+  const pulls = {
+    get: async () => {
+      assert.ok(!(pull.event === 'pull_request_review' && pull.fork), 'read-only run called the API');
+      return {data: pr};
+    },
+    listReviews: async () => ({data: reviews}),
   };
-  const core = {info: () => {}};
+  const paginate = async (method: () => Promise<{data: unknown[]}>) => (await method()).data;
+  const context = {
+    repo: REPO,
+    eventName: pull.event ?? 'pull_request_target',
+    payload: {action: pull.action, pull_request: pr},
+  };
+  const core = {info: () => {}, notice: () => {}};
   const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
-  await new AsyncFunction('github', 'context', 'core', jobScript('ankiquest_pr_labels.yml', 'status'))({rest: {issues}}, context, core);
+  const script = jobScript('ankiquest_pr_labels.yml', job);
+  await new AsyncFunction('github', 'context', 'core', script)({rest: {issues, pulls}, paginate}, context, core);
   return calls;
 }
+
+const status = (pull: Pull) => run('status', pull);
 
 // Area labels are the top-level keys of the labeler config.
 function labelerNames(): string[] {
@@ -134,23 +172,115 @@ test('the copy check runs when any shared file changes', () => {
   }
 });
 
-test('pull request labels run on every draft and ready change', () => {
-  const types = read('workflows/ankiquest_pr_labels.yml').match(/pull_request_target:\n\s+types: \[([^\]]+)\]/);
-  assert.ok(types);
-  for (const type of ['opened', 'reopened', 'ready_for_review', 'converted_to_draft', 'closed']) {
-    assert.ok(types[1].split(/,\s*/).includes(type), type);
+// The `on:` types of one trigger in the pull request labels workflow.
+function eventTypes(event: string): string[] {
+  const types = read('workflows/ankiquest_pr_labels.yml').match(new RegExp(`${event}:\\n\\s+types: \\[([^\\]]+)\\]`));
+  assert.ok(types, `no ${event} types`);
+  return types[1].split(/,\s*/);
+}
+
+// The settings of one job's concurrency block.
+function jobConcurrency(job: string): {group?: string; cancel?: string} {
+  const text = read('workflows/ankiquest_pr_labels.yml');
+  const block = text.slice(text.indexOf(`\n  ${job}:\n`)).match(/\n {4}concurrency:\n((?: {6}.*\n)+)/);
+  assert.ok(block, `job ${job} has no concurrency`);
+  const value = (key: string) => block[1].match(new RegExp(`^ {6}${key}: (.*)$`, 'm'))?.[1];
+  return {group: value('group'), cancel: value('cancel-in-progress')};
+}
+
+const add = {action: 'add', labels: ['Needs Review']};
+const remove = {action: 'remove', labels: ['Needs Review']};
+const approved = {login: 'reviewer', state: 'APPROVED'};
+
+test('pull request labels run on every draft, ready, push and review change', () => {
+  for (const type of ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft', 'closed']) {
+    assert.ok(eventTypes('pull_request_target').includes(type), type);
+  }
+  for (const type of ['submitted', 'dismissed']) {
+    assert.ok(eventTypes('pull_request_review').includes(type), type);
   }
 });
 
 test('Needs Review follows the draft state', async () => {
-  const review = (action: string) => ({action, labels: ['Needs Review']});
-  assert.deepEqual(await status('opened', false), [review('add')]);
-  assert.deepEqual(await status('opened', true), []);
+  assert.deepEqual(await status({action: 'opened'}), [add]);
+  assert.deepEqual(await status({action: 'opened', draft: true}), []);
 
   // A pull request opened as a draft gets the label once it is ready.
-  assert.deepEqual(await status('ready_for_review', false), [review('add')]);
-  assert.deepEqual(await status('ready_for_review', false, ['needs review']), []);
-  assert.deepEqual(await status('converted_to_draft', true, ['Needs Review']), [review('remove')]);
-  assert.deepEqual(await status('closed', false, ['Needs Review', 'Has Conflicts']),
-    [review('remove'), {action: 'remove', labels: ['Has Conflicts']}]);
+  assert.deepEqual(await status({action: 'ready_for_review'}), [add]);
+  assert.deepEqual(await status({action: 'ready_for_review', labels: ['needs review']}), []);
+  assert.deepEqual(await status({action: 'converted_to_draft', draft: true, labels: ['Needs Review']}), [remove]);
+  assert.deepEqual(await status({action: 'closed', state: 'closed', labels: ['Needs Review', 'Has Conflicts']}),
+    [remove, {action: 'remove', labels: ['Has Conflicts']}]);
+});
+
+test('an approval removes Needs Review', async () => {
+  const review = {event: 'pull_request_review', action: 'submitted', labels: ['Needs Review']};
+  assert.deepEqual(await status({...review, reviews: [approved]}), [remove]);
+  assert.deepEqual(await status({...review, reviews: [{login: 'reviewer', state: 'COMMENTED'}]}), []);
+
+  // A comment after an approval keeps it.
+  assert.deepEqual(await status({...review, reviews: [approved, {login: 'reviewer', state: 'COMMENTED'}]}), [remove]);
+
+  // An approved pull request opened or reopened gets no label.
+  assert.deepEqual(await status({action: 'reopened', reviews: [approved]}), []);
+});
+
+test('only an approval by another member counts', async () => {
+  const review = {event: 'pull_request_review', action: 'submitted', labels: ['Needs Review']};
+  assert.deepEqual(await status({...review, reviews: [{login: AUTHOR, state: 'APPROVED'}]}), []);
+  assert.deepEqual(await status({...review, reviews: [{login: 'visitor', state: 'APPROVED', association: 'NONE'}]}), []);
+  assert.deepEqual(await status({...review, reviews: [{login: 'reviewer', state: 'APPROVED', association: 'COLLABORATOR'}]}), [remove]);
+});
+
+test('a push keeps an approval that was not dismissed', async () => {
+  assert.deepEqual(await status({action: 'synchronize', reviews: [approved]}), []);
+  assert.deepEqual(await status({action: 'synchronize', labels: ['Needs Review'], reviews: [approved]}), [remove]);
+
+  // Branch protection dismisses stale approvals by setting their state.
+  assert.deepEqual(await status({action: 'synchronize', reviews: [{login: 'reviewer', state: 'DISMISSED'}]}), [add]);
+  assert.deepEqual(await status({event: 'pull_request_review', action: 'dismissed', reviews: [{login: 'reviewer', state: 'DISMISSED'}]}), [add]);
+  assert.deepEqual(await status({action: 'synchronize'}), [add]);
+});
+
+test('changes requested after the last approval need review', async () => {
+  const review = {event: 'pull_request_review', action: 'submitted'};
+  const changes = {login: 'other', state: 'CHANGES_REQUESTED'};
+  assert.deepEqual(await status({...review, reviews: [approved, changes]}), [add]);
+  assert.deepEqual(await status({...review, labels: ['Needs Review'], reviews: [changes, approved]}), [remove]);
+
+  // A reviewer who approves after asking for changes approves.
+  const asked = {login: 'reviewer', state: 'CHANGES_REQUESTED'};
+  assert.deepEqual(await status({...review, labels: ['Needs Review'], reviews: [asked, approved]}), [remove]);
+});
+
+test('draft and closed pull requests never keep Needs Review', async () => {
+  assert.deepEqual(await status({action: 'synchronize', draft: true, labels: ['Needs Review']}), [remove]);
+  assert.deepEqual(await status({event: 'pull_request_review', action: 'submitted', state: 'closed', labels: ['Needs Review']}),
+    [remove]);
+});
+
+test('reviews of pull requests from forks are skipped', async () => {
+  // Their token is read-only, so the script only logs.
+  const review = {event: 'pull_request_review', action: 'submitted', fork: true, labels: ['Needs Review']};
+  assert.deepEqual(await status({...review, reviews: [approved]}), []);
+
+  // pull_request_target runs for forks have a token that can label.
+  assert.deepEqual(await status({action: 'synchronize', fork: true, labels: ['Needs Review'], reviews: [approved]}), [remove]);
+});
+
+test('New contributor goes on a newcomer\'s first pull request', async () => {
+  const label = [{action: 'add', labels: ['New contributor']}];
+  assert.deepEqual(await run('newcomer', {action: 'opened'}, 'FIRST_TIME_CONTRIBUTOR'), label);
+  assert.deepEqual(await run('newcomer', {action: 'opened'}, 'MEMBER'), []);
+});
+
+test('a newer event cancels an older status run of the same pull request', () => {
+  for (const job of ['area', 'status']) {
+    const {group, cancel} = jobConcurrency(job);
+    assert.equal(cancel, 'true', job);
+    assert.match(group ?? '', /github\.event\.pull_request\.number/, job);
+  }
+
+  // Skipped fork review runs must not cancel a run that can label.
+  assert.match(jobConcurrency('status').group ?? '', /pull_request_review/);
 });

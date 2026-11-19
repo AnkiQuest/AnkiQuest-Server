@@ -2,18 +2,24 @@ name: Pull Request Labels
 
 # Keeps pull request labels current:
 # - area labels from the changed paths (.github/labeler.yml)
-# - "Needs Review" while a pull request is open and not a draft
+# - "Needs Review" while a pull request is open, not a draft and not
+#   approved by another member
 # - "New contributor" on a first pull request from someone new to the repo
 # - workflow labels are cleared when a pull request is closed
 #
 # pull_request_target runs the base branch's workflow with a token that can
-# label pull requests from forks. Nothing here checks out or runs pull
-# request code: the jobs only read the event payload and the GitHub API.
+# label pull requests from forks. pull_request_review runs the pull
+# request's own workflow, with a read-only token for pull requests from
+# forks; their reviews are skipped and picked up by the next push or state
+# change. Nothing here checks out or runs pull request code: the jobs only
+# read the event payload and the GitHub API.
 
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed]
-  # A merge queue group has no pull request to label. Both jobs are skipped
+  pull_request_review:
+    types: [submitted, dismissed]
+  # A merge queue group has no pull request to label. All jobs are skipped
   # there, which counts as passing, so the queue never waits for them.
   merge_group:
     types: [checks_requested]
@@ -25,6 +31,11 @@ jobs:
   area:
     if: github.event_name == 'pull_request_target' && github.event.action != 'closed'
     runs-on: ubuntu-latest
+    # Each run labels from the current changed paths, so a newer push
+    # replaces an older run.
+    concurrency:
+      group: ${{ github.workflow }}-area-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     permissions:
       contents: read
       pull-requests: write
@@ -34,7 +45,107 @@ jobs:
           sync-labels: true
 
   status:
-    if: github.event_name == 'pull_request_target' && github.event.action != 'synchronize'
+    if: github.event_name == 'pull_request_target' || github.event_name == 'pull_request_review'
+    runs-on: ubuntu-latest
+    # Each run reads the pull request and its reviews from the API, so a
+    # newer event replaces an older run. Fork review runs can't label and
+    # get a group of their own, so they never cancel a run that can.
+    concurrency:
+      group: ${{ github.workflow }}-status-${{ github.event.pull_request.number }}-${{ github.event_name == 'pull_request_review' && github.event.pull_request.head.repo.full_name != github.repository && 'read-only' || 'write' }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          retries: 3
+          script: |
+            const { owner, repo } = context.repo;
+            const LABEL = 'Needs Review';
+            const pull_number = context.payload.pull_request.number;
+            const issue_number = pull_number;
+
+            // Reviews count from members only; GitHub ignores other approvals too.
+            const MEMBERS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+            const DECISIONS = ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'];
+
+            // Review runs for pull requests from forks have a read-only token.
+            const head = context.payload.pull_request.head.repo?.full_name;
+            if (context.eventName === 'pull_request_review' && head !== `${owner}/${repo}`) {
+              core.notice(`Skipped: a review of a pull request from ${head ?? 'a deleted fork'} runs with a read-only token. "${LABEL}" is updated on the next push or state change.`);
+              return;
+            }
+
+            // Read the pull request now: a queued run's payload can be stale.
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number });
+
+            // Label names are case-insensitive on GitHub.
+            const has = (name) => pr.labels.some((label) => label.name.toLowerCase() === name.toLowerCase());
+
+            async function add(name) {
+              if (has(name)) {
+                return;
+              }
+              core.info(`Adding "${name}"`);
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [name] });
+            }
+
+            async function remove(name) {
+              if (!has(name)) {
+                return;
+              }
+              core.info(`Removing "${name}"`);
+              try {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
+              } catch (error) {
+                if (error.status !== 404) {
+                  throw error;
+                }
+              }
+            }
+
+            // Closed pull requests keep no workflow labels.
+            if (pr.state === 'closed') {
+              await remove(LABEL);
+              await remove('Has Conflicts');
+              return;
+            }
+
+            if (pr.draft) {
+              await remove(LABEL);
+              return;
+            }
+
+            // Each member's latest decision and its position in the review
+            // list. A comment keeps an earlier decision; a review dismissed,
+            // by hand or by branch protection on a push, has state DISMISSED.
+            const reviews = await github.paginate(github.rest.pulls.listReviews, { owner, repo, pull_number, per_page: 100 });
+            const latest = new Map();
+            for (const [index, review] of reviews.entries()) {
+              const login = review.user?.login;
+              if (!login || login === pr.user.login) {
+                continue;
+              }
+              if (!MEMBERS.includes(review.author_association) || !DECISIONS.includes(review.state)) {
+                continue;
+              }
+              latest.set(login, { state: review.state, index });
+            }
+
+            // Approved: a standing approval with no change request after it.
+            const last = (state) => Math.max(-1, ...[...latest.values()].filter((d) => d.state === state).map((d) => d.index));
+            const approval = last('APPROVED');
+            if (approval >= 0 && last('CHANGES_REQUESTED') < approval) {
+              core.info(`Approved by review ${reviews[approval].id}`);
+              await remove(LABEL);
+              return;
+            }
+
+            await add(LABEL);
+
+  newcomer:
+    if: github.event_name == 'pull_request_target' && github.event.action == 'opened'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -45,40 +156,12 @@ jobs:
           retries: 3
           script: |
             const { owner, repo } = context.repo;
+            const LABEL = 'New contributor';
+            const NEWCOMERS = ['FIRST_TIMER', 'FIRST_TIME_CONTRIBUTOR', 'NONE'];
             const pr = context.payload.pull_request;
-            const issue_number = pr.number;
-            // Label names are case-insensitive on GitHub.
-            const has = (name) => pr.labels.some((label) => label.name.toLowerCase() === name.toLowerCase());
 
-            async function add(name) {
-              if (has(name)) return;
-              core.info(`Adding "${name}"`);
-              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [name] });
+            if (!NEWCOMERS.includes(pr.author_association)) {
+              return;
             }
-
-            async function remove(name) {
-              if (!has(name)) return;
-              core.info(`Removing "${name}"`);
-              try {
-                await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
-              } catch (error) {
-                if (error.status !== 404) throw error;
-              }
-            }
-
-            switch (context.payload.action) {
-              case 'closed':
-                await remove('Needs Review');
-                await remove('Has Conflicts');
-                break;
-              case 'converted_to_draft':
-                await remove('Needs Review');
-                break;
-              default: // opened, reopened, ready_for_review
-                if (!pr.draft) await add('Needs Review');
-            }
-
-            const newcomer = ['FIRST_TIMER', 'FIRST_TIME_CONTRIBUTOR', 'NONE'];
-            if (context.payload.action === 'opened' && newcomer.includes(pr.author_association)) {
-              await add('New contributor');
-            }
+            core.info(`Adding "${LABEL}"`);
+            await github.rest.issues.addLabels({ owner, repo, issue_number: pr.number, labels: [LABEL] });

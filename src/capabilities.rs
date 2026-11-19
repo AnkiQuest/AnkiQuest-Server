@@ -25,8 +25,11 @@ pub(crate) const FEATURES: &[&str] = &[
     "devices",
     "global_leaderboard_hide",
     "goal_backlog_days",
+    "group_invites",
+    "messages",
     "mute",
     "reactions",
+    "review_ease",
     "review_offsets",
     "settings_sync",
     "share_cards",
@@ -36,6 +39,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "share_place",
     "share_undo_send",
     crate::reciprocity::FEATURE,
+    crate::two_factor::FEATURE,
     "wins",
 ];
 

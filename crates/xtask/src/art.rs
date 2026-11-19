@@ -23,7 +23,7 @@ mod exports;
 mod guard;
 
 /// Drawable folder inside an AnkiQuest-Android checkout.
-const DRAWABLES: &str = "AnkiDroid/src/main/res/drawable-nodpi";
+const DRAWABLES: &str = "ankiquest-ui/src/main/res/drawable-nodpi";
 
 /// WebP quality for most drawables.
 const QUALITY: f32 = 88.0;

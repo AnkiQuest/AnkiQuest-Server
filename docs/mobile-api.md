@@ -8,7 +8,7 @@ these additions preserve bearer authentication and the existing notification arr
 `GET /api/capabilities` needs no sign-in, also on a private site, and may be cached for five minutes (`Cache-Control: max-age=300`). It answers what this server supports, so a client can turn a feature on when the server has it instead of waiting for a deploy:
 
 ```json
-{ "version": 1, "features": ["activity", "app_sign_in", "companion_art", "companion_milestones", "companion_unlocks", "cookie_session", "countdowns", "deck_share", "devices", "global_leaderboard_hide", "goal_backlog_days", "mute", "reactions", "review_offsets", "settings_sync", "share_cards", "share_moments", "share_undo_send", "upload_first", "wins"], "public_url": "https://anki.example.test" }
+{ "version": 1, "features": ["activity", "app_sign_in", "companion_art", "companion_milestones", "companion_unlocks", "cookie_session", "countdowns", "deck_share", "devices", "global_leaderboard_hide", "goal_backlog_days", "group_invites", "messages", "mute", "reactions", "review_ease", "review_offsets", "settings_sync", "share_cards", "share_moments", "share_undo_send", "upload_first", "wins"], "public_url": "https://anki.example.test" }
 ```
 
 `public_url` is the server's main address, without a trailing slash, and is present only when the server has `public_url` configured. A client that saved another address for the same server (an old address that proxies to it) may move to this one: it checks that its saved token works there with one signed-in request that needs it, such as `GET /api/devices/{user}` (the profile also answers without a token), and only then saves the new address and moves anything it keeps per address. Clients only move to an `https` address, keep the saved one when the check fails or they are offline, and ignore the field otherwise.
@@ -26,8 +26,11 @@ these additions preserve bearer authentication and the existing notification arr
 | `devices` | password change and the device list and sign-out (`/api/devices/{user}`, see `docs/server.md`) |
 | `global_leaderboard_hide` | private Global leaderboard hides and undo at `/api/leaderboard/hidden/{viewer}` (below) |
 | `goal_backlog_days` | the `backlog` goal clears the backlog in `value` days, with `since`, `chosen` and `restart` (see [sharing.md](sharing.md)) |
+| `group_invites` | a group's owner invites a player with `POST /api/social/{user}` `{"action": "invite", "group", "user"}`; the invitee answers with `accept_invite` or `decline_invite` (below, friends and groups for apps) |
+| `messages` | sending a friend a message, `POST /api/messages/{user}` (below, messages between friends) |
 | `mute` | muting a person, `POST /api/social/{user}` `{ "action": "mute" \| "unmute", "user" }`; `muted` in the social overview (see [community.md](community.md)) |
 | `reactions` | cheering a friend's share, `POST /api/react/{user}` |
+| `review_ease` | the server stores the button of each review row (`ease`) and fills it in on a resend of a row it has without one (see "review rows"). Clients resend their whole history once to a server that names it, so it can correct the reviews it stored without the button |
 | `review_offsets` | an uploaded review row may carry `offset_west_min`, the device's UTC offset when the review was made, and the server dates time-zone changes from it (see `docs/server.md`, "getting reviews in"). Older servers ignore the field, so sending it is harmless |
 | `settings_sync` | player preferences kept the same on every device, `/api/settings/{user}` (below) |
 | `share_cards` | server-drawn cards and public pages under `/w/` |
@@ -35,6 +38,7 @@ these additions preserve bearer authentication and the existing notification arr
 | `share_notification` | older owned celebrations and recaps without a saved win can use the moment recipient picker |
 | `share_deck_moment` | an explicitly shared deck completion can use the moment recipient picker and be saved as a win |
 | `share_undo_send` | `DELETE /api/share/{user}/{win}?until={undo_until}` takes back the one send that answered that `undo_until` (see [sharing.md](sharing.md)). Older servers ignore `until` and take back every send of that win from the last day |
+| `two_factor` | password sign-in may answer `"second_factor": true` and accepts `code`; `/api/two-factor/{user}` turns two-factor authentication on and off (below, two-factor authentication) |
 | `upload_first` | other players' study waits for the caller's first uploaded review; locked answers carry `X-Ankiquest-Locked` (below, seeing other players) |
 | `wins` | wins, sharing policies and `{ "win", "to" }` shares (see [sharing.md](sharing.md)) |
 
@@ -137,6 +141,27 @@ The synced setting `countdowns` is the player's list of events and exams, sent a
 
 Countdowns are private: only the player's own token reads them, they never appear on profiles, boards or friends' pages, and they are part of the data download. The server does not interpret them. Both clients show the nearest event that is not over ("Spanish exam in 12 days") and, when a deck is linked, the cards a day needed to finish it ("~25 cards a day to finish Spanish › A1 by then"), by the cases in [`tests/fixtures/countdowns.json`](../tests/fixtures/countdowns.json): days counted from the Anki day (the collection's day start hour), the nearest event, the list order, the Anki search for the cards left and the cards a day.
 
+## two-factor authentication
+
+An account with a password can turn on two-factor authentication: a code from an authenticator app (TOTP, RFC 6238: SHA-1, 6 digits, 30-second steps, one step of drift either way) or one of ten single-use recovery codes. It is optional, and it guards password sign-in only: signing in with Google, GitHub or GitLab relies on that provider's own second factor. Device tokens issued before it was turned on keep working.
+
+**Sign-in.** `POST /api/accounts/tokens` and `POST /auth/session` `{"user", "password"}` answer as before for an account without it. For an account with it, a right password without a code answers `401` with `{"error": "Enter the code from your authenticator app.", "second_factor": true}` (`sign_in_second_factor.json`). The client then asks for the code and sends the same request again with `"code"`: six digits, or a recovery code (case, spaces and dashes do not matter). A wrong or reused code answers `401` with `"second_factor": true` and `"error": "That code is not right."`. Each code works once. After five wrong codes in 15 minutes the account answers `429` with `"second_factor": true` for the rest of that time, from any address; the per-address limit on wrong passwords applies as well. A wrong password never says `second_factor`.
+
+Send `code` only after the server asked for it: servers without `two_factor` refuse unknown fields with `400`. Clients that do not know `second_factor` show the `error` message.
+
+**Settings.** With the device token or a member session:
+
+| request | answers |
+|---|---|
+| `GET /api/two-factor/{user}` | `available` (an account with a password), `state` (`off`, `pending`, `on`), `recovery_codes_left` (`two_factor.json`) |
+| `POST /api/two-factor/{user}` `{"action": "begin"}` | the status with `secret` (base32) and `otpauth_uri`; replaces a secret not confirmed yet (`two_factor_begin.json`) |
+| `GET /api/two-factor/{user}/qr.svg` | the pending `otpauth_uri` as a QR code, `image/svg+xml`; `404` when nothing is pending |
+| `POST /api/two-factor/{user}` `{"action": "enable", "password", "code"}` | the status with `recovery_codes`, shown this once; `code` must come from the pending secret (`two_factor_enable.json`) |
+| `POST /api/two-factor/{user}` `{"action": "recovery_codes", "password", "code"}` | the status with ten new `recovery_codes`, replacing the old ones |
+| `POST /api/two-factor/{user}` `{"action": "disable", "password", "code"}` | the status; `code` may be a recovery code (`two_factor_disable.json`) |
+
+A wrong password answers `403` "That password is not right.", a wrong code `403` "That code is not right.", an account without a password `409`. The apps link to Settings on the website to set it up.
+
 ## browser identity
 
 `POST /auth/session` still returns `204` with the `ankiquest_session` cookie. a valid `Authorization: Bearer <member-token>` establishes that member's session. browser JSON `{ "password": "..." }` accepts either the shared site password or a member token and requires `X-Ankiquest-CSRF: 1`. a shared-password session can read shared pages but has no personal permissions. if a secret is both the shared password and a member token, password login remains read-only. a token configured for multiple members cannot implicitly select a browser owner; existing explicit bearer requests retain their previous per-user behavior.
@@ -195,7 +220,7 @@ both timestamp fields are Unix **seconds**; challenge `start_at` and `end_at` re
 
 Own moments wait until studying stops and survive an account switch without replaying dismissed keys. Clients check `kind` as well as `moment` and fold the session recap into the same card. Their topic priority is secured, streak, level, rank, achievement, record, leech, conquered, goal, quest, then session; newer moments come first within a priority. Quiet rows other than the daily secured cue only add to the badge.
 
-counts cover all items within the selected window, independently of pagination, push state, and any Android delivery cursor. `unread_count` counts rows with no read timestamp. `action_count` counts still-pending challenge invitations whose challenge is neither cancelled nor past its deadline. reading an invitation does not accept it. a 30-day view counts its own 30-day window; use the default 90-day view for the full retained inbox. follow `next_before` until null to load more.
+counts cover all items within the selected window, independently of pagination, push state, and any Android delivery cursor. `unread_count` counts rows with no read timestamp. `action_count` counts still-pending challenge invitations whose challenge is neither cancelled nor past its deadline, and unanswered group invitations. reading an invitation does not accept it. a 30-day view counts its own 30-day window; use the default 90-day view for the full retained inbox. follow `next_before` until null to load more.
 
 `attention` contains up to three still-pending invitations independently of the displayed page, so the all-activity view can show them first. `latest_id` is the newest retained inbox ID in the window, independent of filters and pagination; use it as the cutoff for marking everything currently known read. Neither field is a cursor for announcing historical reminders.
 
@@ -211,6 +236,24 @@ new event kinds are `challenge_invite`, `challenge_accepted`, and `challenge_com
 
 repeated successful accept, decline, leave, and creator cancel operations are idempotent. accept retries never reset `joined_at`. accepting or declining an invitation also marks that invitation read. acting as a nonmember is forbidden; all challenge endpoints still require the URL owner's credential. clients should reload challenge details before presenting available actions, since Activity can outlive an invitation, membership, or the challenge deadline.
 
+### the community page
+
+`/community` opens on **Friends**: invitations first, then current goals, with past goals folded away. a new goal opens in a dialog that suggests three study days per person over seven days. **Activity** lists the inbox above, **History** the overview, calendar, trophies, records and year review, and **Reminders** the reminder preferences. a personal target asks each accepted member to reach it alone; a shared total adds up the accepted members' study. only study after accepting counts, and streak freezes are not study days.
+
+apps can link straight to a view. every route also works with `?embed=1` before the hash:
+
+| destination | route |
+|---|---|
+| friends and invitations | `/community#challenges` |
+| one goal | `/community#challenge-<id>` |
+| activity | `/community#activity` |
+| reminder preferences | `/community#reminders` |
+| history overview | `/community#overview` |
+| calendar, trophies, records, year review | `/community#calendar`, `#trophies`, `#records`, `#year` |
+| player profile | `/week#<user>` |
+
+an unknown view opens Friends. a goal the player cannot see, or one that no longer exists, shows a message instead of another player's data. `tests/mobile_web.test.ts` (part of `npm run test:web`) checks these routes, the member session and the goal and Activity flows in a browser against a built server.
+
 ### friend goals for apps
 
 `GET /api/community/challenges/{user}` answers `{ "challenges", "recipients", "weekly_suggestion" }`, newest goal first. `challenges` holds every open goal the player is invited to or has joined, and the latest 100 that are over; a goal the player declined or left is not listed. each goal has `id`, `title`, `kind` (`study_days` or `reviews`), `cooperative`, `creator`, `start_at` and `end_at` (Unix milliseconds), `target`, `progress` (the members' sum), `status`, `weekly`, `started`, `start_when_ready`, and `members`, each with `user`, `display`, `status` (`invited`, `accepted`, `declined` or `left`) and `progress`. a goal's `status` is `active`, `upcoming`, `waiting` (not `started`: it starts once everyone accepts), `complete` (reached, still open until `end_at`), `ended`, `cancelled` (ended early by its creator) or `declined` (a goal waiting for everyone that an invitee declined). an invitation is a goal whose member entry for the player is `invited`. a cooperative goal counts `progress` against `target`, an individual one each accepted member's own. `recipients` are the people the player can invite, as `{ "user", "display" }`. `weekly_suggestion` is null or this week's suggested friend: `week_start`, `expires_at`, `friend`, `target`, `duration_days`, `dismissed` and `challenge_id`, the goal its invitation created.
@@ -219,7 +262,7 @@ repeated successful accept, decline, leave, and creator cancel operations are id
 
 ### friends and groups for apps
 
-`GET /api/social/{user}` answers `{ "friends", "incoming", "outgoing", "muted", "groups", "public" }`. `friends`, `incoming` (requests waiting for the player), `outgoing` (the player's requests waiting for an answer) and `muted` are people as `{ "user", "display" }`, by display name. each group has `id`, `name`, `owner` (whether the player owns it), `invite` (its invite code, only for the owner, otherwise null) and `members`. Anyone may open a public profile, which appears on the global board unless its player opts out. Profiles are public until the player sends `visibility` with `"public": false`. Players with private profiles can opt in to the global leaderboard. a conquest's `label` reaches viewers outside the player's friends and groups only when the player made the profile public themselves (or is a configured player who never chose), since labels written before profiles became public by default were meant for friends. a group's invite link is `/join/{invite}` on the server's site.
+`GET /api/social/{user}` answers `{ "friends", "incoming", "outgoing", "muted", "groups", "public" }`, and `invitations` when the player has any. `friends`, `incoming` (requests waiting for the player), `outgoing` (the player's requests waiting for an answer) and `muted` are people as `{ "user", "display" }`, by display name. each group has `id`, `name`, `owner` (whether the player owns it), `invite` (its invite code, only for the owner, otherwise null), `members` and, for the owner and only when there are some, `invited`: players invited who have not joined, including those who declined, until their invitation expires. `invitations` lists the groups the player is invited to, newest first, each as `{ "group", "name", "members" (the member count), "from" }` with `from` a person; invitations from people the player muted are left out. Anyone may open a public profile, which appears on the global board unless its player opts out. Profiles are public until the player sends `visibility` with `"public": false`. Players with private profiles can opt in to the global leaderboard. a conquest's `label` reaches viewers outside the player's friends and groups only when the player made the profile public themselves (or is a configured player who never chose), since labels written before profiles became public by default were meant for friends. a group's invite link is `/join/{invite}` on the server's site.
 
 `POST /api/social/{user}` takes one `{ "action", ... }` and answers the same object as the `GET`, so a client redraws from the answer:
 
@@ -231,12 +274,23 @@ repeated successful accept, decline, leave, and creator cancel operations are id
 | `create_group` | `name` | 1–40 characters; the player owns the new group |
 | `rename_group` | `group`, `name` | owner only |
 | `new_invite` | `group` | owner only; the old code stops working |
-| `join` | `invite` | the code from a `/join/{invite}` link; joining again is fine |
+| `join` | `invite` | the code from a `/join/{invite}` link; joining again is fine. Answers an invitation to that group too |
+| `invite` | `group`, `user` | owner only, since only the owner holds the invite link; the player must exist, not be a member and have a profile the owner can see. Inviting again while the invitation waits, or before a declined one expires, changes nothing |
+| `accept_invite` | `group` | joins a group the player is invited to, within the same limits as `join` |
+| `decline_invite` | `group` | the invitation leaves the player's `invitations` and stops needing an answer; declining again is fine. The owner is not told: it stays in their `invited` until it expires, and re-inviting does nothing until then |
 | `leave` | `group` | the longest-standing member inherits an owner's group; an empty group is deleted |
 | `remove` | `group`, `member` | owner only, not themselves |
 | `visibility` | `public` | |
 
-a refusal has `{ "error" }` to show: `400` for a group name, `403` for an owner action by someone else, `404` for an unknown player or invite, `409` when the player is in 20 groups, a group has 200 members, 50 requests wait or 500 people are muted. `GET /api/invites/{code}` needs no credential and answers `{ "name", "members" }` (the member count) to show before joining, or `404`. examples: `social.json`, `group_create.json`, `invite.json` and `social_change.json` in [api/examples](api/examples/README.md). friend requests and group joins send no notifications yet.
+a refusal has `{ "error" }` to show: `400` for a group name, `403` for an owner action by someone else, `404` for an unknown player or invite, `404` for an invitation that does not exist any more, `409` when the player is in 20 groups, a group has 200 members, 50 requests or 50 invitations to one group wait, 500 people are muted, or an invited player is already a member. `GET /api/invites/{code}` needs no credential and answers `{ "name", "members" }` (the member count) to show before joining, or `404`. examples: `social.json`, `group_create.json`, `invite.json`, `social_change.json`, `group_invite.json`, `social_invitation.json` and `group_invite_accept.json` in [api/examples](api/examples/README.md). friend requests and group joins send no notifications yet.
+
+An invitation puts a `group_invite` row in the invitee's activity, in the `messages` category, with `sender` (the owner) and `group` (the group's id). Its `action_required` is true, and it counts in `action_count` and `attention`, until the player accepts, declines or joins by link, which also marks it read, or until the group is deleted. Only the row of the current invitation can need an answer; rows of earlier invitations to the same group stay answered. An invitation lasts as long as its row (90 days) from when it was sent, declined or not; once it expires, the owner can invite the player again, which adds a new row. When the invitee muted the owner, the invitation is kept, so the owner sees no difference, but the invitee gets no row and it is not in their `invitations`. Apps without `group_invites` share the `/join/{invite}` link instead.
+
+### messages between friends
+
+`POST /api/messages/{user}` sends a friend a message: `{ "to": "<user>", "message": "<text>" }`, answered with `{ "sent_to": "<display name>" }`. The text is trimmed and is 1 to 200 bytes on one line, the same rule as replies. It reaches the friend's activity as a `message` row, in the `messages` category, with `sender` and the title `💬 <display name>`, is pushed like other rows, and shows in the sender's `GET /api/activity/{user}/sent`. Messages cannot be edited or taken back. Errors: `400` for the text, `401` for someone else's `{user}`, `403` when `to` is not a friend (an accepted friendship; group mates and strangers cannot be messaged), `404` for an unknown player or the player themselves, `429` after 30 messages in 24 hours from one sender. When the recipient muted the sender, the message is not delivered or pushed, but it is stored for the sender: it shows in their sent list (never read) and counts toward the 30, so the sender sees nothing different. Example: `message.json`; `activity_messages.json` shows a message and an invitation in the recipient's activity.
+
+The recipient answers any row with a `sender` with `POST /api/reply/{user}` `{ "notification": <id>, "message": "<text>" }`, answered with `{ "sent_to" }`, once per row: `404` once it is answered or when there is nobody to answer. The answer arrives as a `reply` row with `reply_to` (the row it answers) and can be answered in turn. A reply to a player who muted the replier is not delivered, but it shows in the replier's sent list like any other.
 
 ## sharing a win
 
@@ -354,6 +408,10 @@ the app's native records and study history screens read the same JSON as the web
 `GET /api/records` answers seven boards, in this order: `hour`, `day`, `week`, `month` and `year` (the best rolling hour, 24 hours, 7, 30 and 365 days of XP anyone has had), then `streak` (longest streak) and `days` (days studied). Each is `{ "window", "unit", "holders" }`, `unit` being `xp` or `days`. `holders` are the top three players with anything at all, best first, each with `user`, `display`, `value`, `detail` (the reviews in that window; 0 for `streak` and `days`), `at` and `until` (ms). For a rolling window `at` is its first review and `until` its last; a streak's `at` is when it ended and `days`' when the player first studied, with `until` the same. Optional `scope` and who is included are as for `GET /api/leaderboard`. example: `records.json`.
 
 `GET /api/study/{user}?year=YYYY` is the owner's own study calendar, for the year asked or the player's current one: `{ "year", "years", "days", "last_review_at", "last_received_at", "latest_session" }`. `years` lists every year with history, newest first. `days` has one entry per Anki day from the player's first study day on (days without reviews included, with zeros), each with `date` (`YYYY-MM-DD`, following the player's cutoff), `at` (when that day began, ms), `reviews`, `time_ms`, `xp`, `new_cards`, `streak` (the streak on that day) and `frozen` (a streak freeze covered it), `streak_minutes` (what the day needed) and `state` (the server's verdict, as in the heatmap; see [day verdicts](#day-verdicts)). `last_review_at` is the newest uploaded review (ms) and `last_received_at` when reviews last arrived; either is null before the first upload. `latest_session` is null or `{ "started_at", "ended_at", "reviews", "time_ms", "new_cards" }`. Another player's history is `401` or `403`, a year outside the supported range `400`. example: `study.json`.
+
+## review rows
+
+Each row of `POST /api/reviews/{user}` and `POST /api/preview/{user}` is a revlog row answered with a button (`ease > 0`) and of type below 4: `id`, `cid`, `last_ivl` (`lastIvl`), `ivl`, `time_ms` (`time`), `kind` (`type`) and `ease`, the button pressed (1 Again, 2 Hard, 3 Good, 4 Easy). The server counts a review row as a lapse when `ease` is 1; rows without `ease` fall back to a negative `ivl` (see `docs/server.md`, "conquered cards"). `ease` is optional: older servers ignore it and older clients leave it out, so sending it needs no capability check. A resent row fills in a missing `ease` and never changes a known one. Rows stored before the server kept `ease` have none, so a client resends its whole review history once, in uploads of at most 5000 rows, to a server whose capabilities name `review_ease`, and then remembers that it did.
 
 ## community calendar, reminders and conquered cards
 

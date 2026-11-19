@@ -1217,6 +1217,7 @@ mod tests {
                 cid: i,
                 last_ivl: 30,
                 ivl: None,
+                ease: None,
                 time_ms: 5000,
                 kind: 0,
             })
