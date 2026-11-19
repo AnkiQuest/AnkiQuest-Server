@@ -1652,7 +1652,7 @@ mod tests {
         assert_eq!(first, again);
         assert_eq!(first.as_ptr(), again.as_ptr(), "served from the cache");
         let mut renamed = card();
-        renamed.display = "hill".into();
+        renamed.display = "Aldana".into();
         assert_ne!(
             first.as_ptr(),
             png(renamed, Shape::Wide).await.unwrap().as_ptr()

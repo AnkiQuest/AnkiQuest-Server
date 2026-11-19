@@ -1062,32 +1062,34 @@ mod tests {
     #[test]
     fn a_celebration_is_shared_as_its_win_and_older_rows_as_a_quote() {
         let (mut store, _path) = crate::test_support::temporary_store();
-        let id = win_for(&mut store, "hill");
-        let win = store.notifications("hill", 2_000).unwrap()[0].win.unwrap();
+        let id = win_for(&mut store, "aldanita");
+        let win = store.notifications("aldanita", 2_000).unwrap()[0]
+            .win
+            .unwrap();
         assert!(matches!(
-            notification_win(&store, "hill", id).unwrap(),
+            notification_win(&store, "aldanita", id).unwrap(),
             Some(Notice::Win(found)) if found == win
         ));
         store
             .conn
             .execute("update notifications set win_id = null", [])
             .unwrap();
-        let quoted = quote(&store, "hill", id).unwrap();
+        let quoted = quote(&store, "aldanita", id).unwrap();
         assert_eq!(quoted.topic.as_deref(), Some("streak"));
-        let friends = strings(&["cerro", "aldanita"]);
+        let friends = strings(&["cerro", "hill"]);
         assert_eq!(
-            send(&mut store, "hill", "hill", &friends, &quoted, 3_000).unwrap(),
+            send(&mut store, "aldanita", "Aldana", &friends, &quoted, 3_000).unwrap(),
             2
         );
         assert_eq!(
-            send(&mut store, "hill", "hill", &friends, &quoted, 4_000).unwrap(),
+            send(&mut store, "aldanita", "Aldana", &friends, &quoted, 4_000).unwrap(),
             0,
             "a win reaches each friend once"
         );
         let got = &store.notifications("cerro", 4_000).unwrap()[0];
         assert_eq!(got.kind, "share");
-        assert_eq!(got.sender, "hill");
-        assert_eq!(got.title, "🎉 hill shared a win");
+        assert_eq!(got.sender, "aldanita");
+        assert_eq!(got.title, "🎉 Aldana shared a win");
         assert_eq!(got.body, "Title streak:1:30: “Body”");
         assert_eq!(got.topic.as_deref(), Some("streak"));
     }
@@ -1162,25 +1164,25 @@ mod tests {
         let (mut store, _path) = crate::test_support::temporary_store();
         wins::update_sharing(
             &store.conn,
-            "hill",
+            "aldanita",
             wins::SharingUpdate {
                 policies: Default::default(),
                 daily_cap: Some(1),
             },
         )
         .unwrap();
-        let first = moment(&store, "hill", "level:4");
-        let second = moment(&store, "hill", "achievement:x");
+        let first = moment(&store, "aldanita", "level:4");
+        let second = moment(&store, "aldanita", "achievement:x");
         let both = [
-            wins::win(&store.conn, "hill", first).unwrap(),
-            wins::win(&store.conn, "hill", second).unwrap(),
+            wins::win(&store.conn, "aldanita", first).unwrap(),
+            wins::win(&store.conn, "aldanita", second).unwrap(),
         ];
         let friends = strings(&["cerro"]);
         assert_eq!(
             send_wins(
                 &mut store,
-                "hill",
-                "hill",
+                "aldanita",
+                "Aldana",
                 &friends,
                 &both,
                 Sending::Automatic,
@@ -1192,16 +1194,21 @@ mod tests {
         );
         let got = store.notifications("cerro", 3_000).unwrap();
         assert_eq!(got.len(), 1);
-        assert_eq!(got[0].title, "🎉 hill: 2 wins");
+        assert_eq!(got[0].title, "🎉 Aldana: 2 wins");
         assert_eq!(got[0].body, "Title level:4 · Title achievement:x");
         assert_eq!(got[0].topic.as_deref(), Some("level"));
         assert_eq!(got[0].win, Some(first));
-        let third = [wins::win(&store.conn, "hill", moment(&store, "hill", "level:5")).unwrap()];
+        let third = [wins::win(
+            &store.conn,
+            "aldanita",
+            moment(&store, "aldanita", "level:5"),
+        )
+        .unwrap()];
         assert_eq!(
             send_wins(
                 &mut store,
-                "hill",
-                "hill",
+                "aldanita",
+                "Aldana",
                 &friends,
                 &third,
                 Sending::Automatic,
@@ -1215,8 +1222,8 @@ mod tests {
         assert_eq!(
             send_wins(
                 &mut store,
-                "hill",
-                "hill",
+                "aldanita",
+                "Aldana",
                 &friends,
                 &third,
                 Sending::ByHand(None),
