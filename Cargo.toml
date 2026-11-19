@@ -8,11 +8,12 @@ license = "AGPL-3.0-only"
 repository = "https://github.com/AnkiQuest/AnkiQuest-Server"
 
 [workspace]
-members = [".", "crates/art", "crates/i18n", "crates/i18n-wasm", "crates/xtask"]
+members = [".", "crates/art", "crates/i18n", "crates/i18n-wasm", "crates/rules", "crates/xtask"]
 
 [dependencies]
 ankiquest-art = { path = "crates/art" }
 ankiquest-i18n = { path = "crates/i18n" }
+ankiquest-rules = { path = "crates/rules", features = ["serde"] }
 argon2 = "0.6"
 axum = "0.8"
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
@@ -100,6 +101,16 @@ opt-level = 3
 
 [profile.release]
 panic = "abort"
+
+# The Kotlin and Python binding libraries of crates/rules. Unwinding lets
+# UniFFI turn a panic into an exception instead of ending the app.
+[profile.bindings]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "unwind"
+strip = true
 
 # The translation module for the web pages, built by build.rs.
 [profile.wasm]

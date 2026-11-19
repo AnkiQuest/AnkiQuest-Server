@@ -1299,8 +1299,10 @@ pub fn compute_with_rules(
             freezes = 0;
         }
         let stats = days.get(&day);
-        let needed_ms = i64::from(streak_rule.minutes_at(clock.day_start_ms(day))) * 60_000;
-        let counts = stats.is_some_and(|s| s.time_ms >= needed_ms);
+        let needed_ms =
+            i64::from(streak_rule.minutes_at(clock.day_start_ms(day))) * ankiquest_rules::MINUTE_MS;
+        let counts =
+            stats.is_some_and(|s| ankiquest_rules::meets_minimum(s.reviews, s.time_ms, needed_ms));
         let (year, month_of_year, date) = civil(day);
         if (year, month_of_year) != month {
             month = (year, month_of_year);
@@ -1546,9 +1548,13 @@ pub fn compute_with_rules(
     let today_start = clock.day_start_ms(today);
     let studied_today = days.contains_key(&today);
     let streak_minutes = u64::from(streak_rule.minutes_at(today_start));
-    let today_counts = days
-        .get(&today)
-        .is_some_and(|s| s.time_ms >= streak_minutes as i64 * 60_000);
+    let today_counts = days.get(&today).is_some_and(|s| {
+        ankiquest_rules::meets_minimum(
+            s.reviews,
+            s.time_ms,
+            streak_minutes as i64 * ankiquest_rules::MINUTE_MS,
+        )
+    });
     for window in 0..Records::NAMES.len() {
         let entries = if window == 0 { &reviewed } else { &everything };
         let history_long_enough = entries
