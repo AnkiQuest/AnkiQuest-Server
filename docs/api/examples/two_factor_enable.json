@@ -1,0 +1,17 @@
+{
+  "available": true,
+  "recovery_codes": [
+    "example-recovery-1",
+    "example-recovery-2",
+    "example-recovery-3",
+    "example-recovery-4",
+    "example-recovery-5",
+    "example-recovery-6",
+    "example-recovery-7",
+    "example-recovery-8",
+    "example-recovery-9",
+    "example-recovery-10"
+  ],
+  "recovery_codes_left": 10,
+  "state": "on"
+}

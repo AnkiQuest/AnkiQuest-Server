@@ -49,11 +49,21 @@ signinForm.addEventListener('submit',async function(event){
   event.preventDefault();
   var submit=signinForm.querySelector('button')!,message=document.getElementById('signin-status')!;
   submit.disabled=true;await AnkiQuestI18n.ready;message.textContent=aqText("Signing in…");
-  var password=input(signinForm,'password');
+  var password=input(signinForm,'password'),code=input(signinForm,'code'),codeField=document.getElementById('signin-code-field')!;
+  // The code goes only to a server that asked for it; older servers refuse unknown fields.
+  var body:Record<string,string>={user:input(signinForm,'user').value.trim().toLowerCase(),password:password.value};
+  if(!codeField.hidden&&code.value.trim())body.code=code.value.trim();
   try{
-    var response=await session({user:input(signinForm,'user').value.trim().toLowerCase(),password:password.value});
-    password.value='';
-    if(response.ok){location.replace(destination());return;}
+    var response=await session(body);
+    if(response.ok){password.value='';location.replace(destination());return;}
+    var answer:{second_factor?:boolean}=await response.json().catch(function(){return {};});
+    if(answer.second_factor===true){
+      // The password was right: keep it and ask for the second factor.
+      codeField.hidden=false;code.value='';
+      message.textContent=response.status===429?aqText("Too many wrong codes. Try again in 15 minutes."):body.code?aqText("That code is not right."):aqText("Enter the code from your authenticator app.");
+      submit.disabled=false;code.focus();return;
+    }
+    password.value='';codeField.hidden=true;code.value='';
     message.textContent=response.status===429?aqText("Too many attempts. Wait one minute and try again."):response.status===401?aqText("Username or password not recognized."):aqText("Could not sign in. Please try again.");
   }catch(_){message.textContent=aqText("Could not reach the server. Check your connection and try again.");}
   submit.disabled=false;password.focus();

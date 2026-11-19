@@ -34,6 +34,7 @@ these additions preserve bearer authentication and the existing notification arr
 | `share_notification` | older owned celebrations and recaps without a saved win can use the moment recipient picker |
 | `share_deck_moment` | an explicitly shared deck completion can use the moment recipient picker and be saved as a win |
 | `share_undo_send` | `DELETE /api/share/{user}/{win}?until={undo_until}` takes back the one send that answered that `undo_until` (see [sharing.md](sharing.md)). Older servers ignore `until` and take back every send of that win from the last day |
+| `two_factor` | password sign-in may answer `"second_factor": true` and accepts `code`; `/api/two-factor/{user}` turns two-factor authentication on and off (below, two-factor authentication) |
 | `upload_first` | other players' study waits for the caller's first uploaded review; locked answers carry `X-Ankiquest-Locked` (below, seeing other players) |
 | `wins` | wins, sharing policies and `{ "win", "to" }` shares (see [sharing.md](sharing.md)) |
 
@@ -130,6 +131,27 @@ Clients keep, for each key they have, the time of the last local change (`0` for
 
 **Sync settings** (default on) is a device setting, never synced. While it is off a client neither sends nor applies synced settings; it still records the time of each local change, so turning it on again merges by the same rule. Clients only sync with a server that lists `settings_sync`.
 
+## two-factor authentication
+
+An account with a password can turn on two-factor authentication: a code from an authenticator app (TOTP, RFC 6238: SHA-1, 6 digits, 30-second steps, one step of drift either way) or one of ten single-use recovery codes. It is optional, and it guards password sign-in only: signing in with Google, GitHub or GitLab relies on that provider's own second factor. Device tokens issued before it was turned on keep working.
+
+**Sign-in.** `POST /api/accounts/tokens` and `POST /auth/session` `{"user", "password"}` answer as before for an account without it. For an account with it, a right password without a code answers `401` with `{"error": "Enter the code from your authenticator app.", "second_factor": true}` (`sign_in_second_factor.json`). The client then asks for the code and sends the same request again with `"code"`: six digits, or a recovery code (case, spaces and dashes do not matter). A wrong or reused code answers `401` with `"second_factor": true` and `"error": "That code is not right."`. Each code works once. After five wrong codes in 15 minutes the account answers `429` with `"second_factor": true` for the rest of that time, from any address; the per-address limit on wrong passwords applies as well. A wrong password never says `second_factor`.
+
+Send `code` only after the server asked for it: servers without `two_factor` refuse unknown fields with `400`. Clients that do not know `second_factor` show the `error` message.
+
+**Settings.** With the device token or a member session:
+
+| request | answers |
+|---|---|
+| `GET /api/two-factor/{user}` | `available` (an account with a password), `state` (`off`, `pending`, `on`), `recovery_codes_left` (`two_factor.json`) |
+| `POST /api/two-factor/{user}` `{"action": "begin"}` | the status with `secret` (base32) and `otpauth_uri`; replaces a secret not confirmed yet (`two_factor_begin.json`) |
+| `GET /api/two-factor/{user}/qr.svg` | the pending `otpauth_uri` as a QR code, `image/svg+xml`; `404` when nothing is pending |
+| `POST /api/two-factor/{user}` `{"action": "enable", "password", "code"}` | the status with `recovery_codes`, shown this once; `code` must come from the pending secret (`two_factor_enable.json`) |
+| `POST /api/two-factor/{user}` `{"action": "recovery_codes", "password", "code"}` | the status with ten new `recovery_codes`, replacing the old ones |
+| `POST /api/two-factor/{user}` `{"action": "disable", "password", "code"}` | the status; `code` may be a recovery code (`two_factor_disable.json`) |
+
+A wrong password answers `403` "That password is not right.", a wrong code `403` "That code is not right.", an account without a password `409`. The apps link to Settings on the website to set it up.
+
 ## browser identity
 
 `POST /auth/session` still returns `204` with the `ankiquest_session` cookie. a valid `Authorization: Bearer <member-token>` establishes that member's session. browser JSON `{ "password": "..." }` accepts either the shared site password or a member token and requires `X-Ankiquest-CSRF: 1`. a shared-password session can read shared pages but has no personal permissions. if a secret is both the shared password and a member token, password login remains read-only. a token configured for multiple members cannot implicitly select a browser owner; existing explicit bearer requests retain their previous per-user behavior.
@@ -203,6 +225,24 @@ new event kinds are `challenge_invite`, `challenge_accepted`, and `challenge_com
 `POST /api/community/challenges/{user}` accepts optional `request_id`, an 8–128 character string of ASCII letters, numbers, hyphens, and underscores. new clients generate a fresh UUID for each deliberate creation and reuse it only when retrying that creation. a repeated key with the same normalized title, kind, cooperative flag, target, duration, and recipient set returns the existing challenge list without another challenge or event. reusing it with different data returns `400`. keys are scoped to the creator. older clients may omit the key and retain their original create behavior.
 
 repeated successful accept, decline, leave, and creator cancel operations are idempotent. accept retries never reset `joined_at`. accepting or declining an invitation also marks that invitation read. acting as a nonmember is forbidden; all challenge endpoints still require the URL owner's credential. clients should reload challenge details before presenting available actions, since Activity can outlive an invitation, membership, or the challenge deadline.
+
+### the community page
+
+`/community` opens on **Friends**: invitations first, then current goals, with past goals folded away. a new goal opens in a dialog that suggests three study days per person over seven days. **Activity** lists the inbox above, **History** the overview, calendar, trophies, records and year review, and **Reminders** the reminder preferences. a personal target asks each accepted member to reach it alone; a shared total adds up the accepted members' study. only study after accepting counts, and streak freezes are not study days.
+
+apps can link straight to a view. every route also works with `?embed=1` before the hash:
+
+| destination | route |
+|---|---|
+| friends and invitations | `/community#challenges` |
+| one goal | `/community#challenge-<id>` |
+| activity | `/community#activity` |
+| reminder preferences | `/community#reminders` |
+| history overview | `/community#overview` |
+| calendar, trophies, records, year review | `/community#calendar`, `#trophies`, `#records`, `#year` |
+| player profile | `/week#<user>` |
+
+an unknown view opens Friends. a goal the player cannot see, or one that no longer exists, shows a message instead of another player's data. `tests/mobile_web.test.ts` (part of `npm run test:web`) checks these routes, the member session and the goal and Activity flows in a browser against a built server.
 
 ### friend goals for apps
 

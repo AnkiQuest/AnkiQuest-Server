@@ -4,7 +4,8 @@
 //! The clock is pinned to [`STUDY_TIME`]. Random values are replaced before comparing,
 //! numbered in the order they appear: device tokens by `example-token-N`, win link tokens by
 //! `example-link-N`, device ids by `example-device-N`, group invite codes by
-//! `example-invite-N` and app sign-in tickets by `example-ticket-N`.
+//! `example-invite-N`, app sign-in tickets by `example-ticket-N`, two-factor secrets by `example-secret-N` and
+//! recovery codes by `example-recovery-N`.
 
 use crate::app::App;
 use crate::game::{Clock, Event};
@@ -67,6 +68,31 @@ impl Fixture {
         body: Value,
         headers: &[(&str, &str)],
     ) -> Value {
+        let (status, answer) = self.answer_with(method, uri, token, body, headers).await;
+        assert!(status.is_success(), "{method} {uri}: {status} {answer}");
+        answer
+    }
+
+    /// The status and JSON of a call that may be refused.
+    async fn answer(
+        &self,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+    ) -> (axum::http::StatusCode, Value) {
+        self.answer_with(method, uri, token, body, &[]).await
+    }
+
+    /// [`Self::answer`] with extra request `headers`.
+    async fn answer_with(
+        &self,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+        headers: &[(&str, &str)],
+    ) -> (axum::http::StatusCode, Value) {
         let mut request = Request::builder()
             .method(method)
             .uri(uri)
@@ -86,12 +112,7 @@ impl Fixture {
         let response = crate::test_support::route(&self.app, request.body(body).unwrap()).await;
         let status = response.status();
         let bytes = to_bytes(response.into_body(), 1 << 20).await.unwrap();
-        assert!(
-            status.is_success(),
-            "{method} {uri}: {status} {}",
-            String::from_utf8_lossy(&bytes)
-        );
-        serde_json::from_slice(&bytes).unwrap()
+        (status, serde_json::from_slice(&bytes).unwrap())
     }
 
     fn reviews(&self, count: i64) -> Value {
@@ -678,6 +699,57 @@ async fn examples_match_the_handlers() {
     let ticket = browser["url"].as_str().unwrap().split("ticket=").nth(1);
     f.keep_secret(&Value::from(ticket.unwrap()), "example-ticket");
     examples.push(("sign_in_browser", browser));
+
+    // Ana turns two-factor on, signs in with a code, then turns it off with a recovery code.
+    examples.push((
+        "two_factor",
+        f.call("GET", "/api/two-factor/ana", Some(&ana), Value::Null)
+            .await,
+    ));
+    let begun = f
+        .call(
+            "POST",
+            "/api/two-factor/ana",
+            Some(&ana),
+            json!({"action": "begin"}),
+        )
+        .await;
+    let secret = begun["secret"].as_str().unwrap().to_string();
+    f.keep_secret(&begun["secret"], "example-secret");
+    examples.push(("two_factor_begin", begun));
+    let enabled = f
+        .call(
+            "POST",
+            "/api/two-factor/ana",
+            Some(&ana),
+            json!({"action": "enable", "password": "an even longer pw", "code": crate::two_factor::code_at(&secret, STUDY_TIME)}),
+        )
+        .await;
+    for code in enabled["recovery_codes"].as_array().unwrap() {
+        f.keep_secret(code, "example-recovery");
+    }
+    let recovery = enabled["recovery_codes"][0].as_str().unwrap().to_string();
+    examples.push(("two_factor_enable", enabled));
+    let (status, asked) = f
+        .answer(
+            "POST",
+            "/api/accounts/tokens",
+            None,
+            json!({"user": "ana", "password": "an even longer pw", "device": "Pixel 9"}),
+        )
+        .await;
+    assert_eq!(status, axum::http::StatusCode::UNAUTHORIZED, "{asked}");
+    examples.push(("sign_in_second_factor", asked));
+    examples.push((
+        "two_factor_disable",
+        f.call(
+            "POST",
+            "/api/two-factor/ana",
+            Some(&ana),
+            json!({"action": "disable", "password": "an even longer pw", "code": recovery}),
+        )
+        .await,
+    ));
 
     // Community reminders, the competition calendar and a conquered card, which the app's own
     // screens read. hill keeps the defaults until saving his choice.

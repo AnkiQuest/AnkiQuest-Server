@@ -34,6 +34,8 @@ const EXPORT: &[(&str, &str)] = &[
     ("devices", "select t.device, t.created_at, u.last_used_at from account_tokens t
          left join account_token_uses u on u.token_hash = t.token_hash where t.user = ?1"),
     ("sign_in_links", "select provider, subject, created_at from sign_in_links where user = ?1"),
+    // Whether two-factor is on, not its secret: a download should not be a way to copy it.
+    ("two_factor", "select state, updated_at from two_factor where user = ?1"),
     ("visibility", "select public from visibility where user = ?1"),
     ("reviews", "select id, cid, last_ivl, ivl, time_ms, kind from reviews where user = ?1 order by id"),
     ("anki_day", "select offset_west_min, rollover_hour from clocks where user = ?1"),
@@ -104,6 +106,10 @@ const NOT_EXPORTED: &[(&str, &str)] = &[
         "a queue the server empties within a minute",
     ),
     ("win_auto_queue", "a queue the server empties within a tick"),
+    (
+        "two_factor_recovery",
+        "hashes of single-use recovery codes, which cannot be read back",
+    ),
     (
         "sync_signatures",
         "file times and sizes of the sync server's copy, to skip unchanged imports",
@@ -176,6 +182,8 @@ const OWNED: &[(&str, &str)] = &[
     ("freeze_grants", "user = ?1"),
     ("freeze_grant_reloads", "user = ?1"),
     ("sign_in_links", "user = ?1"),
+    ("two_factor", "user = ?1"),
+    ("two_factor_recovery", "user = ?1"),
     (
         "win_auto_queue",
         "win in (select id from wins where user = ?1)",
@@ -257,6 +265,8 @@ pub(crate) const NAMED: &[(&str, &str)] = &[
     ("subscription_baselines", "sender"),
     ("sync_signatures", "user"),
     ("synced_settings", "user"),
+    ("two_factor", "user"),
+    ("two_factor_recovery", "user"),
     ("unsubscribed_decks", "recipient"),
     ("unsubscribed_decks", "sender"),
     ("visibility", "user"),
@@ -327,6 +337,9 @@ const NOT_NAMES: &[&str] = &[
     "sync_signatures.files",
     "synced_settings.key",
     "synced_settings.value",
+    "two_factor.secret",
+    "two_factor.state",
+    "two_factor_recovery.code_hash",
     "unsubscribed_decks.deck_id",
     "wins.art",
     "wins.body",

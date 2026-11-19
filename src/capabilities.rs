@@ -35,6 +35,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "share_place",
     "share_undo_send",
     crate::reciprocity::FEATURE,
+    crate::two_factor::FEATURE,
     "wins",
 ];
 
