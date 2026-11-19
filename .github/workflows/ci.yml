@@ -119,8 +119,9 @@ jobs:
           bash .github/scripts/ubuntu-archive.sh
           npm ci && npx playwright install --with-deps chromium
 
+      # The pages load the i18n module built for wasm.
       - name: Regenerate
-        run: npm run screenshots
+        run: rustup target add wasm32-unknown-unknown && npm run screenshots
 
       - name: Compare with the committed images
         run: git diff --exit-code --stat -- docs/screenshots/web docs/graphics
