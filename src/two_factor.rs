@@ -694,6 +694,7 @@ mod tests {
         crate::app::fix_now_ms(Some(START_MS));
         app_with(json!({
             "registration": true,
+            "configured_tokens": "enabled",
             "users": {"alice": {"token": "alice-token"}}
         }))
     }

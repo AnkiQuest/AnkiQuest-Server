@@ -302,6 +302,8 @@ test('logout clears the native account even if the access refresh throws', async
   });
   await view.locator('[data-disconnect]').click();
   await view.locator('[data-connect]').waitFor();
+  // The lock event shows Connect before disconnect's catch clears the native account.
+  await page.waitForFunction(() => window.ankiquestSession === undefined);
   assert.equal(control.cookieUser, null);
   assert.equal(await page.evaluate(() => window.ankiquestSession), undefined);
 });
