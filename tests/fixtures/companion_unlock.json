@@ -3,7 +3,7 @@
   "companions": [
     {"companion": "ankilope", "kind": "level", "goal": 30, "secret": false, "status": "live"},
     {"companion": "cow", "kind": "study_hours", "goal": 10, "secret": false, "status": "live"},
-    {"companion": "anki_tan", "kind": "streak", "goal": 66, "secret": false, "status": "planned"},
+    {"companion": "anki_tan", "kind": "streak", "goal": 66, "secret": false, "status": "live"},
     {"companion": "anki_tan_chibi", "kind": "taps", "goal": 9, "requires": "anki_tan", "secret": true, "status": "planned"},
     {"companion": "leech_tan", "kind": "leeches_tamed", "goal": 3, "secret": true, "status": "planned"}
   ],
