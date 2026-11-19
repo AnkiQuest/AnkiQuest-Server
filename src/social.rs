@@ -1921,6 +1921,117 @@ mod tests {
         cleanup(app, path);
     }
 
+    /// Bobby's group invitation rows, newest first, with whether each needs an answer, and
+    /// his `action_count`.
+    async fn invite_actions(app: &Arc<App>, token: &str) -> (Vec<bool>, u64) {
+        let (_, activity) = call(
+            app,
+            "GET",
+            "/api/activity/bobby",
+            token,
+            serde_json::Value::Null,
+        )
+        .await;
+        let actions = activity["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["kind"] == "group_invite")
+            .map(|row| row["action_required"].as_bool().unwrap())
+            .collect();
+        (actions, activity["action_count"].as_u64().unwrap())
+    }
+
+    #[tokio::test]
+    async fn answered_invitations_stay_answered_after_reinviting() {
+        let (app, path, ana, bo, _, group) = club().await;
+        let invite = || {
+            let (app, ana) = (app.clone(), ana.clone());
+            async move {
+                act(
+                    &app,
+                    "ana",
+                    &ana,
+                    serde_json::json!({"action": "invite", "group": group, "user": "bobby"}),
+                )
+                .await
+            }
+        };
+        let answer = |action: &'static str| {
+            let (app, bo) = (app.clone(), bo.clone());
+            async move {
+                act(
+                    &app,
+                    "bobby",
+                    &bo,
+                    serde_json::json!({"action": action, "group": group}),
+                )
+                .await
+                .0
+            }
+        };
+
+        // Declined: re-inviting during the invitation's lifetime changes nothing for anyone,
+        // and Ana still sees Bobby as invited, so she cannot tell he declined.
+        assert_eq!(invite().await.0, StatusCode::OK);
+        assert_eq!(answer("decline_invite").await, StatusCode::OK);
+        let (status, overview) = invite().await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(overview["groups"][0]["invited"][0]["user"], "bobby");
+        assert_eq!(invite_actions(&app, &bo).await, (vec![false], 0));
+        let (_, mine) = call(
+            &app,
+            "GET",
+            "/api/social/bobby",
+            &bo,
+            serde_json::Value::Null,
+        )
+        .await;
+        assert!(mine.get("invitations").is_none());
+        assert_eq!(answer("accept_invite").await, StatusCode::NOT_FOUND);
+
+        // Once the declined invitation has expired, a new one needs an answer; the old row does not.
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .execute(
+                "update group_invitations set created_at = created_at - ?1",
+                [INVITATION_AGE_MS + 1],
+            )
+            .unwrap();
+        assert_eq!(invite().await.0, StatusCode::OK);
+        assert_eq!(invite_actions(&app, &bo).await, (vec![true, false], 1));
+
+        // Accepted, left, invited again: only the newest row needs an answer.
+        assert_eq!(answer("accept_invite").await, StatusCode::OK);
+        assert_eq!(invite_actions(&app, &bo).await, (vec![false, false], 0));
+        let (status, _) = act(
+            &app,
+            "bobby",
+            &bo,
+            serde_json::json!({"action": "leave", "group": group}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(invite().await.0, StatusCode::OK);
+        assert_eq!(
+            invite_actions(&app, &bo).await,
+            (vec![true, false, false], 1)
+        );
+        let (status, needs) = call(
+            &app,
+            "GET",
+            "/api/activity/bobby?category=needs_action",
+            &bo,
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(needs["items"].as_array().unwrap().len(), 1);
+        cleanup(app, path);
+    }
+
     #[tokio::test]
     async fn a_muted_owner_s_invitation_is_not_delivered() {
         let (app, path, ana, bo, _, group) = club().await;
