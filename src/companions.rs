@@ -751,6 +751,8 @@ pub async fn add_unlock(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::companions;
+    use crate::test_support::*;
     use crate::test_support::{call, cleanup, fixture};
     use serde_json::{Value, json};
 
@@ -1508,6 +1510,68 @@ mod tests {
         assert_eq!(other.0, StatusCode::UNAUTHORIZED);
         let other = call(&app, "POST", unlocks, "cerro-secret", ask("cow")).await;
         assert_eq!(other.0, StatusCode::UNAUTHORIZED);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn companion_choice_is_private_validated_and_independent_for_each_player() {
+        let (app, path) = fixture();
+        let get = |user: &str, token: &str| {
+            companions::get(State(app.clone()), UrlPath(user.into()), headers(token))
+        };
+        assert_eq!(get("cerro", "cerro").await.unwrap().0.companion, "aki");
+        assert_eq!(
+            get("cerro", "hill").await.err(),
+            Some(StatusCode::UNAUTHORIZED)
+        );
+        assert_eq!(
+            companions::set(
+                State(app.clone()),
+                UrlPath("cerro".into()),
+                headers("cerro"),
+                Json(companions::Preference {
+                    companion: "unknown".into()
+                })
+            )
+            .await
+            .err(),
+            Some(StatusCode::BAD_REQUEST),
+        );
+        assert_eq!(
+            companions::set(
+                State(app.clone()),
+                UrlPath("cerro".into()),
+                headers("hill"),
+                Json(companions::Preference {
+                    companion: "none".into()
+                })
+            )
+            .await
+            .err(),
+            Some(StatusCode::UNAUTHORIZED),
+        );
+        let _ = companions::set(
+            State(app.clone()),
+            UrlPath("cerro".into()),
+            headers("cerro"),
+            Json(companions::Preference {
+                companion: "ankilope".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        let _ = companions::set(
+            State(app.clone()),
+            UrlPath("hill".into()),
+            headers("hill"),
+            Json(companions::Preference {
+                companion: "none".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(get("cerro", "cerro").await.unwrap().0.companion, "ankilope");
+        assert_eq!(get("hill", "hill").await.unwrap().0.companion, "none");
         cleanup(app, path);
     }
 }

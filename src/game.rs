@@ -6,13 +6,33 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+#[cfg(test)]
+mod fixtures;
+mod streak;
+mod week;
+mod xp;
+
+use streak::streak_milestone;
+pub use streak::{
+    DayState, FreezePolicy, FreezePreference, MAX_FREEZES, PlayerStreakChange, StreakChange,
+    StreakRule, StreakState, set_streak_rule, streak_rule_for, streak_rule_version,
+};
+use week::is_weekend;
+pub(crate) use week::monday_of;
+#[cfg(test)]
+pub(crate) use week::weekly_fixture;
+pub use week::{ClosingWeek, NextWeek, OwnWeek, Week};
+use xp::review_base_xp_with;
+pub use xp::{ReviewWeighting, level_for, review_weighting, set_review_weighting};
+
 pub(crate) const SESSION_GAP_MS: i64 = 300_000;
 /// Milliseconds in an hour.
 pub const HOUR_MS: i64 = 3_600_000;
 /// Milliseconds in a UTC day.
 pub const DAY_MS: i64 = 86_400_000;
 const MATURE_IVL: i64 = 21;
-pub const MAX_FREEZES: u32 = 3;
+/// The revlog `ease` of the Again button.
+const AGAIN: u8 = 1;
 const QUEST_XP: u64 = 50;
 const ALL_QUESTS_XP: u64 = 100;
 const RECENT_DAYS: usize = 14;
@@ -44,140 +64,10 @@ pub struct Review {
     pub ivl: Option<i64>,
     pub time_ms: i64,
     pub kind: u8,
-}
-
-/// Preference changes ordered by time, retaining save order for equal timestamps.
-/// Replaying them with reviews keeps later toggles from changing past protection.
-#[derive(Clone, Debug, PartialEq)]
-pub struct FreezePreference {
-    pub at: i64,
-    pub enabled: bool,
-}
-
-/// From `at` on, a day needs `minutes` of review to count toward the streak.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct StreakChange {
-    pub at: i64,
-    pub minutes: u32,
-}
-
-/// The review minutes a day needs to keep the streak, as the server's
-/// `streak_minutes` setting changed over time, oldest first. A day follows the
-/// value in force when it began, so a change never rewrites a day that already
-/// started. Before the first change any review counts.
-///
-/// `players` holds an admin's per-player overrides, oldest first for each
-/// player. `None` hands the player back to the server's value. They follow the
-/// same rule: a change applies from the player's next day on.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct StreakRule {
-    pub changes: Vec<StreakChange>,
-    pub players: BTreeMap<String, Vec<PlayerStreakChange>>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PlayerStreakChange {
-    pub at: i64,
-    pub minutes: Option<u32>,
-}
-
-impl StreakRule {
-    pub fn minutes_at(&self, at: i64) -> u32 {
-        let end = self.changes.partition_point(|change| change.at <= at);
-        if end > 0 {
-            self.changes[end - 1].minutes
-        } else {
-            0
-        }
-    }
-
-    /// The rule one player follows: the server's changes with that player's
-    /// overrides on top, as a plain list of changes.
-    pub fn for_player(&self, user: &str) -> StreakRule {
-        let Some(own) = self.players.get(user).filter(|own| !own.is_empty()) else {
-            return StreakRule {
-                changes: self.changes.clone(),
-                players: BTreeMap::new(),
-            };
-        };
-        let mut times: Vec<i64> = self
-            .changes
-            .iter()
-            .map(|change| change.at)
-            .chain(own.iter().map(|change| change.at))
-            .collect();
-        times.sort_unstable();
-        times.dedup();
-        let changes = times
-            .into_iter()
-            .map(|at| {
-                let end = own.partition_point(|change| change.at <= at);
-                let minutes = own[..end]
-                    .last()
-                    .and_then(|change| change.minutes)
-                    .unwrap_or_else(|| self.minutes_at(at));
-                StreakChange { at, minutes }
-            })
-            .collect();
-        StreakRule {
-            changes,
-            players: BTreeMap::new(),
-        }
-    }
-}
-
-static STREAK_RULE: RwLock<StreakRule> = RwLock::new(StreakRule {
-    changes: Vec::new(),
-    players: BTreeMap::new(),
-});
-static STREAK_RULE_VERSION: AtomicU64 = AtomicU64::new(0);
-
-/// Sets the server's streak rule. Profiles are computed on demand, so they all
-/// follow it from the next request on.
-pub fn set_streak_rule(rule: StreakRule) {
-    let mut current = STREAK_RULE.write().unwrap_or_else(|e| e.into_inner());
-    if *current != rule {
-        *current = rule;
-        STREAK_RULE_VERSION.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-/// The rule `user` follows, with any per-player override applied.
-pub fn streak_rule_for(user: &str) -> StreakRule {
-    STREAK_RULE
-        .read()
-        .unwrap_or_else(|e| e.into_inner())
-        .for_player(user)
-}
-
-/// Changes whenever [`set_streak_rule`] changes the rule, so cached profiles know they are stale.
-pub fn streak_rule_version() -> u64 {
-    STREAK_RULE_VERSION.load(Ordering::Relaxed)
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct FreezePolicy {
-    /// First migration time for an existing database; earlier Anki days retain
-    /// their old automatic protection. New databases have no legacy period.
-    pub legacy_until: Option<i64>,
-    /// Saved rollout time: changing the default must not rewrite earlier rewards.
-    /// An unrestricted default policy enables protection throughout its history.
-    pub default_enabled_from: Option<i64>,
-    pub preferences: Vec<FreezePreference>,
-    /// Days an admin protected by hand, as `YYYY-MM-DD` on the player's clock.
-    /// They keep the streak like a spent freeze but leave the bank alone.
-    pub granted: BTreeSet<String>,
-}
-
-impl FreezePolicy {
-    pub fn enabled_at(&self, at: i64) -> bool {
-        let end = self.preferences.partition_point(|change| change.at <= at);
-        if end > 0 {
-            self.preferences[end - 1].enabled
-        } else {
-            self.default_enabled_from.is_none_or(|start| at >= start)
-        }
-    }
+    /// The button pressed, from the revlog: 1 Again, 2 Hard, 3 Good, 4 Easy.
+    /// Clients that predate it leave it out.
+    #[serde(default)]
+    pub ease: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
@@ -339,87 +229,6 @@ impl<'a> DayWalk<'a> {
     /// The day `ms` falls in, without advancing the walk.
     fn peek(&self, ms: i64) -> i64 {
         self.clock.day(ms).max(self.floor)
-    }
-}
-
-/// The leaderboard week shared by every player: Monday to Sunday in one time zone,
-/// turning over at the same hour for everyone. The default board, [`Week::BOARD`], switches at
-/// Monday 00:00 in UTC-12, the last time zone to reach Monday, which is Monday 12:00 UTC.
-/// A player's own Anki days count toward the week of their own date; see [`monday_of`].
-#[derive(Clone, Copy, Debug)]
-pub struct Week {
-    pub tz: Tz,
-    pub rollover_hour: u32,
-}
-
-/// The week most tests are written against: UTC with a 04:00 rollover.
-#[cfg(test)]
-impl Default for Week {
-    fn default() -> Self {
-        Self {
-            tz: Tz::UTC,
-            rollover_hour: 4,
-        }
-    }
-}
-
-impl Week {
-    /// The UTC hour on Mondays at which the default board switches weeks.
-    pub const RESET_HOUR: u32 = 12;
-
-    /// The default board: Monday 12:00 UTC, which is Monday 00:00 in UTC-12.
-    pub const BOARD: Self = Self {
-        tz: Tz::UTC,
-        rollover_hour: Self::RESET_HOUR,
-    };
-
-    /// The common competition date, independent of any player's Anki clock.
-    pub fn competition_date(&self, ms: i64) -> NaiveDate {
-        self.shifted(ms).date()
-    }
-
-    /// Resolve a calendar rollover in the configured time zone. On a spring
-    /// daylight-saving gap, use the first valid local minute after the gap;
-    /// on a repeated fall-back hour, use its first occurrence.
-    pub fn boundary_ms(&self, date: NaiveDate) -> i64 {
-        let local = date.and_hms_opt(self.rollover_hour.min(23), 0, 0).unwrap();
-        for minute in 0..=180 {
-            if let Some(at) = self
-                .tz
-                .from_local_datetime(&(local + Duration::minutes(minute)))
-                .earliest()
-            {
-                return at.timestamp_millis();
-            }
-        }
-        local.and_utc().timestamp_millis()
-    }
-
-    fn shifted(&self, ms: i64) -> NaiveDateTime {
-        DateTime::from_timestamp_millis(ms)
-            .unwrap_or_default()
-            .with_timezone(&self.tz)
-            .naive_local()
-            - Duration::hours(i64::from(self.rollover_hour))
-    }
-
-    /// The Monday of the week the board shows at `ms`, as a day number like [`Clock::day`].
-    fn monday(&self, ms: i64) -> i64 {
-        let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
-        monday_of((self.shifted(ms).date() - epoch).num_days())
-    }
-
-    /// When the week containing `ms` began, in milliseconds since the epoch.
-    pub fn start_of(&self, ms: i64) -> i64 {
-        let date = self.shifted(ms).date();
-        self.boundary_ms(date - Duration::days(i64::from(date.weekday().num_days_from_monday())))
-    }
-
-    /// When the week containing `ms` ends, in milliseconds since the epoch.
-    pub fn end_after(&self, ms: i64) -> i64 {
-        let date = self.shifted(ms).date();
-        let monday = date + Duration::days(7 - i64::from(date.weekday().num_days_from_monday()));
-        self.boundary_ms(monday)
     }
 }
 
@@ -864,43 +673,6 @@ pub struct HeatCell {
     pub state: DayState,
 }
 
-/// The server's verdict on one Anki day. Clients colour and word days by it instead of
-/// judging the reviews themselves, so every screen says the same of a day.
-#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum DayState {
-    /// The day reached the streak minimum and counts toward the streak.
-    Met,
-    /// Reviews short of the minimum. Today stays short until it is met or ends.
-    Short,
-    /// A freeze or an admin's grant kept the streak through the day, reviewed or not.
-    Frozen,
-    /// Moving the clock east stepped over the day, so nobody could study in it. It keeps
-    /// the streak like a frozen day.
-    Skipped,
-    /// No reviews, and nothing kept the streak.
-    None,
-}
-
-impl DayState {
-    /// The verdict on a day with `reviews` taking `time_ms`, which needed `needed_ms` to
-    /// count, and was `frozen` (or `skipped`) after it ended. A covered day reads as
-    /// covered even with reviews: it did not count on its own.
-    pub fn of(reviews: u64, time_ms: i64, needed_ms: i64, frozen: bool, skipped: bool) -> Self {
-        if reviews > 0 && time_ms >= needed_ms {
-            DayState::Met
-        } else if skipped && frozen {
-            DayState::Skipped
-        } else if frozen {
-            DayState::Frozen
-        } else if reviews > 0 {
-            DayState::Short
-        } else {
-            DayState::None
-        }
-    }
-}
-
 /// One encouraging message, with the key that keeps it to once a day.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Nudge {
@@ -1065,12 +837,6 @@ fn timeline(
     entries
 }
 
-/// Streak lengths worth a message of their own, beyond any streak achievement.
-fn streak_milestone(streak: u64) -> bool {
-    matches!(streak, 7 | 30 | 50 | 100 | 200 | 365 | 500)
-        || (streak > 365 && streak.is_multiple_of(365))
-}
-
 /// XP earned in each leaderboard period. The hour counts review XP only, without
 /// the quest, achievement and streak bonuses that land on a whole Anki day.
 #[derive(Serialize, Clone, Debug, Default)]
@@ -1165,14 +931,6 @@ pub struct HistoryDay {
     pub state: DayState,
 }
 
-#[derive(Serialize, Clone, Copy, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum StreakState {
-    Studied,
-    Pending,
-    Protected,
-}
-
 #[derive(Serialize, Clone, Debug)]
 pub struct Profile {
     pub user: String,
@@ -1228,56 +986,6 @@ impl Profile {
     }
 }
 
-/// An Anki day counts toward the week its own date is in, on the player's clock, but the
-/// board switches weeks for everyone at one instant. Around the switch a player's current
-/// day can count toward the week before the board's or the week after it. Serialized as
-/// `closing_week` or `next_week`.
-#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OwnWeek {
-    /// A Sunday still running after the switch (UTC-12 with a 04:00 rollover).
-    #[serde(rename = "closing_week")]
-    Closing(ClosingWeek),
-    /// A Monday that began before the switch (Berlin on Monday morning).
-    #[serde(rename = "next_week")]
-    Next(NextWeek),
-}
-
-/// The week the board has just left, still counting the player's current day while
-/// `week_xp` already shows the new one.
-#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ClosingWeek {
-    /// XP that counts toward the closing week, today's included.
-    pub xp: u64,
-    /// When it closes for this player: the start of their own Monday (ms).
-    pub ends_at: i64,
-}
-
-/// The week after the board's, which the player's current day already counts toward.
-#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct NextWeek {
-    /// XP that counts toward the next week, today's included.
-    pub xp: u64,
-    /// When the board switches to it (ms).
-    pub starts_at: i64,
-}
-
-pub fn level_need(level: u64) -> u64 {
-    ((level as f64).powf(1.5) * 10.0).round() as u64 * 10
-}
-
-pub fn level_for(xp: u64) -> (u64, u64, u64) {
-    let mut level = 1;
-    let mut rest = xp;
-    loop {
-        let need = level_need(level);
-        if rest < need {
-            return (level, rest, need);
-        }
-        rest -= need;
-        level += 1;
-    }
-}
-
 pub fn date_string(day: i64) -> String {
     let (y, m, d) = civil(day);
     format!("{y:04}-{m:02}-{d:02}")
@@ -1294,15 +1002,6 @@ fn civil(day: i64) -> (i64, i64, i64) {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = yoe + era * 400 + i64::from(m <= 2);
     (y, m, d)
-}
-
-/// The Monday of the week `day` is in, as a day number. Day 0, 1970-01-01, was a Thursday.
-pub(crate) fn monday_of(day: i64) -> i64 {
-    day - (day + 3).rem_euclid(7)
-}
-
-fn is_weekend(day: i64) -> bool {
-    (day + 3).rem_euclid(7) >= 5
 }
 
 fn mix(mut x: u64) -> u64 {
@@ -1378,53 +1077,6 @@ fn gen_quests(seed: u64, day: i64, recent: &VecDeque<DayStats>) -> Vec<Quest> {
         quests.push(pool.swap_remove(i));
     }
     quests
-}
-
-/// How review XP is weighted, chosen once per server with `review_weighting`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ReviewWeighting {
-    /// Every answer earns its full type rate; learning and relearning steps are 6 XP.
-    #[default]
-    Flat,
-    /// Learning steps are 9 XP, and answering the same card again on the same day
-    /// is worth half as much each time.
-    Diminishing,
-}
-
-static DIMINISHING: AtomicBool = AtomicBool::new(false);
-
-/// Sets the server's review weighting. XP is computed from history on demand,
-/// so every profile follows a change from the next request on.
-pub fn set_review_weighting(weighting: ReviewWeighting) {
-    DIMINISHING.store(weighting == ReviewWeighting::Diminishing, Ordering::Relaxed);
-}
-
-pub fn review_weighting() -> ReviewWeighting {
-    if DIMINISHING.load(Ordering::Relaxed) {
-        ReviewWeighting::Diminishing
-    } else {
-        ReviewWeighting::Flat
-    }
-}
-
-#[cfg(test)]
-fn review_base_xp(r: &Review) -> f64 {
-    review_base_xp_with(r, ReviewWeighting::Flat)
-}
-
-fn review_base_xp_with(r: &Review, weighting: ReviewWeighting) -> f64 {
-    let base = match (r.kind, weighting) {
-        (1, _) => 10.0,
-        (0, ReviewWeighting::Diminishing) => 9.0,
-        (0 | 2, _) => 6.0,
-        _ => 2.0,
-    };
-    if r.last_ivl >= MATURE_IVL {
-        base + 5.0
-    } else {
-        base
-    }
 }
 
 #[cfg(test)]
@@ -1647,8 +1299,10 @@ pub fn compute_with_rules(
             freezes = 0;
         }
         let stats = days.get(&day);
-        let needed_ms = i64::from(streak_rule.minutes_at(clock.day_start_ms(day))) * 60_000;
-        let counts = stats.is_some_and(|s| s.time_ms >= needed_ms);
+        let needed_ms =
+            i64::from(streak_rule.minutes_at(clock.day_start_ms(day))) * ankiquest_rules::MINUTE_MS;
+        let counts =
+            stats.is_some_and(|s| ankiquest_rules::meets_minimum(s.reviews, s.time_ms, needed_ms));
         let (year, month_of_year, date) = civil(day);
         if (year, month_of_year) != month {
             month = (year, month_of_year);
@@ -1894,9 +1548,13 @@ pub fn compute_with_rules(
     let today_start = clock.day_start_ms(today);
     let studied_today = days.contains_key(&today);
     let streak_minutes = u64::from(streak_rule.minutes_at(today_start));
-    let today_counts = days
-        .get(&today)
-        .is_some_and(|s| s.time_ms >= streak_minutes as i64 * 60_000);
+    let today_counts = days.get(&today).is_some_and(|s| {
+        ankiquest_rules::meets_minimum(
+            s.reviews,
+            s.time_ms,
+            streak_minutes as i64 * ankiquest_rules::MINUTE_MS,
+        )
+    });
     for window in 0..Records::NAMES.len() {
         let entries = if window == 0 { &reviewed } else { &everything };
         let history_long_enough = entries
@@ -2106,11 +1764,13 @@ pub struct Conquest {
 
 /// Hard cards learned at last, oldest first.
 ///
-/// A lapse is a review answered into relearning: a negative new interval, or, from
-/// clients that do not send it, a relearning step right after the review. A card is
+/// A lapse is a review answered Again. From clients that do not send the button, it is a
+/// review answered into relearning: a negative new interval, or, from clients that do not
+/// send that either, a relearning step right after the review. A card is
 /// conquered when an answer gives it a mature interval after its latest lapse; without
 /// the new interval, when a review finds it after a mature interval and it is not failed.
-/// Lapses without relearning steps cannot be told from a pass, so they go uncounted.
+/// Without the button, lapses without relearning steps cannot be told from a pass, so they
+/// go uncounted, and forks that log intraday review intervals count their passes as lapses.
 pub fn conquests(reviews: &[Review], now_ms: i64) -> Vec<Conquest> {
     let mut cards: HashMap<i64, Vec<&Review>> = HashMap::new();
     for r in reviews {
@@ -2123,9 +1783,10 @@ pub fn conquests(reviews: &[Review], now_ms: i64) -> Vec<Conquest> {
         for (i, r) in rows.iter().enumerate() {
             let next = rows.get(i + 1);
             let failed = r.kind == 1
-                && match r.ivl {
-                    Some(ivl) => ivl < 0,
-                    None => next.is_some_and(|n| n.kind == 2),
+                && match (r.ease, r.ivl) {
+                    (Some(ease), _) => ease == AGAIN,
+                    (None, Some(ivl)) => ivl < 0,
+                    (None, None) => next.is_some_and(|n| n.kind == 2),
                 };
             if failed {
                 lapses += 1;
@@ -2186,30 +1847,8 @@ pub(crate) fn conquest_event(c: &Conquest) -> Event {
 
 #[cfg(test)]
 mod tests {
+    use super::fixtures::*;
     use super::*;
-
-    const NOON: i64 = 12 * 3_600_000;
-
-    /// One card's answers a day apart: (kind, last_ivl, ivl).
-    fn card(cid: i64, answers: &[(u8, i64, Option<i64>)]) -> Vec<Review> {
-        answers
-            .iter()
-            .enumerate()
-            .map(|(i, &(kind, last_ivl, ivl))| Review {
-                id: (cid * 1000 + i as i64) * DAY_MS,
-                cid,
-                last_ivl,
-                ivl,
-                time_ms: 5000,
-                kind,
-            })
-            .collect()
-    }
-
-    /// A review failed into relearning, then the relearning step.
-    fn lapse(last_ivl: i64, ivl: Option<i64>) -> [(u8, i64, Option<i64>); 2] {
-        [(1, last_ivl, ivl.map(|_| -600)), (2, -600, ivl.map(|_| 1))]
-    }
 
     #[test]
     fn a_card_forgotten_four_times_is_conquered_when_it_earns_a_mature_interval() {
@@ -2316,6 +1955,59 @@ mod tests {
     }
 
     #[test]
+    fn the_button_decides_a_lapse_when_the_client_sends_it() {
+        // Rows as a client uploads them, one card answered a day apart:
+        // (kind, last_ivl, ivl, ease), where ease 0 means the client left it out.
+        let upload = |cid: i64, answers: &[(u8, i64, i64, u8)]| -> Vec<Review> {
+            answers
+                .iter()
+                .enumerate()
+                .map(|(i, &(kind, last_ivl, ivl, ease))| {
+                    let mut row = serde_json::json!({
+                        "id": (cid * 1000 + i as i64) * DAY_MS,
+                        "cid": cid,
+                        "last_ivl": last_ivl,
+                        "ivl": ivl,
+                        "time_ms": 5000,
+                        "kind": kind,
+                    });
+                    if ease > 0 {
+                        row["ease"] = ease.into();
+                    }
+                    serde_json::from_value(row).unwrap()
+                })
+                .collect()
+        };
+        let now = i64::MAX / 2;
+
+        // Forks with intraday review intervals log a pass under 12 hours as negative
+        // seconds. Eight such passes, then a mature interval: no lapse, so no leech.
+        let mut passes = vec![(0, 0, 1, 3)];
+        passes.extend([(1, 1, -3600, 3); 8]);
+        passes.push((1, 1, 25, 3));
+        let intraday = upload(1, &passes);
+        assert!(conquests(&intraday, now).is_empty(), "passes are no lapses");
+        let at = intraday.last().unwrap().id;
+        let profile = compute("hill", "hill", &intraday, &utc(), &Week::default(), at);
+        assert_eq!(profile.lifetime.conquered, 0);
+        assert_eq!(profile.lifetime.leeches_tamed, 0);
+
+        // Again is a lapse, also without relearning steps, where the new interval is days.
+        let mut again = vec![(0, 0, 1, 3)];
+        again.extend([(1, 3, 1, 1); 4]);
+        again.push((1, 1, 25, 3));
+        let found = conquests(&upload(2, &again), now);
+        assert_eq!(found.iter().map(|c| c.lapses).collect::<Vec<_>>(), [4]);
+
+        // Rows without the button keep the interval rule.
+        let mut older = vec![(0, 0, 1, 0)];
+        older.extend([(1, 1, -3600, 0); 4]);
+        older.push((1, 1, 25, 0));
+        let found = conquests(&upload(3, &older), now);
+        assert_eq!(found.iter().map(|c| c.lapses).collect::<Vec<_>>(), [4]);
+    }
+
+    #[test]
     fn recent_conquests_are_announced_and_listed_newest_first() {
         let mut answers = vec![(0, 0, Some(1))];
         for _ in 0..4 {
@@ -2341,142 +2033,6 @@ mod tests {
             "old conquests are listed, not announced"
         );
         assert_eq!(later.conquests.len(), 1);
-    }
-
-    fn utc() -> Clock {
-        Clock::default()
-    }
-
-    fn reviews_on(day: i64, count: i64, cid_base: i64) -> Vec<Review> {
-        (0..count)
-            .map(|i| Review {
-                id: day * DAY_MS + NOON + i * 10_000,
-                cid: cid_base + i,
-                last_ivl: 0,
-                ivl: None,
-                time_ms: 5_000,
-                kind: 1,
-            })
-            .collect()
-    }
-
-    fn history(days: &[i64]) -> Vec<Review> {
-        days.iter()
-            .flat_map(|d| reviews_on(*d, 5, d * 1000))
-            .collect()
-    }
-
-    fn at(day: i64) -> i64 {
-        day * DAY_MS + NOON + 3_600_000
-    }
-
-    #[test]
-    fn streak_status_separates_today_reviews_from_previous_day_protection() {
-        let reviews = perfect_day(&[], 1, &utc());
-        let changes = [protection(0, true)];
-        let studied = protected(&reviews, at(1), &changes);
-        let pending = protected(&reviews, at(2), &changes);
-        let frozen = protected(&reviews, at(3), &changes);
-        for (profile, expected) in [
-            (&studied, "studied"),
-            (&pending, "pending"),
-            (&frozen, "protected"),
-        ] {
-            assert_eq!(
-                serde_json::to_value(profile).unwrap()["streak_state"],
-                expected
-            );
-        }
-        assert_eq!(frozen.today.reviews, 0);
-        assert_eq!(frozen.streak, pending.streak);
-        let mut resumed = reviews;
-        resumed.extend(reviews_on(3, 1, 30_000));
-        let resumed = protected(&resumed, at(3), &changes);
-        assert_eq!(
-            serde_json::to_value(resumed).unwrap()["streak_state"],
-            "studied"
-        );
-    }
-
-    #[test]
-    fn streak_status_changes_at_the_players_anki_cutoff() {
-        let reviews = reviews_on(1, 1, 1000);
-        let before = protected(&reviews, at(1), &[]);
-        let after = protected(&reviews, before.day_ends_at, &[]);
-        assert_eq!(
-            serde_json::to_value(&before).unwrap()["streak_state"],
-            "studied"
-        );
-        assert_eq!(
-            serde_json::to_value(&after).unwrap()["streak_state"],
-            "pending"
-        );
-        assert_eq!(after.streak, before.streak);
-    }
-
-    fn protection(at: i64, enabled: bool) -> FreezePreference {
-        FreezePreference { at, enabled }
-    }
-
-    fn protected(reviews: &[Review], now: i64, changes: &[FreezePreference]) -> Profile {
-        compute_with_freezes(
-            "a",
-            "a",
-            reviews,
-            &utc(),
-            &Week::default(),
-            now,
-            &FreezePolicy {
-                preferences: changes.to_vec(),
-                ..FreezePolicy::default()
-            },
-        )
-    }
-
-    /// Finish every possible quest metric, with a second session before noon.
-    fn perfect_day(prior: &[Review], day: i64, clock: &Clock) -> Vec<Review> {
-        let (days, _, _) =
-            collect_days_with_quests(prior, &ClockHistory::single(*clock), seed_of("a"));
-        let recent = days
-            .values()
-            .rev()
-            .take(RECENT_DAYS)
-            .cloned()
-            .rev()
-            .collect();
-        let quests = gen_quests(seed_of("a"), day, &recent);
-        let count = quests.iter().map(|q| q.target).max().unwrap().max(2) as i64 + 1;
-        let start = clock.day_start_ms(day) + 2 * 3_600_000;
-        (0..count)
-            .map(|i| {
-                let id = start + i * 10_000 + if i == count - 1 { SESSION_GAP_MS } else { 0 };
-                Review {
-                    id,
-                    cid: id,
-                    last_ivl: MATURE_IVL,
-                    ivl: None,
-                    time_ms: 60_000,
-                    kind: 0,
-                }
-            })
-            .collect()
-    }
-
-    fn perfect_history(days: &[i64]) -> Vec<Review> {
-        let mut reviews = Vec::new();
-        for day in days {
-            reviews.extend(perfect_day(&reviews, *day, &utc()));
-        }
-        reviews
-    }
-
-    fn first_completion(reviews: &[Review], day: i64) -> i64 {
-        collect_days_with_quests(reviews, &ClockHistory::single(utc()), seed_of("a"))
-            .0
-            .get(&day)
-            .unwrap()
-            .quests_completed_at
-            .expect("fixture completes every quest")
     }
 
     #[test]
@@ -2507,6 +2063,7 @@ mod tests {
             cid: ms,
             last_ivl: 0,
             ivl: None,
+            ease: None,
             time_ms: 5_000,
             kind: 1,
         };
@@ -2546,723 +2103,6 @@ mod tests {
     }
 
     #[test]
-    fn week_is_shared_across_time_zones() {
-        let berlin = chrono_tz::Europe::Berlin;
-        let week = Week {
-            tz: berlin,
-            rollover_hour: 4,
-        };
-        let at_berlin = |d, h| {
-            berlin
-                .with_ymd_and_hms(2026, 9, d, h, 0, 0)
-                .unwrap()
-                .timestamp_millis()
-        };
-        let buenos_aires = Clock {
-            offset_west_min: 180,
-            rollover_hour: 4,
-        };
-        let review = |id| Review {
-            id,
-            cid: id,
-            last_ivl: 0,
-            ivl: None,
-            time_ms: 5_000,
-            kind: 1,
-        };
-
-        assert_eq!(
-            week.monday(at_berlin(21, 3)),
-            week.monday(at_berlin(20, 12))
-        );
-        assert_ne!(
-            week.monday(at_berlin(21, 5)),
-            week.monday(at_berlin(20, 12))
-        );
-        assert_eq!(week.end_after(at_berlin(21, 10)), at_berlin(28, 4));
-        assert_eq!(week.end_after(at_berlin(21, 3)), at_berlin(21, 4));
-        assert_eq!(week.start_of(at_berlin(21, 10)), at_berlin(21, 4));
-        assert_eq!(week.start_of(at_berlin(27, 23)), at_berlin(21, 4));
-        assert_eq!(week.start_of(at_berlin(21, 3)), at_berlin(14, 4));
-
-        let sunday = at_berlin(20, 20);
-        let late_sunday = at_berlin(21, 8);
-        let p = compute(
-            "a",
-            "a",
-            &[review(sunday), review(late_sunday)],
-            &buenos_aires,
-            &week,
-            late_sunday,
-        );
-        assert_eq!(
-            p.week_xp, 0,
-            "their Sunday started before the shared week did"
-        );
-        assert_eq!(p.today.reviews, 2);
-
-        let monday = at_berlin(21, 10);
-        let p = compute(
-            "a",
-            "a",
-            &[review(sunday), review(monday)],
-            &buenos_aires,
-            &week,
-            monday,
-        );
-        assert!(
-            p.week_xp > 0,
-            "their Monday started after the shared week did"
-        );
-    }
-
-    fn closing_of(p: &Profile) -> Option<ClosingWeek> {
-        match p.own_week {
-            Some(OwnWeek::Closing(closing)) => Some(closing),
-            _ => None,
-        }
-    }
-
-    #[test]
-    fn closing_week_counts_until_the_players_own_day_ends() {
-        // Production: the week resets for everyone on Monday at 00:00 UTC.
-        let week = Week {
-            tz: Tz::UTC,
-            rollover_hour: 0,
-        };
-        let utc = |d, h| {
-            Tz::UTC
-                .with_ymd_and_hms(2026, 9, d, h, 0, 0)
-                .unwrap()
-                .timestamp_millis()
-        };
-        let reset = utc(21, 0);
-        assert_eq!(week.start_of(reset), reset);
-        // California (UTC-8 here) with a 04:00 rollover: Sunday runs to Monday 12:00 UTC.
-        let california = Clock {
-            offset_west_min: 480,
-            rollover_hour: 4,
-        };
-        // Berlin in summer (UTC+2) with a 04:00 rollover: Sunday ends Monday 02:00 UTC.
-        let berlin = Clock {
-            offset_west_min: -120,
-            rollover_hour: 4,
-        };
-        let review = |id| Review {
-            id,
-            cid: id,
-            last_ivl: 0,
-            ivl: None,
-            time_ms: 5_000,
-            kind: 1,
-        };
-        let saturday = utc(19, 20);
-        let sunday_evening = utc(21, 5);
-
-        let reviews = [review(saturday), review(sunday_evening)];
-        let p = compute("a", "a", &reviews, &california, &week, sunday_evening);
-        assert_eq!(p.week_xp, 0, "the board has already reset");
-        let closing = closing_of(&p).expect("their Sunday still counts");
-        assert_eq!(closing.ends_at, utc(21, 12));
-        assert_eq!(closing.ends_at, p.day_ends_at);
-        let before = compute("a", "a", &reviews, &california, &week, reset - 1);
-        assert_eq!(closing_of(&before), None, "nothing has reset yet");
-        assert_eq!(closing.xp, before.week_xp);
-        assert!(closing.xp > 0);
-        let json = serde_json::to_value(&p).unwrap();
-        assert_eq!(json["closing_week"]["xp"], closing.xp);
-        assert_eq!(json["closing_week"]["ends_at"], utc(21, 12));
-
-        let monday = utc(21, 12);
-        let p = compute("a", "a", &reviews, &california, &week, monday);
-        assert_eq!(closing_of(&p), None, "gone once their Sunday ends");
-        assert!(
-            serde_json::to_value(&p)
-                .unwrap()
-                .get("closing_week")
-                .is_none()
-        );
-
-        // At 05:00 UTC Berlin's Monday began three hours ago, inside the new week.
-        let p = compute(
-            "b",
-            "b",
-            &[review(saturday)],
-            &berlin,
-            &week,
-            sunday_evening,
-        );
-        assert_eq!(closing_of(&p), None);
-    }
-
-    #[test]
-    fn levels_are_monotonic() {
-        assert_eq!(level_for(0), (1, 0, 100));
-        assert_eq!(level_for(99).0, 1);
-        assert_eq!(level_for(100), (2, 0, 280));
-        let mut last = 0;
-        for level in 1..200 {
-            assert!(level_need(level) > last);
-            last = level_need(level);
-        }
-    }
-
-    #[test]
-    fn streak_counts_consecutive_days() {
-        let p = compute(
-            "a",
-            "a",
-            &history(&[10, 11, 12]),
-            &utc(),
-            &Week::default(),
-            at(12),
-        );
-        assert_eq!(p.streak, 3);
-        assert!(!p.at_risk);
-    }
-
-    #[test]
-    fn today_without_reviews_is_at_risk_not_broken() {
-        let p = compute(
-            "a",
-            "a",
-            &history(&[10, 11, 12]),
-            &utc(),
-            &Week::default(),
-            at(13),
-        );
-        assert_eq!(p.streak, 3);
-        assert!(p.at_risk);
-    }
-
-    #[test]
-    fn granted_days_keep_the_streak_without_spending_the_bank() {
-        let reviews = history(&[10, 14]);
-        let policy = FreezePolicy {
-            granted: [11, 12, 13].map(date_string).into(),
-            ..FreezePolicy::default()
-        };
-        let p = compute_with_freezes(
-            "a",
-            "a",
-            &reviews,
-            &utc(),
-            &Week::default(),
-            at(14),
-            &policy,
-        );
-        assert_eq!(p.streak, 2);
-        assert_eq!(p.stored_freezes, 0);
-        let frozen: Vec<_> = p
-            .heatmap
-            .iter()
-            .filter(|c| c.frozen)
-            .map(|c| c.date.clone())
-            .collect();
-        assert_eq!(frozen, [11, 12, 13].map(date_string));
-        let partial = FreezePolicy {
-            granted: [11, 12].map(date_string).into(),
-            ..FreezePolicy::default()
-        };
-        let broken = compute_with_freezes(
-            "a",
-            "a",
-            &reviews,
-            &utc(),
-            &Week::default(),
-            at(14),
-            &partial,
-        );
-        assert_eq!(broken.streak, 1);
-    }
-
-    #[test]
-    fn missed_day_without_freeze_resets() {
-        let p = compute(
-            "a",
-            "a",
-            &history(&[10, 11, 13]),
-            &utc(),
-            &Week::default(),
-            at(13),
-        );
-        assert_eq!(p.streak, 1);
-        assert_eq!(p.lifetime.best_streak, 2);
-    }
-
-    #[test]
-    fn freezes_default_on_and_earn_from_quests_without_a_settings_change() {
-        let empty = protected(&[], at(1), &[]);
-        assert!(empty.freezes_enabled);
-        assert_eq!(empty.stored_freezes, 0);
-        let reviews = perfect_history(&[1]);
-        let earned = protected(&reviews, at(1), &[]);
-        assert!(earned.freezes_enabled);
-        assert_eq!(earned.freezes, 1);
-        assert!(earned.freeze_earned_today);
-        let paused = protected(&reviews, at(1), &[protection(at(1), false)]);
-        assert!(!paused.freezes_enabled);
-        assert_eq!(paused.stored_freezes, 1);
-        assert_eq!(paused.freezes, 0);
-        let covered = protected(&reviews, at(3), &[]);
-        assert_eq!(covered.streak, 1);
-        assert_eq!(covered.heatmap.iter().filter(|cell| cell.frozen).count(), 1);
-    }
-
-    #[test]
-    fn freeze_default_rollout_does_not_backfill_and_keeps_explicit_opt_outs() {
-        let mut reviews = perfect_history(&[1, 2]);
-        let policy = FreezePolicy {
-            default_enabled_from: Some(utc().day_start_ms(3)),
-            ..FreezePolicy::default()
-        };
-        let run = |reviews: &[Review], now, policy: &FreezePolicy| {
-            compute_with_freezes("a", "a", reviews, &utc(), &Week::default(), now, policy)
-        };
-        let boundary = policy.default_enabled_from.unwrap();
-        let old = run(&reviews, boundary - 1, &policy);
-        let enabled = run(&reviews, boundary, &policy);
-        assert!(!old.freezes_enabled);
-        assert!(enabled.freezes_enabled);
-        assert_eq!(enabled.stored_freezes, 0);
-        assert_eq!(enabled.xp_total, old.xp_total);
-        assert_eq!(enabled.streak, old.streak);
-        let earlier = run(&reviews, at(2), &policy);
-        let old_rule = run(
-            &reviews,
-            at(2),
-            &FreezePolicy {
-                preferences: vec![protection(0, false)],
-                ..FreezePolicy::default()
-            },
-        );
-        assert_eq!(
-            serde_json::to_value(earlier).unwrap(),
-            serde_json::to_value(old_rule).unwrap()
-        );
-        reviews.extend(perfect_day(&reviews, 3, &utc()));
-        let earned = run(&reviews, at(4), &policy);
-        assert_eq!(earned.stored_freezes, 1);
-        let off = FreezePolicy {
-            preferences: vec![protection(at(1), false)],
-            ..policy.clone()
-        };
-        assert!(!run(&reviews, at(4), &off).freezes_enabled);
-        assert_eq!(run(&reviews, at(4), &off).stored_freezes, 0);
-        let opted_in = FreezePolicy {
-            preferences: vec![protection(0, true)],
-            ..policy
-        };
-        assert_eq!(run(&reviews, at(4), &opted_in).stored_freezes, 3);
-    }
-
-    #[test]
-    fn explicitly_disabled_freezes_start_empty_without_historical_rewards() {
-        let reviews = perfect_history(&[1, 2, 3, 4, 5, 6, 7]);
-        let p = protected(&reviews, at(9), &[protection(0, false)]);
-        assert!(!p.freezes_enabled);
-        assert_eq!(p.stored_freezes, 0);
-        assert_eq!(p.freezes, 0);
-        assert_eq!(p.streak, 0);
-        assert!(p.heatmap.iter().all(|c| !c.frozen));
-        let opted_in = protected(
-            &reviews,
-            at(9),
-            &[protection(0, false), protection(at(9), true)],
-        );
-        assert!(opted_in.freezes_enabled);
-        assert_eq!(opted_in.freezes, 0);
-        assert!(!opted_in.freeze_earned_today);
-        assert_eq!(protected(&[], at(9), &[protection(0, true)]).freezes, 0);
-        let ordinary = protected(
-            &history(&[1, 2, 3, 4, 5, 6, 7]),
-            at(7),
-            &[protection(0, true)],
-        );
-        assert_eq!(
-            ordinary.freezes, 0,
-            "a seven-day streak alone earns nothing"
-        );
-    }
-
-    #[test]
-    fn migration_preserves_previously_protected_days_and_streak() {
-        let reviews = history(&[1, 2, 3, 4, 5, 6, 7, 9]);
-        let policy = FreezePolicy {
-            legacy_until: Some(at(10)),
-            preferences: vec![],
-            default_enabled_from: Some(at(10)),
-            ..FreezePolicy::default()
-        };
-        let p = compute_with_freezes(
-            "a",
-            "a",
-            &reviews,
-            &utc(),
-            &Week::default(),
-            at(10),
-            &policy,
-        );
-        assert_eq!(
-            p.streak, 8,
-            "upgrading must not erase the freeze that covered day8"
-        );
-        assert_eq!(p.lifetime.best_streak, 8);
-        assert!(
-            p.heatmap
-                .iter()
-                .any(|c| c.date == date_string(8) && c.frozen)
-        );
-        assert_eq!(p.freezes, 0);
-        assert_eq!(p.stored_freezes, 0);
-        assert!(p.freezes_enabled);
-        let before_cutover = compute_with_freezes(
-            "a",
-            "a",
-            &reviews,
-            &utc(),
-            &Week::default(),
-            at(9),
-            &FreezePolicy {
-                legacy_until: Some(at(10)),
-                preferences: vec![],
-                default_enabled_from: Some(at(10)),
-                ..FreezePolicy::default()
-            },
-        );
-        assert_eq!(p.xp_total, before_cutover.xp_total);
-        assert_eq!(p.lifetime.quests, before_cutover.lifetime.quests);
-        for cell in before_cutover
-            .heatmap
-            .iter()
-            .filter(|c| c.reviews > 0 || c.frozen)
-        {
-            let after = p.heatmap.iter().find(|c| c.date == cell.date).unwrap();
-            assert_eq!(
-                (after.reviews, after.xp, after.frozen),
-                (cell.reviews, cell.xp, cell.frozen)
-            );
-        }
-    }
-
-    #[test]
-    fn migration_clears_unspent_legacy_stock_and_new_quests_use_the_new_rules() {
-        let mut reviews = history(&(1..=14).collect::<Vec<_>>());
-        let policy = FreezePolicy {
-            legacy_until: Some(utc().day_start_ms(15)),
-            preferences: vec![protection(utc().day_start_ms(15), true)],
-            ..FreezePolicy::default()
-        };
-        let run = |reviews: &[Review], day| {
-            compute_with_freezes(
-                "a",
-                "a",
-                reviews,
-                &utc(),
-                &Week::default(),
-                at(day),
-                &policy,
-            )
-        };
-        let old = run(&reviews, 14);
-        assert_eq!(old.stored_freezes, 2);
-        let upgraded = run(&reviews, 15);
-        assert_eq!(upgraded.stored_freezes, 0);
-        assert_eq!(upgraded.streak, 14);
-        assert_eq!(upgraded.xp_total, old.xp_total);
-        assert_eq!(
-            run(&reviews, 16).streak,
-            0,
-            "old stock cannot cover a new missed day"
-        );
-        reviews.extend(perfect_day(&reviews, 15, &utc()));
-        let completed = run(&reviews, 15);
-        assert_eq!(completed.freezes, 1);
-        assert!(completed.freeze_earned_today);
-        let covered = run(&reviews, 17);
-        assert_eq!(covered.freezes, 0);
-        assert_eq!(covered.streak, 15);
-    }
-
-    #[test]
-    fn freeze_requires_all_quests_and_is_earned_only_once_per_day() {
-        let mut reviews = perfect_history(&[1]);
-        let completion = first_completion(&reviews, 1);
-        let changes = [protection(0, true)];
-        let before: Vec<_> = reviews
-            .iter()
-            .copied()
-            .filter(|r| r.id < completion)
-            .collect();
-        let p = protected(&before, completion - 1, &changes);
-        assert!(p.quests.iter().any(|q| !q.done));
-        assert_eq!(p.freezes, 0);
-
-        let p = protected(&reviews, at(1), &changes);
-        assert!(p.quests.iter().all(|q| q.done));
-        assert!(p.freeze_earned_today);
-        assert_eq!(p.freezes, 1);
-        assert_eq!(
-            serde_json::to_value(&p).unwrap(),
-            serde_json::to_value(protected(&reviews, at(1), &changes)).unwrap(),
-            "repeated reads replay the same result"
-        );
-        reviews.extend(reviews_on(1, 5, 99));
-        assert_eq!(protected(&reviews, at(1), &changes).freezes, 1);
-    }
-
-    #[test]
-    fn freeze_reward_matches_visible_quest_completion_after_day_rollover() {
-        let mut reviews = perfect_history(&[1]);
-        let first_today = reviews.len();
-        reviews.extend(perfect_day(&reviews, 2, &utc()));
-        // Read the visible quest state independently of the collector's saved
-        // completion timestamp, including the previous day's adaptive targets.
-        let completed = (first_today..reviews.len())
-            .find(|&i| {
-                protected(&reviews[..=i], reviews[i].id, &[])
-                    .quests
-                    .iter()
-                    .all(|quest| quest.done)
-            })
-            .expect("the second day completes its displayed quests");
-        let completion = reviews[completed].id;
-        assert!(
-            protected(&reviews[..completed], completion - 1, &[])
-                .quests
-                .iter()
-                .any(|quest| !quest.done)
-        );
-        assert_eq!(
-            protected(
-                &reviews,
-                at(2),
-                &[protection(0, false), protection(completion, true)]
-            )
-            .stored_freezes,
-            1,
-            "opting in at the visible completion earns today's freeze"
-        );
-        assert_eq!(
-            protected(
-                &reviews,
-                at(2),
-                &[protection(0, false), protection(completion + 1, true)]
-            )
-            .stored_freezes,
-            0,
-            "opting in after completion cannot claim a past reward"
-        );
-    }
-
-    #[test]
-    fn preference_at_first_completion_controls_earning_without_backfill() {
-        let mut reviews = perfect_history(&[1]);
-        let completion = first_completion(&reviews, 1);
-        assert_eq!(
-            protected(
-                &reviews,
-                at(1),
-                &[protection(0, false), protection(completion, true)]
-            )
-            .freezes,
-            1
-        );
-        assert_eq!(
-            protected(
-                &reviews,
-                at(1),
-                &[protection(0, false), protection(completion + 1, true)]
-            )
-            .freezes,
-            0
-        );
-        reviews.extend(reviews_on(1, 3, 999));
-        let p = protected(
-            &reviews,
-            at(1),
-            &[
-                protection(0, true),
-                protection(completion, false),
-                protection(completion + 1, true),
-            ],
-        );
-        assert_eq!(
-            p.freezes, 0,
-            "more reviews cannot retry a missed earning opportunity"
-        );
-        let p = protected(
-            &reviews,
-            at(1),
-            &[protection(0, true), protection(completion + 1, false)],
-        );
-        assert_eq!(
-            p.stored_freezes, 1,
-            "turning off keeps what was already earned"
-        );
-        assert_eq!(
-            p.freezes, 0,
-            "older clients must not promise disabled coverage"
-        );
-    }
-
-    #[test]
-    fn freezes_cap_at_three_and_can_be_earned_again_after_spending() {
-        let reviews = perfect_history(&[1, 2, 3, 4]);
-        let changes = [protection(0, true)];
-        let full = protected(&reviews, at(4), &changes);
-        assert_eq!(MAX_FREEZES, 3);
-        assert_eq!(full.freezes, MAX_FREEZES);
-        assert!(
-            !full.freeze_earned_today,
-            "completing quests at capacity grants no extra charge"
-        );
-        let mut after_gap = reviews;
-        after_gap.extend(perfect_day(&after_gap, 6, &utc()));
-        let p = protected(&after_gap, at(6), &changes);
-        assert_eq!(p.freezes, 3);
-        assert!(p.freeze_earned_today);
-        assert_eq!(
-            p.streak, 5,
-            "covered days preserve rather than increase the streak"
-        );
-        let frozen = p.heatmap.iter().find(|c| c.date == date_string(5)).unwrap();
-        assert!(frozen.frozen);
-        assert_eq!(frozen.reviews, 0);
-        assert_eq!(frozen.xp, achievement_xp(Metric::FreezesUsed, 1));
-    }
-
-    #[test]
-    fn ended_missed_days_spend_one_each_until_empty() {
-        let reviews = perfect_history(&[1, 2, 3]);
-        let changes = [protection(0, true)];
-        let today = protected(&reviews, at(4), &changes);
-        assert_eq!(today.freezes, 3, "today has not ended yet");
-        assert_eq!(today.streak, 3);
-        let p = protected(&reviews, at(7), &changes);
-        assert_eq!(p.freezes, 0);
-        assert_eq!(p.streak, 3);
-        assert_eq!(p.heatmap.iter().filter(|c| c.frozen).count(), 3);
-        let broken = protected(&reviews, at(8), &changes);
-        assert_eq!(broken.streak, 0);
-        assert_eq!(broken.heatmap.iter().filter(|c| c.frozen).count(), 3);
-    }
-
-    #[test]
-    fn disabling_preserves_bank_and_past_coverage_but_does_not_cover_new_gaps() {
-        let reviews = perfect_history(&[1, 2, 3]);
-        let off = [protection(0, true), protection(at(5), false)];
-        let paused = protected(&reviews, at(6), &off);
-        assert_eq!(paused.stored_freezes, 2);
-        assert_eq!(paused.freezes, 0);
-        assert_eq!(paused.streak, 0);
-        assert_eq!(paused.heatmap.iter().filter(|c| c.frozen).count(), 1);
-        assert!(
-            paused
-                .heatmap
-                .iter()
-                .any(|c| c.date == date_string(4) && c.frozen)
-        );
-        let mut on_again = off.to_vec();
-        on_again.push(protection(at(6), true));
-        let p = protected(&reviews, at(6), &on_again);
-        assert_eq!(p.freezes, 2);
-        assert_eq!(
-            p.streak, 0,
-            "reenabling cannot retroactively cover yesterday"
-        );
-        assert_eq!(p.heatmap.iter().filter(|c| c.frozen).count(), 1);
-        assert_eq!(
-            protected(&reviews, at(8), &on_again).freezes,
-            2,
-            "an already broken streak spends nothing"
-        );
-    }
-
-    #[test]
-    fn missed_day_checks_setting_just_before_the_anki_rollover() {
-        let clock = Clock {
-            offset_west_min: -120,
-            rollover_hour: 4,
-        };
-        let reviews = perfect_day(&[], 1, &clock);
-        let boundary = clock.day_start_ms(3);
-        let run = |now, changes: &[FreezePreference]| {
-            compute_with_freezes(
-                "a",
-                "a",
-                &reviews,
-                &clock,
-                &Week::default(),
-                now,
-                &FreezePolicy {
-                    preferences: changes.to_vec(),
-                    ..FreezePolicy::default()
-                },
-            )
-        };
-        assert_eq!(run(boundary - 1, &[protection(0, true)]).stored_freezes, 1);
-        let p = run(
-            boundary,
-            &[protection(0, true), protection(boundary, false)],
-        );
-        assert_eq!(
-            p.stored_freezes, 0,
-            "a change on the new day preserves yesterday's enabled state"
-        );
-        assert_eq!(p.streak, 1);
-        let p = run(
-            boundary,
-            &[protection(0, true), protection(boundary - 1, false)],
-        );
-        assert_eq!(p.stored_freezes, 1);
-        assert_eq!(p.streak, 0);
-        let p = run(
-            boundary,
-            &[
-                protection(0, true),
-                protection(at(1), false),
-                protection(boundary, true),
-            ],
-        );
-        assert_eq!(p.streak, 0);
-        assert_eq!(p.freezes, 1);
-    }
-
-    #[test]
-    fn future_reviews_and_preferences_cannot_award_a_freeze_early() {
-        let reviews = perfect_history(&[1]);
-        let completion = first_completion(&reviews, 1);
-        let changes = [protection(0, true)];
-        let before = protected(&reviews, completion - 1, &changes);
-        assert_eq!(before.freezes, 0);
-        assert!(!before.freeze_earned_today);
-        assert_eq!(protected(&reviews, completion, &changes).freezes, 1);
-        let future = protected(
-            &reviews,
-            at(1),
-            &[protection(0, false), protection(at(2), true)],
-        );
-        assert!(!future.freezes_enabled);
-        assert_eq!(future.stored_freezes, 0);
-        assert_eq!(
-            changes,
-            [protection(0, true)],
-            "preview and replay never mutate preferences"
-        );
-    }
-
-    #[test]
-    fn preference_changes_at_the_same_time_use_the_latest_save() {
-        let reviews = perfect_history(&[1]);
-        let completion = first_completion(&reviews, 1);
-        let changes = [protection(completion, true), protection(completion, false)];
-        assert_eq!(protected(&reviews, at(1), &changes).stored_freezes, 0);
-        let changes = [protection(completion, false), protection(completion, true)];
-        assert_eq!(protected(&reviews, at(1), &changes).freezes, 1);
-    }
-
-    #[test]
     fn combo_breaks_on_gap() {
         let mut reviews = reviews_on(5, 10, 0);
         let mut later = reviews_on(5, 4, 100);
@@ -3274,173 +2114,6 @@ mod tests {
         assert_eq!(p.today.max_combo, 10);
         assert_eq!(p.today.current_combo, 4);
         assert_eq!(p.today.reviews, 14);
-    }
-
-    #[test]
-    fn answer_button_never_matters() {
-        let r = Review {
-            id: 0,
-            cid: 1,
-            last_ivl: 30,
-            ivl: None,
-            time_ms: 4_000,
-            kind: 1,
-        };
-        assert_eq!(review_base_xp(&r), 15.0);
-    }
-
-    #[test]
-    fn quick_answers_earn_full_xp() {
-        let r = Review {
-            id: 0,
-            cid: 1,
-            last_ivl: 30,
-            ivl: None,
-            time_ms: 200,
-            kind: 1,
-        };
-        assert_eq!(review_base_xp(&r), 15.0);
-    }
-
-    #[test]
-    fn repeating_a_card_keeps_the_same_xp_as_answering_different_cards() {
-        let answer = |day: i64, index: i64, cid: i64| Review {
-            id: day * DAY_MS + NOON + index * 10_000,
-            cid,
-            last_ivl: 0,
-            ivl: None,
-            time_ms: 5_000,
-            kind: 1,
-        };
-        let same_card: Vec<Review> = (0..6).map(|i| answer(1, i, 7)).collect();
-        let (_, _, repeated) = collect_days(&same_card, &utc());
-        let varied: Vec<Review> = (0..6).map(|i| answer(1, i, 7 + i)).collect();
-        let (_, _, spread) = collect_days(&varied, &utc());
-        assert_eq!(repeated, spread, "card identity does not reduce review XP");
-        assert!(repeated[5].1 > repeated[0].1, "the combo bonus still grows");
-
-        let (_, _, fresh) = collect_days(&[answer(1, 0, 7), answer(2, 0, 7)], &utc());
-        assert_eq!(fresh[0].1, fresh[1].1, "a new day resets the combo");
-    }
-
-    #[test]
-    fn learning_and_relearning_keep_the_original_rate_for_every_step() {
-        for kind in [0, 2] {
-            let steps: Vec<Review> = (0..3)
-                .map(|index| Review {
-                    id: DAY_MS + NOON + index * 600_000,
-                    cid: 7,
-                    last_ivl: 0,
-                    ivl: None,
-                    time_ms: 5_000,
-                    kind,
-                })
-                .collect();
-            let (_, _, earned) = collect_days(&steps, &utc());
-            for (_, xp) in earned {
-                assert!((xp - 6.03).abs() < 1e-9, "kind {kind} earned {xp}");
-            }
-        }
-    }
-
-    #[test]
-    fn diminishing_weighting_pays_less_for_each_repeat_of_a_card() {
-        let answer = |day: i64, index: i64, cid: i64| Review {
-            id: day * DAY_MS + NOON + index * 10_000,
-            cid,
-            last_ivl: 0,
-            ivl: None,
-            time_ms: 5_000,
-            kind: 1,
-        };
-        let run = |reviews: &[Review]| {
-            collect_days_weighted(
-                reviews,
-                &ClockHistory::single(utc()),
-                0,
-                ReviewWeighting::Diminishing,
-            )
-            .2
-        };
-        let total = |earned: &[(i64, f64)]| earned.iter().map(|(_, xp)| xp).sum::<f64>();
-
-        let stuck: Vec<Review> = (0..6).map(|i| answer(1, i, 7)).collect();
-        let repeated = run(&stuck);
-        for index in 1..repeated.len() {
-            assert!(
-                repeated[index].1 < repeated[index - 1].1,
-                "answer {index} should pay less than the one before it"
-            );
-        }
-        assert!(
-            total(&repeated) < 3.0 * repeated[0].1,
-            "one card cannot be farmed"
-        );
-
-        let varied: Vec<Review> = (0..6).map(|i| answer(1, i, 7 + i)).collect();
-        assert!(
-            total(&run(&varied)) > 2.0 * total(&repeated),
-            "studying six cards must beat answering one card six times"
-        );
-
-        let fresh = run(&[answer(1, 0, 7), answer(2, 0, 7)]);
-        assert_eq!(fresh[0].1, fresh[1].1, "a new day starts the card over");
-    }
-
-    #[test]
-    fn diminishing_weighting_pays_learning_about_as_much_as_a_review() {
-        let answer = |index: i64, kind: u8, last_ivl: i64| Review {
-            id: DAY_MS + NOON + index * 600_000,
-            cid: 7,
-            last_ivl,
-            ivl: None,
-            time_ms: 5_000,
-            kind,
-        };
-        let run = |reviews: &[Review]| {
-            collect_days_weighted(
-                reviews,
-                &ClockHistory::single(utc()),
-                0,
-                ReviewWeighting::Diminishing,
-            )
-            .2
-        };
-        let learning = run(&[answer(0, 0, 0), answer(1, 0, 0), answer(2, 0, 0)]);
-        let learned: f64 = learning.iter().map(|(_, xp)| xp).sum();
-        let known = run(&[answer(0, 1, 30)])[0].1;
-        assert!(
-            (learned - known).abs() < 2.0,
-            "learning {learned}, knowing {known}"
-        );
-        assert!(
-            learning[0].1 < known,
-            "a single learning step is not a whole review"
-        );
-
-        let lapse = run(&[answer(0, 1, 30), answer(1, 2, 0), answer(2, 2, 0)]);
-        let relearning: f64 = lapse[1..].iter().map(|(_, xp)| xp).sum();
-        assert!(
-            relearning < lapse[0].1 / 2.0,
-            "relearning {relearning} vs {}",
-            lapse[0].1
-        );
-    }
-
-    #[test]
-    fn review_weighting_defaults_to_flat_in_config() {
-        #[derive(Deserialize)]
-        struct C {
-            #[serde(default)]
-            w: ReviewWeighting,
-        }
-        let parse = |s: &str| serde_json::from_str::<C>(s).unwrap().w;
-        assert_eq!(parse("{}"), ReviewWeighting::Flat);
-        assert_eq!(parse(r#"{"w":"flat"}"#), ReviewWeighting::Flat);
-        assert_eq!(
-            parse(r#"{"w":"diminishing"}"#),
-            ReviewWeighting::Diminishing
-        );
     }
 
     #[test]
@@ -3481,6 +2154,7 @@ mod tests {
                     cid: cid + i,
                     last_ivl: 0,
                     ivl: None,
+                    ease: None,
                     time_ms: 5_000,
                     kind: 1,
                 })
@@ -3538,26 +2212,6 @@ mod tests {
     }
 
     #[test]
-    fn streak_milestones_without_an_achievement_get_their_own_message() {
-        let fifty: Vec<i64> = (1..=50).collect();
-        let p = compute("a", "a", &history(&fifty), &utc(), &Week::default(), at(50));
-        assert_eq!(p.streak, 50);
-        assert!(
-            p.events
-                .iter()
-                .any(|e| e.key == "streak:1:50" && e.title == "50-day streak!")
-        );
-
-        let week: Vec<i64> = (1..=7).collect();
-        let p = compute("a", "a", &history(&week), &utc(), &Week::default(), at(7));
-        assert!(
-            !p.events.iter().any(|e| e.key.starts_with("streak:")),
-            "the Full Week achievement already says it"
-        );
-        assert!(p.events.iter().any(|e| e.key == "achievement:streak-7"));
-    }
-
-    #[test]
     fn the_best_hour_is_any_sixty_minutes_not_a_clock_hour() {
         let spread = |minutes: &[i64]| -> Vec<Review> {
             minutes
@@ -3568,6 +2222,7 @@ mod tests {
                     cid: 500 + index as i64,
                     last_ivl: 0,
                     ivl: None,
+                    ease: None,
                     time_ms: 5_000,
                     kind: 1,
                 })
@@ -3671,38 +2326,6 @@ mod tests {
     }
 
     #[test]
-    fn xp_sums_into_heatmap_and_total() {
-        let p = compute(
-            "a",
-            "a",
-            &history(&[1, 2, 3]),
-            &utc(),
-            &Week::default(),
-            at(3),
-        );
-        let heat: u64 = p.heatmap.iter().map(|c| c.xp).sum();
-        assert_eq!(heat, p.xp_total);
-        assert!(p.xp_total > 0);
-        assert_eq!(p.week_xp, p.xp_total);
-    }
-
-    #[test]
-    fn a_day_that_counts_secures_the_streak_once_per_day() {
-        let reviews: Vec<Review> = reviews_on(1, 5, 0);
-        let p = compute("a", "a", &reviews, &utc(), &Week::default(), at(1));
-        let secured = p.events.iter().find(|e| e.key == "secured:1").unwrap();
-        assert_eq!(secured.title, "Streak secured!");
-        assert_eq!(secured.body, "Today counts toward your 1-day streak.");
-        let later = compute("a", "a", &reviews, &utc(), &Week::default(), at(2));
-        assert!(!later.events.iter().any(|e| e.key.starts_with("secured:")));
-        let goal = goal_event(1, 1, 12);
-        assert_eq!(
-            (goal.key.as_str(), goal.body.as_str()),
-            ("goal:1", "1 card today in 12 minutes.")
-        );
-    }
-
-    #[test]
     fn achievements_unlock_with_events() {
         let reviews: Vec<Review> = reviews_on(1, 120, 0);
         let p = compute("a", "a", &reviews, &utc(), &Week::default(), at(1));
@@ -3775,46 +2398,6 @@ mod tests {
         assert_eq!(p.streak, 0);
         assert_eq!(p.quests.len(), 3);
         assert_eq!(p.heatmap.len(), HEATMAP_DAYS as usize);
-    }
-
-    const BERLIN: Clock = Clock {
-        offset_west_min: -120,
-        rollover_hour: 4,
-    };
-    const CALIFORNIA: Clock = Clock {
-        offset_west_min: 420,
-        rollover_hour: 4,
-    };
-
-    fn moment(at: i64, cid: i64) -> Review {
-        Review {
-            id: at,
-            cid,
-            last_ivl: 0,
-            ivl: None,
-            time_ms: 5_000,
-            kind: 1,
-        }
-    }
-
-    fn moments(times: &[i64]) -> Vec<Review> {
-        times
-            .iter()
-            .enumerate()
-            .map(|(index, at)| moment(*at, index as i64))
-            .collect()
-    }
-
-    fn kept(clock: &ClockHistory, reviews: &[Review], now: i64) -> Profile {
-        compute_with_history(
-            "a",
-            "a",
-            reviews,
-            clock,
-            &Week::default(),
-            now,
-            &FreezePolicy::default(),
-        )
     }
 
     #[test]
@@ -3943,375 +2526,44 @@ mod tests {
         );
     }
 
-    /// One answer per minute, each taking the full minute.
-    fn minutes_on(day: i64, minutes: i64) -> Vec<Review> {
-        (0..minutes)
-            .map(|i| {
-                let id = day * DAY_MS + NOON + i * 60_000;
-                Review {
-                    id,
-                    cid: id,
-                    last_ivl: 0,
-                    ivl: None,
-                    time_ms: 60_000,
-                    kind: 1,
-                }
-            })
-            .collect()
-    }
-
-    fn study(days: &[(i64, i64)]) -> Vec<Review> {
-        days.iter()
-            .flat_map(|(day, minutes)| minutes_on(*day, *minutes))
-            .collect()
-    }
-
-    fn ruled(reviews: &[Review], now: i64, rule: &[(i64, u32)]) -> Profile {
-        compute_with_rules(
-            "a",
-            "a",
-            reviews,
-            &ClockHistory::single(utc()),
-            &Week::default(),
-            now,
-            &FreezePolicy::default(),
-            &StreakRule {
-                changes: rule
-                    .iter()
-                    .map(|(at, minutes)| StreakChange {
-                        at: *at,
-                        minutes: *minutes,
-                    })
-                    .collect(),
-                ..StreakRule::default()
-            },
-        )
-    }
-
     #[test]
-    fn a_player_override_applies_from_its_time_and_can_be_handed_back() {
-        let server = |at, minutes| StreakChange { at, minutes };
-        let own = |at, minutes| PlayerStreakChange { at, minutes };
-        let rule = StreakRule {
-            changes: vec![server(100, 10), server(500, 15)],
-            players: BTreeMap::from([(
-                "a".to_string(),
-                vec![own(200, Some(3)), own(400, Some(5)), own(600, None)],
-            )]),
-        };
-        let a = rule.for_player("a");
-        let minutes = |at| a.minutes_at(at);
-        assert_eq!(
-            [50, 100, 199, 200, 400, 500, 599, 600, 700].map(minutes),
-            [0, 10, 10, 3, 5, 5, 5, 15, 15]
-        );
-        // Another player keeps the server's rule.
-        assert_eq!(rule.for_player("b").changes, rule.changes);
-        // An override before any server change still counts.
-        let early = StreakRule {
-            changes: vec![],
-            players: BTreeMap::from([("a".to_string(), vec![own(10, Some(3))])]),
-        };
-        assert_eq!(early.for_player("a").minutes_at(9), 0);
-        assert_eq!(early.for_player("a").minutes_at(10), 3);
-    }
-
-    #[test]
-    fn a_zero_minimum_keeps_the_any_review_rule() {
-        let reviews = study(&[(9, 1), (10, 12), (12, 1), (13, 3)]);
-        for now in [at(12), at(13), at(14)] {
-            let old = protected(&reviews, now, &[]);
-            for rule in [
-                vec![],
-                vec![(0, 0)],
-                vec![(0, 10), (utc().day_start_ms(5), 0)],
-            ] {
-                let new = ruled(&reviews, now, &rule);
-                assert_eq!(
-                    serde_json::to_value(&new).unwrap(),
-                    serde_json::to_value(&old).unwrap(),
-                    "{rule:?}"
-                );
-                assert_eq!(new.today.streak_minutes, 0);
-            }
-        }
-        assert_eq!(StreakRule::default().minutes_at(i64::MAX), 0);
-    }
-
-    #[test]
-    fn a_day_under_the_minimum_does_not_count() {
-        let rule = [(0, 10)];
-        let reviews = study(&[(10, 12), (11, 3), (12, 10)]);
-        let p = ruled(&reviews, at(12), &rule);
-        assert_eq!(p.streak, 1);
-        assert_eq!(p.lifetime.best_streak, 1);
-        assert_eq!(p.lifetime.days_active, 3, "short days are still study days");
-
-        let reviews = study(&[(10, 12), (11, 12), (12, 6)]);
-        let p = ruled(&reviews, at(12), &rule);
-        assert_eq!(p.streak, 2, "today is open, not broken");
-        assert!(p.at_risk);
-        assert!(!p.today.counts());
-        assert_eq!(serde_json::to_value(&p).unwrap()["streak_state"], "pending");
-        assert_eq!((p.today.minutes, p.today.streak_minutes), (6, 10));
-        assert_eq!(
-            p.streak_warning.unwrap().title,
-            "🔥 Your 2 day streak ends in 15h · 6 of 10 minutes today"
-        );
-
-        let done = ruled(&study(&[(10, 12), (11, 12), (12, 10)]), at(12), &rule);
-        assert_eq!(done.streak, 3);
-        assert!(!done.at_risk);
-        assert!(done.today.counts());
-        assert_eq!(
-            serde_json::to_value(&done).unwrap()["streak_state"],
-            "studied"
-        );
-    }
-
-    #[test]
-    fn days_before_the_minimum_keep_the_old_rule() {
-        let start = utc().day_start_ms(11);
-        let rule = [(start, 10)];
-        let kept = ruled(
-            &study(&[(9, 1), (10, 1), (11, 10), (12, 10)]),
-            at(12),
-            &rule,
-        );
-        assert_eq!(kept.streak, 4);
-        let short = ruled(&study(&[(9, 1), (10, 1), (11, 1), (12, 10)]), at(12), &rule);
-        assert_eq!(short.streak, 1);
-        assert_eq!(short.lifetime.best_streak, 2);
-        let midday = ruled(
-            &study(&[(9, 1), (10, 1), (11, 1), (12, 10)]),
-            at(12),
-            &[(start + 1, 10)],
-        );
-        assert_eq!(
-            midday.streak, 4,
-            "a change during a day applies from the next one"
-        );
-    }
-
-    #[test]
-    fn a_later_change_only_affects_later_days() {
-        let reviews = study(&[(9, 12), (10, 3), (11, 12), (12, 3), (13, 3)]);
-        let ten = ruled(&reviews, at(13), &[(0, 10)]);
-        assert_eq!(ten.streak, 0);
-        let lowered = ruled(&reviews, at(13), &[(0, 10), (utc().day_start_ms(12), 2)]);
-        assert_eq!(
-            lowered.streak, 3,
-            "day 10 stays missed, days 12 and 13 count"
-        );
-        assert_eq!(lowered.lifetime.best_streak, 3);
-        assert_eq!(
-            lowered
-                .history
-                .iter()
-                .map(|day| day.streak)
-                .collect::<Vec<_>>(),
-            [1, 0, 1, 2, 3]
-        );
-        assert_eq!(lowered.today.streak_minutes, 2);
-    }
-
-    #[test]
-    fn a_freeze_covers_a_day_under_the_minimum() {
-        let mut reviews = perfect_history(&[1]);
-        assert!(
-            reviews.len() >= 3,
-            "a perfect day takes at least three minutes"
-        );
-        reviews.extend(reviews_on(2, 1, 99_000));
-        reviews.extend(minutes_on(3, 3));
-        let p = ruled(&reviews, at(3), &[(0, 2)]);
-        assert_eq!(p.streak, 2);
-        assert!(p.history.iter().any(|day| day.frozen && day.reviews == 1));
-        let cell = |day: i64| {
-            let cell = p
-                .heatmap
-                .iter()
-                .find(|c| c.date == date_string(day))
-                .unwrap();
-            serde_json::to_value(cell).unwrap()
-        };
-        let frozen = cell(2);
-        assert_eq!(
-            (
-                &frozen["state"],
-                &frozen["reviews"],
-                &frozen["streak_minutes"]
-            ),
-            (
-                &serde_json::json!("frozen"),
-                &serde_json::json!(1),
-                &serde_json::json!(2)
-            ),
-            "a frozen day reads as frozen although it had a review"
-        );
-        assert_eq!(cell(1)["state"], "met");
-        assert_eq!(cell(3)["state"], "met");
-        assert_eq!(cell(0)["state"], "none");
-    }
-
-    #[test]
-    fn heatmap_days_carry_the_servers_verdict() {
-        let rule = [(0, 10)];
-        // A short day without a freeze breaks the streak and stays short.
-        let p = ruled(&study(&[(10, 12), (11, 3), (12, 4)]), at(12), &rule);
-        let state = |day: i64| {
-            serde_json::to_value(
-                p.heatmap
-                    .iter()
-                    .find(|c| c.date == date_string(day))
-                    .unwrap(),
-            )
-            .unwrap()
-        };
-        assert_eq!(state(10)["state"], "met");
-        assert_eq!(state(11)["state"], "short");
-        assert_eq!(
-            (&state(11)["minutes"], &state(11)["streak_minutes"]),
-            (&serde_json::json!(3), &serde_json::json!(10))
-        );
-        assert_eq!(
-            state(12)["state"],
-            "short",
-            "today is short until it is met"
-        );
-        assert_eq!(state(9)["state"], "none");
-        let day = p
-            .history
-            .iter()
-            .find(|d| d.date == date_string(11))
-            .unwrap();
-        assert_eq!(day.state, DayState::Short);
-        assert_eq!(p.today.time_ms, 4 * 60_000);
-        assert_eq!(p.today.starts_at, 12 * DAY_MS + 4 * 3_600_000);
-        assert_eq!(
-            DayState::of(2, 0, 0, true, true),
-            DayState::Met,
-            "a day that counted is met even when the clock skipped over its number"
-        );
-        assert_eq!(DayState::of(0, 0, 0, true, true), DayState::Skipped);
-    }
-
-    #[test]
-    fn streak_achievements_wait_for_the_minimum() {
-        let days: Vec<(i64, i64)> = (1..=7).map(|day| (day, 10)).collect();
-        let mut reviews = study(&days[..6]);
-        reviews.extend(minutes_on(7, 4));
-        let week = |p: &Profile| {
-            p.achievements
-                .iter()
-                .find(|a| a.title == "Full Week")
-                .unwrap()
-                .unlocked
-                .is_some()
-        };
-        assert!(!week(&ruled(&reviews, at(7), &[(0, 10)])));
-        assert!(week(&ruled(&study(&days), at(7), &[(0, 10)])));
-    }
-
-    #[test]
-    fn weekly_board_fixture() {
-        use weekly_fixture::CountsToward;
-
-        let week = Week::BOARD;
-        for case in weekly_fixture::cases() {
-            let name = &case.name;
-            let expected = &case.expected;
-            assert_eq!(
-                week.start_of(case.now_ms),
-                expected.board_starts_at,
-                "{name}"
-            );
-            assert_eq!(
-                week.end_after(case.now_ms),
-                expected.board_ends_at,
-                "{name}"
-            );
-
-            // One review now: its XP shows where the player's current day counts.
-            let review = Review {
-                id: case.now_ms,
-                cid: 1,
-                last_ivl: 0,
-                ivl: None,
-                time_ms: 5_000,
-                kind: 1,
+    fn clients_share_the_study_day_and_review_format() {
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/clients.json")).unwrap();
+        for case in fixtures["study_day"].as_array().unwrap() {
+            let clock = Clock {
+                offset_west_min: case["offset_west_min"].as_i64().unwrap(),
+                rollover_hour: case["rollover_hour"].as_i64().unwrap(),
             };
-            let p = compute("a", "a", &[review], &case.clock, &week, case.now_ms);
-            let json = serde_json::to_value(&p).unwrap();
-            let today = p.periods.day;
-            assert!(today > 0, "{name}");
-            let (board, closing, next) = match expected.counts_toward {
-                CountsToward::Board => (today, None, None),
-                CountsToward::Closing => (0, Some(expected.own_week_ends_at), None),
-                CountsToward::Next => (0, None, Some(expected.board_ends_at)),
-            };
-            assert_eq!(p.week_xp, board, "{name}: week_xp");
             assert_eq!(
-                json.get("closing_week").map(|c| c["ends_at"].as_i64()),
-                closing.map(Some),
-                "{name}: closing_week"
+                clock.day(case["now_ms"].as_i64().unwrap()),
+                case["day"].as_i64().unwrap(),
+                "{case}"
             );
-            if closing.is_some() {
-                assert_eq!(json["closing_week"]["xp"], today, "{name}");
-            }
-            assert_eq!(
-                json.get("next_week").map(|n| n["starts_at"].as_i64()),
-                next.map(Some),
-                "{name}: next_week"
-            );
-            if next.is_some() {
-                assert_eq!(json["next_week"]["xp"], today, "{name}");
-            }
         }
-    }
-}
-
-/// The cases in `tests/fixtures/weekly_board.json`, shared by the game and reminder tests.
-#[cfg(test)]
-pub(crate) mod weekly_fixture {
-    use super::Clock;
-    use serde::Deserialize;
-
-    /// Which week the player's current Anki day counts toward, next to the board's.
-    #[derive(Deserialize, Clone, Copy)]
-    pub(crate) enum CountsToward {
-        #[serde(rename = "board_week")]
-        Board,
-        #[serde(rename = "closing_week")]
-        Closing,
-        #[serde(rename = "next_week")]
-        Next,
-    }
-
-    #[derive(Deserialize)]
-    pub(crate) struct Expected {
-        pub board_starts_at: i64,
-        pub board_ends_at: i64,
-        pub counts_toward: CountsToward,
-        pub own_week_ends_at: i64,
-    }
-
-    #[derive(Deserialize)]
-    pub(crate) struct Case {
-        pub name: String,
-        pub now_ms: i64,
-        pub clock: Clock,
-        pub expected: Expected,
-    }
-
-    #[derive(Deserialize)]
-    struct Fixture {
-        cases: Vec<Case>,
-    }
-
-    pub(crate) fn cases() -> Vec<Case> {
-        let fixture: Fixture =
-            serde_json::from_str(include_str!("../tests/fixtures/weekly_board.json")).unwrap();
-        fixture.cases
+        for case in fixtures["review_row"].as_array().unwrap() {
+            let review: Review = serde_json::from_value(case["review"].clone()).unwrap();
+            let row: Vec<i64> = serde_json::from_value(case["row"].clone()).unwrap();
+            assert_eq!(
+                (
+                    review.id,
+                    review.cid,
+                    review.last_ivl,
+                    review.ivl,
+                    review.time_ms,
+                    i64::from(review.kind),
+                    review.ease.map(i64::from)
+                ),
+                (
+                    row[0],
+                    row[1],
+                    row[2],
+                    Some(row[3]),
+                    row[4],
+                    row[5],
+                    Some(row[6])
+                )
+            );
+        }
     }
 }

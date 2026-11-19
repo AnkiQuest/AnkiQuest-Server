@@ -1295,6 +1295,7 @@ mod tests {
                     cid: i as i64,
                     last_ivl: 1,
                     ivl: None,
+                    ease: None,
                     time_ms: 5000,
                     kind: 1,
                 })

@@ -41,6 +41,7 @@ Random values are replaced, numbered in order of appearance: device tokens by `e
 | `companion.json` | `GET /api/companion/{user}` |
 | `settings.json` | `GET /api/settings/{user}` |
 | `settings_save.json` | `PUT /api/settings/{user}`, with a key the server does not know and keeps |
+| `settings_countdowns.json` | `PUT /api/settings/{user}` with a `countdowns` list: an exam with a deck and an event without |
 | `streak_freezes.json` | `GET /api/streak-freezes/{user}` |
 | `challenges.json` | `GET /api/community/challenges/{user}`: an invitation for the player, a goal in progress, one reached, one ended early, and the weekly suggestion |
 | `challenge_create.json` | `POST /api/community/challenges/{user}` with a `request_id` |
@@ -49,6 +50,11 @@ Random values are replaced, numbered in order of appearance: device tokens by `e
 | `group_create.json` | `POST /api/social/{user}` `{"action": "create_group", "name"}`: the new group with its invite code |
 | `social.json` | `GET /api/social/{user}`: a friend, a request each way, a muted player, a group the player owns and one they joined |
 | `invite.json` | `GET /api/invites/{code}` |
+| `group_invite.json` | `POST /api/social/{user}` `{"action": "invite", "group", "user"}`: the owner's overview with `invited` |
+| `social_invitation.json` | `GET /api/social/{user}` for the invitee: `invitations` |
+| `group_invite_accept.json` | `POST /api/social/{user}` `{"action": "accept_invite", "group"}` |
+| `message.json` | `POST /api/messages/{user}` `{"to", "message"}` |
+| `activity_messages.json` | `GET /api/activity/{user}?category=messages` for the recipient: a `message` and a `group_invite` |
 | `social_change.json` | `POST /api/social/{user}` `{"action": "befriend", "user"}`, accepting a request |
 | `records.json` | `GET /api/records` |
 | `study.json` | `GET /api/study/{user}`: three study days and a day off |

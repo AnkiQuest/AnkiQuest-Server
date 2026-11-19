@@ -421,6 +421,7 @@ pub(crate) fn routes() -> Router<Arc<App>> {
 mod tests {
     use super::*;
     use crate::app::load_player;
+    use crate::decks::get_decks;
     use crate::decks::set_decks;
     use crate::inbox::get_notifications;
     use crate::test_support::*;
@@ -447,6 +448,7 @@ mod tests {
                 kind,
                 last_ivl: 1,
                 ivl: None,
+                ease: None,
                 time_ms: 30_000,
             });
             store
@@ -763,6 +765,89 @@ mod tests {
             .to_string();
         assert!(status.starts_with('+'), "{status}");
         assert_eq!(ask(Some(pending[2].id)).await.feedback.status, None);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn authenticated_upload_preferences_and_inbox_end_to_end() {
+        let (app, path) = fixture();
+        // Viewers of others' study have studied themselves; see crate::reciprocity.
+        with_reviews(&app, "hill", 1);
+        crate::test_support::used_app(&app, &["cerro", "hill", "friend"]);
+        let _ = upload(
+            State(app.clone()),
+            UrlPath("cerro".into()),
+            headers("cerro"),
+            Json(sample_upload(2, false)),
+        )
+        .await
+        .unwrap();
+        let settings = get_decks(
+            State(app.clone()),
+            UrlPath("cerro".into()),
+            headers("cerro"),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert!(!settings.decks[0].enabled);
+        assert_eq!(settings.decks[0].name, "Spanish");
+        assert_eq!(
+            settings
+                .recipients
+                .iter()
+                .map(|r| r.user.as_str())
+                .collect::<Vec<_>>(),
+            vec!["friend", "hill"]
+        );
+        assert_eq!(settings.recipients[1].display, "hill");
+        let _ = set_decks(
+            State(app.clone()),
+            UrlPath("cerro".into()),
+            headers("cerro"),
+            Json(preferences(&["hill"])),
+        )
+        .await
+        .unwrap();
+        for _ in 0..2 {
+            let _ = upload(
+                State(app.clone()),
+                UrlPath("cerro".into()),
+                headers("cerro"),
+                Json(sample_upload(0, false)),
+            )
+            .await
+            .unwrap();
+        }
+        let inbox = get_notifications(State(app.clone()), UrlPath("hill".into()), headers("hill"))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(
+            inbox[0].body,
+            "Cerro has finished their Spanish studies for today."
+        );
+        assert!(inbox[0].created_at <= now_ms() / 1000);
+        assert!(
+            get_notifications(
+                State(app.clone()),
+                UrlPath("friend".into()),
+                headers("friend")
+            )
+            .await
+            .unwrap()
+            .0
+            .is_empty()
+        );
+        assert!(
+            get_decks(State(app.clone()), UrlPath("hill".into()), headers("hill"))
+                .await
+                .unwrap()
+                .0
+                .decks
+                .is_empty()
+        );
         cleanup(app, path);
     }
 }
