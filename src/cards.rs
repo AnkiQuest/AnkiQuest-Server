@@ -1532,23 +1532,46 @@ mod tests {
                 "aki/frozen",
                 "aki/streak",
                 "aki/winner",
+                "anki_tan/celebrate",
+                "anki_tan/frozen",
+                "anki_tan/streak",
                 "ankilope/celebrate",
                 "ankilope/frozen"
             ]
         );
-        for (_, _, png) in CARD_ART {
+
+        // Masters are shrunk to 512 px, never enlarged: Anki-tan's pack stickers are 320 px.
+        for (who, stem, png) in CARD_ART {
             let pixmap = tiny_skia::Pixmap::decode_png(png).unwrap();
-            assert_eq!((pixmap.width(), pixmap.height()), (512, 512));
+            let (width, height) = (pixmap.width(), pixmap.height());
+            if who == "anki_tan" {
+                assert!(width.max(height) <= 512, "{who}/{stem}");
+                continue;
+            }
+            assert_eq!((width, height), (512, 512), "{who}/{stem}");
         }
     }
 
     #[test]
     fn a_companion_without_art_shows_no_one_elses() {
-        // Anki-tan has no share-card masters (celebrate.png, streak.png, ...) yet: her card must
-        // not show Aki.
+        // Leech-kun has no masters yet: his card must not show Aki.
         for pose in ["celebrate", "streak", "winner", "freeze"] {
-            assert_eq!(art("anki_tan", pose), None, "{pose}");
+            assert_eq!(art("leech_tan", pose), None, "{pose}");
         }
+    }
+
+    #[test]
+    fn anki_tan_cards_show_her_listed_art() {
+        // #61: her masters are the files static/anki-tan/poses.json lists.
+        let file = |art: Option<Art>| art.map(|art| CARD_ART[art.file].0);
+        let stem = |art: Option<Art>| art.map(|art| CARD_ART[art.file].1);
+        for pose in ["celebrate", "happy", "streak", "frozen", "winner", "freeze"] {
+            assert_eq!(file(art("anki_tan", pose)), Some("anki_tan"), "{pose}");
+        }
+        assert_eq!(stem(art("anki_tan", "streak")), Some("streak"));
+        assert_eq!(stem(art("anki_tan", "frozen")), Some("frozen"));
+        assert_eq!(stem(art("anki_tan", "winner")), Some("celebrate"));
+        assert_eq!(art("anki_tan", "streak").unwrap().look, Look::Master);
     }
 
     #[test]
@@ -1874,6 +1897,28 @@ mod tests {
         cleanup(app, path);
     }
 
+    #[test]
+    fn an_unlock_card_shows_the_companion_that_joined() {
+        // #61: Anki-tan's unlock moment shows her, not the player's chosen companion.
+        let (app, path) = fixture(false, None);
+        let id = insert(&app, "cerro", "Anki-tan joined you!", None);
+        let store = app.store.lock().unwrap();
+        store
+            .conn
+            .execute(
+                "update wins set kind = 'companion_unlocked', key = 'companion:anki_tan' where id = ?1",
+                [id],
+            )
+            .unwrap();
+        let win = wins::win(&store.conn, "cerro", id).unwrap();
+        let shown = shown(&store, &win).unwrap();
+        let card = card(&app, &store, &win, &shown, "anki.example.test").unwrap();
+        assert_eq!(card.art, art("anki_tan", "celebrate"));
+        assert_eq!(card.art.map(|art| CARD_ART[art.file].0), Some("anki_tan"));
+        drop(store);
+        cleanup(app, path);
+    }
+
     #[tokio::test]
     async fn without_a_public_url_the_page_uses_the_request_host() {
         let (app, path) = fixture(false, None);
@@ -1895,6 +1940,7 @@ mod tests {
             ("level", "ankilope", "celebrate", true),
             ("place", "aki", "winner", true),
             ("challenge", "none", "celebrate", false),
+            ("companion_unlocked", "anki_tan", "celebrate", true),
         ];
         for (kind, companion, pose, avatar) in examples {
             let mut card = sample(art(companion, pose), avatar.then(avatar_png), kind);

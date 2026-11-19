@@ -70,7 +70,7 @@ function pose(data: Shared): CompanionPose {
 function companionSource(data: Shared) {
   const choice = AnkiQuestAki.choice();
   if (choice === "none") return null;
-  return AnkiQuestAki.artOwner() === "ankilope" ? "/ankilope/celebrate.png" : `/aki/${pose(data)}.png`;
+  return AnkiQuestAki.source(pose(data));
 }
 
 /** A square picture of the card to post where links do not unfurl. */

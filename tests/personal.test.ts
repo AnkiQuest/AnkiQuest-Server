@@ -188,6 +188,20 @@ async function noOverflow(page: Page,label: string){const size=await page.evalua
     await locked.page.locator('#companion-form').waitFor();
     assert.match(await locked.page.locator('#companion-form').innerText(),/Study for 10 hours in total[\s\S]*6 of 10 hours/);
     assert.equal(await locked.page.locator('#companion-form input:not([disabled])').count(),2,'Aki and no companion');
+    // #61: Anki-tan is offered with her own face, and earned by a streak.
+    locked.data.unlocks={unlocks:['anki_tan'],progress:{}};
+    await locked.page.reload();
+    await locked.page.locator('#companion-form').waitFor();
+    const ankiTan=locked.page.locator('#companion-form label:has([value="anki_tan"])');
+    assert.equal(await ankiTan.locator('input').isDisabled(),false);
+    assert.equal(await ankiTan.locator('img').getAttribute('src'),'/anki-tan/face-192.png');
+    assert.match(await ankiTan.innerText(),/Anki-tan/);
+    locked.data.unlocks={unlocks:[],progress:{anki_tan:{kind:'streak',value:60,goal:66}}};
+    await locked.page.reload();
+    await locked.page.locator('#companion-form').waitFor();
+    const lockedTan=locked.page.locator('#companion-form .companion-locked');
+    assert.equal(await lockedTan.locator('input').getAttribute('value'),'anki_tan');
+    assert.match(await lockedTan.innerText(),/Keep a 66-day streak[\s\S]*60 of 66 days/);
     assert.deepEqual(locked.errors,[]);checks++;await locked.context.close();
   } finally {await browser.close();}
   console.log(`PASS: ${checks} personal-page responsive, privacy, history and settings browser scenarios.`);

@@ -1406,5 +1406,7 @@
   "I tamed {0} leeches.": "He domado {0} sanguijuelas.",
   "Reach level {0}": "Alcanza el nivel {0}",
   "Level {0} of {1}": "Nivel {0} de {1}",
-  "{0} of {1} hours": "{0} de {1} horas"
+  "{0} of {1} hours": "{0} de {1} horas",
+  "Keep a {0}-day streak": "Mantén una racha de {0} días",
+  "{0} of {1} days": "{0} de {1} días"
 }

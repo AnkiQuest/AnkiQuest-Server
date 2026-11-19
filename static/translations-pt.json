@@ -1406,5 +1406,7 @@
   "I tamed {0} leeches.": "Domei {0} sanguessugas.",
   "Reach level {0}": "Chega ao nível {0}",
   "Level {0} of {1}": "Nível {0} de {1}",
-  "{0} of {1} hours": "{0} de {1} horas"
+  "{0} of {1} hours": "{0} de {1} horas",
+  "Keep a {0}-day streak": "Manter uma sequência de {0} dias",
+  "{0} of {1} days": "{0} de {1} dias"
 }
