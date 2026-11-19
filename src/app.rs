@@ -334,7 +334,7 @@ pub(crate) fn mark_events_seen(store: &Store, user: &str, profile: &Profile) -> 
 }
 
 /// `old` (sorted by id) with an upload applied as [`Store::upsert`] applies it: new reviews
-/// are added, a resent review only fills in a missing interval, and deleted ids go.
+/// are added, a resent review only fills in a missing interval and button, and deleted ids go.
 /// `None` when nothing changes.
 fn merge_upload(old: &[Review], new: &[Review], deleted: &[i64]) -> Option<Vec<Review>> {
     if new.is_empty() && deleted.is_empty() {
@@ -346,6 +346,7 @@ fn merge_upload(old: &[Review], new: &[Review], deleted: &[i64]) -> Option<Vec<R
         let same = later.id == first.id;
         if same {
             first.ivl = first.ivl.or(later.ivl);
+            first.ease = first.ease.or(later.ease);
         }
         same
     });
@@ -357,6 +358,7 @@ fn merge_upload(old: &[Review], new: &[Review], deleted: &[i64]) -> Option<Vec<R
             (Some(a), Some(b)) if a.id == b.id => {
                 let review = Review {
                     ivl: a.ivl.or(b.ivl),
+                    ease: a.ease.or(b.ease),
                     ..**a
                 };
                 kept.next();
@@ -397,6 +399,7 @@ mod tests {
             cid: id,
             last_ivl: 1,
             ivl,
+            ease: None,
             time_ms: 4000,
             kind: 1,
         };
@@ -428,6 +431,41 @@ mod tests {
         ));
         assert!(upload(&[], &[3]));
         assert!(!upload(&[], &[9]));
+        cleanup(app, path);
+    }
+
+    #[test]
+    fn a_resend_fills_in_the_button_in_the_cached_player() {
+        let (app, path) = fixture();
+        let review = |id, ease| Review {
+            id,
+            cid: id,
+            last_ivl: 1,
+            ivl: Some(2),
+            ease,
+            time_ms: 4000,
+            kind: 1,
+        };
+        let upload = |reviews: &[Review]| {
+            let mut store = app.store.lock().unwrap();
+            store
+                .upsert("cerro", reviews, &[], Clock::default())
+                .unwrap();
+            app.apply_upload(&store, "cerro", reviews, &[]).unwrap();
+            let cached = app.players.read().unwrap()["cerro"].reviews.clone();
+            assert_eq!(*cached, store.reviews("cerro").unwrap());
+            cached
+        };
+
+        // An older client's rows have no button; a newer client's resend fills it in.
+        upload(&[review(1, None), review(2, Some(1))]);
+        let cached = upload(&[review(1, Some(3)), review(2, Some(3))]);
+        assert_eq!(cached[0].ease, Some(3), "a missing button is filled in");
+        assert_eq!(cached[1].ease, Some(1), "a known button is kept");
+
+        // The same row twice in one upload keeps the button either copy has.
+        let cached = upload(&[review(4, None), review(4, Some(2))]);
+        assert_eq!(cached[2].ease, Some(2));
         cleanup(app, path);
     }
 
