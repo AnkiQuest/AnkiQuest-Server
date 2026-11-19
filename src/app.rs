@@ -334,7 +334,7 @@ pub(crate) fn mark_events_seen(store: &Store, user: &str, profile: &Profile) -> 
 }
 
 /// `old` (sorted by id) with an upload applied as [`Store::upsert`] applies it: new reviews
-/// are added, a resent review only fills in a missing interval, and deleted ids go.
+/// are added, a resent review only fills in a missing interval and button, and deleted ids go.
 /// `None` when nothing changes.
 fn merge_upload(old: &[Review], new: &[Review], deleted: &[i64]) -> Option<Vec<Review>> {
     if new.is_empty() && deleted.is_empty() {
@@ -346,6 +346,7 @@ fn merge_upload(old: &[Review], new: &[Review], deleted: &[i64]) -> Option<Vec<R
         let same = later.id == first.id;
         if same {
             first.ivl = first.ivl.or(later.ivl);
+            first.ease = first.ease.or(later.ease);
         }
         same
     });
@@ -357,7 +358,7 @@ fn merge_upload(old: &[Review], new: &[Review], deleted: &[i64]) -> Option<Vec<R
             (Some(a), Some(b)) if a.id == b.id => {
                 let review = Review {
                     ivl: a.ivl.or(b.ivl),
-                    ease: None,
+                    ease: a.ease.or(b.ease),
                     ..**a
                 };
                 kept.next();
