@@ -2,7 +2,7 @@
 
 AnkiQuest adds XP, streaks, friends, leaderboards and moments to Anki. It has three repositories:
 
-- [AnkiQuest/AnkiQuest-Server](https://github.com/AnkiQuest/AnkiQuest-Server): the server (Rust), its web pages (TypeScript), the API examples, the shared fixtures and the companion art masters.
+- [AnkiQuest/AnkiQuest-Server](https://github.com/AnkiQuest/AnkiQuest-Server): the server (Rust), its web pages (TypeScript), the API examples, the shared fixtures and the pose masters.
 - [AnkiQuest/AnkiQuest-Desktop](https://github.com/AnkiQuest/AnkiQuest-Desktop): the Anki desktop add-on (Python).
 - [AnkiQuest/AnkiQuest-Android](https://github.com/AnkiQuest/AnkiQuest-Android): the Android app (Kotlin), a fork of AnkiDroid.
 
@@ -18,13 +18,22 @@ These rules apply to every agent (Claude, Codex, others) and to people too. Ever
 
 Never call a person "the owner"; name them. "Code owner" describes how you treat the code, not who decides. "The owners" means hill and Aldana together. Name the person who approved something: "hill approved…", "Aldana approved…". An agent passing on an approval links the person's own words.
 
+## Glossary
+
+- Companion: a character (Aki, Ankilope, Bluma, Anki-tan).
+- Pose: one picture of a companion. Its master is `static/<companion>/<pose>.png` in AnkiQuest-Server; every other copy (Android drawable, add-on art, share card) is an exported copy of that pose, generated and hash-checked. A pose exists only when it is drawn for every live companion.
+- Mood: today's streak state, computed by the shared rule in `tests/fixtures/streak_moods.json`. Each mood names the pose it shows; several moods may show the same pose (`frozen_1` and `thawing` both show `frozen`). That is a mapping, not a fallback.
+- Moment: something that happened worth telling (milestone, level up, place, deck conquered), shown as a card.
+- Share: send a moment, board place or deck to friends in AnkiQuest or to another app. Don't say "shareable".
+- "Drawable" and "art" are only platform file names in code. In docs and discussion, say "the pose's exported copy".
+
 ## Code ownership
 
 You are the code owner and long-term maintainer of this codebase. The design is yours to decide, unless hill or Aldana overrules it.
 
 Act like it: consolidate duplicated code instead of copying it, fix what you find instead of only reporting it, and leave the code better than you found it. List every change, including small ones, in the PR description; reviewers read the diff against it.
 
-Don't hold on to the past. Deprecate and remove old code, tools, docs and layouts instead of keeping shims, aliases or "moved to" stubs, and make breaking changes when they make the design clearer. Pull requests that remove code are especially welcome. Say in the PR what breaks and who has to act. Two limits still apply: released apps keep working, so old endpoints, fields and API examples stay until no supported client uses them; and companion art is never deleted (see below).
+Don't hold on to the past. Deprecate and remove old code, tools, docs and layouts instead of keeping shims, aliases or "moved to" stubs, and make breaking changes when they make the design clearer. Pull requests that remove code are especially welcome. Say in the PR what breaks and who has to act. Two limits still apply: released apps keep working, so old endpoints, fields and API examples stay until no supported client uses them; and pose masters and their exported copies are never deleted (see below).
 
 ## Bugs: test first
 
@@ -74,16 +83,16 @@ AnkiQuest has two clients: the Android app ([AnkiQuest/AnkiQuest-Android](https:
 
 ## Companion art
 
-Companion art means every picture of a character: poses, moment and card pictures, widget and notification drawables.
+Every picture of a companion is a pose, including those on moments, share cards, widgets and notifications. The section and tool names keep "art"; the rules speak of poses, masters and exported copies.
 
-- Masters live only in `static/<companion>/` in AnkiQuest-Server. Every other copy (share cards, add-on, Android, docs) is generated from them by the exporters and hash-checked in CI; never commit a hand-made copy.
-- Never delete companion art, even when nothing uses it any more. Remove the references, keep the files, so they can be reused or merged later.
+- Masters live only in `static/<companion>/` in AnkiQuest-Server. Every exported copy (share cards, add-on, Android, docs) is generated from its master by the exporters and hash-checked in CI; never commit a hand-made copy.
+- Never delete a master or an exported copy, even when nothing uses it any more. Remove the references, keep the files, so they can be reused or merged later.
 - Every live companion has every pose listed in [`tests/fixtures/companion_poses.json`](https://github.com/AnkiQuest/AnkiQuest-Server/blob/master/tests/fixtures/companion_poses.json) in AnkiQuest-Server; both clients use that list.
 - A new companion goes live only with every pose drawn.
-- A PR that adds a pose to the list adds its art for every live companion. CI fails a PR that adds a pose without it.
-- No placeholder pictures: no stand-in, recoloured or borrowed art for a missing pose.
+- A PR that adds a pose to the list adds its master for every live companion. CI fails a PR that adds a pose without them. A mood that needs a new picture adds a pose this way; otherwise it maps to an existing pose.
+- No placeholder pictures: no stand-in, recoloured or borrowed picture for a missing pose.
 - One exception (hill, 2026-11-19): Anki-tan goes live before her missing extensions are drawn (`streak_hot`, `streak_blazing`, `frozen_2`, `frozen_3`, `abandoned`, `leech_defeated`, `winner`); they show their fallbacks until then. Drawing them comes first in AnkiQuest/AnkiQuest-Server#57. No other companion goes live with missing poses.
-- Until the missing poses are drawn (AnkiQuest/AnkiQuest-Server#57), the clients keep the current fallbacks: a missing extension shows the fallback the list gives it (a streak tier shows streak, frozen 3 shows frozen), and Bluma shows Ankilope's art recoloured where hers is missing. These are temporary. Once every live companion has every pose, remove them from the list and both clients.
+- Until the missing poses are drawn (AnkiQuest/AnkiQuest-Server#57), the clients keep the current fallbacks: a missing extension shows the fallback the list gives it (a streak tier shows streak, frozen 3 shows frozen), and Bluma shows Ankilope's poses recoloured where hers are missing. These are the only poses not drawn for every live companion, and they are temporary. Once every live companion has every pose, remove the fallbacks from the list and both clients.
 
 ## Writing
 
@@ -95,7 +104,7 @@ Mannered prose substitutes metaphor and flourish for direct statement. Instead o
 
 AnkiQuest-Server holds the server, the website and everything both clients share.
 
-- **Layout.** `src/` and `crates/`: the Rust server. `web/`: TypeScript for the pages in `static/`. `static/`: also the companion art masters. `tests/`: web tests (TypeScript), the shared fixtures in `tests/fixtures/` and repository tools in `tests/tools/`. `crates/xtask` holds the Rust repository tools (`cargo run -p ankiquest-xtask -- <command>`), including the art exporters for an Android or Desktop checkout and the README banner. This repository has no Python; the add-on and its tests are in AnkiQuest-Desktop.
+- **Layout.** `src/` and `crates/`: the Rust server. `web/`: TypeScript for the pages in `static/`. `static/`: also the pose masters. `tests/`: web tests (TypeScript), the shared fixtures in `tests/fixtures/` and repository tools in `tests/tools/`. `crates/xtask` holds the Rust repository tools (`cargo run -p ankiquest-xtask -- <command>`), including the art exporters for an Android or Desktop checkout and the README banner. This repository has no Python; the add-on and its tests are in AnkiQuest-Desktop.
 - **Shared instructions.** Everything above "This repository" in this file is the source AnkiQuest-Desktop and AnkiQuest-Android copy; their CI compares their copy with this file on `master`. After changing it here, update both copies.
 - **API examples are a contract.** `docs/api/examples/*.json` and `tests/fixtures/*.json` are copied into the Android app at a pinned commit (AnkiQuest/AnkiQuest-Android#203); AnkiQuest-Desktop is to pin it the same way. Adding an example is fine: clients pick it up through their bump PRs. Never remove or reshape an example released apps read (#230); retire it only after Android stops reading it. Document API changes in `docs/mobile-api.md`.
 - **Released apps talk to the deployed server.** Keep old endpoints and fields working until no supported client uses them.
