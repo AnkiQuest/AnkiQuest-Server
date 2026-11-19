@@ -41,14 +41,14 @@ esac
   return {status, errors, directory};
 }
 
-test("the mirror probe follows redirects before selecting an archive", async context => {
+test("the mirror probe checks redirects and keeps reachable alternatives", async context => {
   const requests: string[] = [];
   const server = createServer((request, response) => {
     const url = request.url ?? "";
     requests.push(url);
     if (url.startsWith("/redirect/")) {
       response.writeHead(HTTP_MOVED, {Location: "/unavailable"}).end();
-    } else if (url.startsWith("/healthy/") || (url.startsWith("/no-security/") && !url.endsWith("-security/InRelease"))) {
+    } else if (url.startsWith("/healthy/") || url.startsWith("/spare/") || (url.startsWith("/no-security/") && !url.endsWith("-security/InRelease"))) {
       response.writeHead(HTTP_OK).end("release data");
     } else {
       response.writeHead(HTTP_UNAVAILABLE).end("unavailable mirror");
@@ -60,9 +60,9 @@ test("the mirror probe follows redirects before selecting an archive", async con
     assert.ok(address && typeof address !== "string");
     const base = `http://127.0.0.1:${address.port}`;
 
-    const fallback = await select([`${base}/redirect`, `${base}/no-security`, `${base}/healthy`], context);
+    const fallback = await select([`${base}/redirect`, `${base}/no-security`, `${base}/healthy`, `${base}/spare`], context);
     assert.equal(fallback.status, 0, fallback.errors);
-    assert.equal(await readFile(path.join(fallback.directory, "selected"), "utf8"), `${base}/healthy/\n`);
+    assert.equal(await readFile(path.join(fallback.directory, "selected"), "utf8"), `${base}/healthy/\n${base}/spare/\n`);
     assert.ok(requests.includes("/unavailable"), "the redirect destination must be checked");
     assert.match(await readFile(path.join(fallback.directory, "apt"), "utf8"), /update.*Error-Mode=any/);
     assert.equal(await readFile(path.join(fallback.directory, "ubuntu.sources"), "utf8"),
