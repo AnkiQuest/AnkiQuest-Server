@@ -1,5 +1,5 @@
 /* Private Today, study history, session recap and account settings. */
-import {day, escape as esc, hourOptions, nativeAccount, number} from "./common";
+import {type ClosingWeek, type NextWeek, day, escape as esc, hourOptions, nativeAccount, number, weekNotice} from "./common";
 import {failure, refused, request as call, send} from "./http";
 
 (() => {
@@ -12,7 +12,7 @@ import {failure, refused, request as call, send} from "./http";
   interface GoalProgress extends Goal { progress?: number | null; reached?: boolean; day?: number | null }
   interface Sharing { policies: Record<string, Policy>; daily_cap: number }
   interface Win { id: number; kind: string; created_at: number; title: string; body: string; policy: Policy; shared_with_friends: boolean; link: {url: string; image: string} | null }
-  interface Profile { user: string; display: string; level: number; streak: number; today: {reviews: number; xp: number; minutes?: number; streak_minutes?: number}; quests: Quest[]; day_ends_at?: number; goal?: GoalProgress | null; closing_week?: {xp: number; ends_at: number}; next_week?: {xp: number; starts_at: number} }
+  interface Profile { user: string; display: string; level: number; streak: number; today: {reviews: number; xp: number; minutes?: number; streak_minutes?: number}; quests: Quest[]; day_ends_at?: number; goal?: GoalProgress | null; closing_week?: ClosingWeek; next_week?: NextWeek }
   /** `state` and `streak_minutes` are the server's verdict on the day; older servers leave them out. */
   interface StudyDay { date: string; reviews: number; time_ms: number; xp: number; new_cards: number; streak: number; frozen: boolean; streak_minutes?: number; state?: "met" | "short" | "frozen" | "skipped" | "none" }
   interface StudySession { started_at: number; ended_at: number; reviews: number; time_ms: number; new_cards: number }
@@ -270,21 +270,8 @@ import {failure, refused, request as call, send} from "./http";
     const reviewed = Number(today.reviews || 0), needed = Number(today.streak_minutes || 0);
     const streakNote = needed > 0 ? tr`${number(Math.min(Number(today.minutes || 0), needed))} of ${number(needed)} minutes today` : tr("Anki study days");
     const lead = reviewed ? tr("Every review moved you forward today.") : tr("A small start still counts. Your cards are waiting in Anki.");
-    $("personal-content").innerHTML = html`<section class="personal-lead"><div class="eyebrow">${tr("Your Anki day")}</div><h2>${profile ? tr`Hello, ${esc(profile.display)}.` : tr("A fresh page for today.")}</h2><p>${lead}</p><div class="personal-actions">${link("/community#challenges",tr("See friend goals"),true)}${link("/history",tr("View study history"))}<a class="button-link" href="https://ankiweb.net/decks" target="_blank" rel="noopener noreferrer">${tr("Study in AnkiWeb ↗")}</a></div>${freshness()}</section><div class="kpis">${site.kpi(tr("Reviews today"),number(today.reviews),tr("Synced from Anki"),"blue")}${site.kpi(tr("Today's XP"),number(today.xp),tr("Every card counts"),"gold")}${site.kpi(tr("Current streak"),number(profile?.streak || 0),streakNote,"green")}${site.kpi(tr("Level"),number(profile?.level || 1),tr("Keep moving forward"))}</div>${closingWeek()}${goalMeter()}<div class="grid"><article class="card"><div class="card-head"><div><h2>${tr("Today's quests")}</h2><p>${tr("Three small wins to aim for.")}</p></div></div>${quests.length ? html`<div class="stack">${quests.map(quest).join("")}</div>` : html`<p class="personal-empty">${tr("Upload some reviews to see your quests.")}</p>`}</article>${activeGoals()}</div><article class="card personal-wins" id="today-wins">${winsBody()}</article>${recap()}`;
+    $("personal-content").innerHTML = html`<section class="personal-lead"><div class="eyebrow">${tr("Your Anki day")}</div><h2>${profile ? tr`Hello, ${esc(profile.display)}.` : tr("A fresh page for today.")}</h2><p>${lead}</p><div class="personal-actions">${link("/community#challenges",tr("See friend goals"),true)}${link("/history",tr("View study history"))}<a class="button-link" href="https://ankiweb.net/decks" target="_blank" rel="noopener noreferrer">${tr("Study in AnkiWeb ↗")}</a></div>${freshness()}</section><div class="kpis">${site.kpi(tr("Reviews today"),number(today.reviews),tr("Synced from Anki"),"blue")}${site.kpi(tr("Today's XP"),number(today.xp),tr("Every card counts"),"gold")}${site.kpi(tr("Current streak"),number(profile?.streak || 0),streakNote,"green")}${site.kpi(tr("Level"),number(profile?.level || 1),tr("Keep moving forward"))}</div>${weekNotice(state.profile?.closing_week, state.profile?.next_week)}${goalMeter()}<div class="grid"><article class="card"><div class="card-head"><div><h2>${tr("Today's quests")}</h2><p>${tr("Three small wins to aim for.")}</p></div></div>${quests.length ? html`<div class="stack">${quests.map(quest).join("")}</div>` : html`<p class="personal-empty">${tr("Upload some reviews to see your quests.")}</p>`}</article>${activeGoals()}</div><article class="card personal-wins" id="today-wins">${winsBody()}</article>${recap()}`;
     loadCards();
-  }
-  /** The week the board shows but no longer counts today, or the one it has yet to reach but already does. */
-  function closingWeek() {
-    const clock = (at: number) => new Date(at).toLocaleTimeString(AnkiQuestI18n.language, {hour:"2-digit", minute:"2-digit"});
-    const closing = state.profile?.closing_week;
-    if (closing && Number(closing.ends_at) > Date.now()) {
-      return html`<p class="notice personal-closing" id="closing-week" role="status">${esc(tr`Last week still counting: ${number(closing.xp)} XP · closes at ${clock(Number(closing.ends_at))}`)}</p>`;
-    }
-    const next = state.profile?.next_week;
-    if (next && Number(next.starts_at) > Date.now()) {
-      return html`<p class="notice personal-closing" id="next-week" role="status">${esc(tr`Next week already counting: ${number(next.xp)} XP · the board switches at ${clock(Number(next.starts_at))}`)}</p>`;
-    }
-    return "";
   }
   function ankiToday(profile: Profile | null | undefined) {
     const offset = new Date().getTimezoneOffset() * 60000;

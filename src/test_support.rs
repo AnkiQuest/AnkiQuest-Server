@@ -212,6 +212,7 @@ pub(crate) fn reviews_at(first: i64, count: i64) -> Vec<Review> {
             cid: 1_000 + index,
             last_ivl: 1,
             ivl: None,
+            ease: None,
             time_ms: 8_000,
             kind: 1,
         })

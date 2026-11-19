@@ -2,16 +2,21 @@
 //
 // The pages come from static/ with their scripts bundled the way build.rs does;
 // every API call is answered from the recorded examples in docs/api/examples,
-// so no server or database is needed. The clock, locale, time zone and colour
-// scheme are fixed, so repeated runs give the same pictures. The pages use the
-// system font (system-ui), so another system can draw slightly different text.
+// so no server or database is needed. Everything that changes pixels is fixed:
+// Playwright's own Chromium (its version comes with the pinned playwright
+// package), the fonts (only assets/fonts, through a fontconfig file, so no
+// system font is used), the clock, locale, time zone, colour scheme, viewport
+// and device scale. Runs on Linux give byte-identical files; CI checks that.
 // `cargo run -p ankiquest-xtask -- banner` then draws the banner from them.
 //
-// Run: npm run screenshots:web, or npm run banner for the screenshots and the banner.
+// Run: npm run screenshots:web, or npm run screenshots for these, the banner
+// and the social preview.
+import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import type {BrowserContext, Route} from "playwright";
-import {fulfillAsset, launch, page as built, root} from "../support/web.ts";
+import type {Browser, BrowserContext, Route} from "playwright";
+import {chromium, fulfillAsset, page as built, root} from "../support/web.ts";
 
 /** The player the examples are recorded for. */
 const PLAYER = "hill";
@@ -22,6 +27,44 @@ const CLOCK = new Date("2026-10-28T10:30:00Z");
 /** CSS pixels of the window each page is drawn in, and the device pixel ratio. */
 const VIEWPORT = {width: 760, height: 1100};
 const SCALE = 2;
+
+/**
+ * The only fonts the browser sees: Roboto for text (the banner's font), DejaVu
+ * from the pinned dejavu-fonts-ttf package for symbols such as ↗ and ♜ and for
+ * monospace. assets/fonts/DejaVuSans*.ttf are subsets for the share cards.
+ */
+const DEJAVU = path.join(root, "node_modules", "dejavu-fonts-ttf", "ttf");
+const FONT_FILES = [
+  path.join(root, "assets", "fonts", "Roboto-Regular.ttf"),
+  path.join(root, "assets", "fonts", "Roboto-Bold.ttf"),
+  ...["DejaVuSans.ttf", "DejaVuSans-Bold.ttf", "DejaVuSansMono.ttf", "DejaVuSansMono-Bold.ttf"].map(name => path.join(DEJAVU, name)),
+];
+
+/**
+ * Noto Color Emoji for the trophies and medals, downloaded once from a fixed
+ * release and checked by hash; it is too large to commit or to ship in npm.
+ */
+const EMOJI = {
+  url: "https://raw.githubusercontent.com/googlefonts/noto-emoji/v2.051/fonts/NotoColorEmoji.ttf",
+  sha256: "72a635cb3d2f3524c51620cdde406b217204e8a6a06c6a096ff8ed4b5fd6e27b",
+  file: path.join(root, "node_modules", ".cache", "ankiquest-screenshots", "NotoColorEmoji-v2.051.ttf"),
+};
+
+/** What each generic CSS family resolves to, in order of preference. */
+const SANS = ["Roboto", "DejaVu Sans", "Noto Color Emoji"];
+const MONO = ["DejaVu Sans Mono", "DejaVu Sans"];
+const GENERICS: Record<string, string[]> = {
+  "system-ui": SANS,
+  "ui-sans-serif": SANS,
+  "sans-serif": SANS,
+  sans: SANS,
+  serif: SANS,
+  monospace: MONO,
+  "ui-monospace": MONO,
+};
+
+/** Chromium switches that keep text and colour the same on every machine. */
+const ARGS = ["--font-render-hinting=none", "--disable-lcd-text", "--force-color-profile=srgb", "--disable-gpu"];
 
 const EXAMPLES = path.join(root, "docs", "api", "examples");
 const STATIC = path.join(root, "static");
@@ -125,10 +168,83 @@ async function serve(context: BrowserContext, missing: Set<string>): Promise<voi
   });
 }
 
+/**
+ * A fontconfig file in `dir` that knows only FONT_FILES and the emoji font, with grayscale
+ * antialiasing and no hinting, so the text does not depend on the system.
+ */
+/** The emoji font's path, downloading it first if the cache does not hold it. */
+async function emojiFont(): Promise<string> {
+  const digest = (bytes: Buffer) => crypto.createHash("sha256").update(bytes).digest("hex");
+  if (fs.existsSync(EMOJI.file) && digest(fs.readFileSync(EMOJI.file)) === EMOJI.sha256) {
+    return EMOJI.file;
+  }
+
+  // Download, check, then move into place, so a broken download is never cached.
+  const response = await fetch(EMOJI.url);
+  if (!response.ok) {
+    throw new Error(`${EMOJI.url}: ${response.status}`);
+  }
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (digest(bytes) !== EMOJI.sha256) {
+    throw new Error(`${EMOJI.url}: sha256 ${digest(bytes)}, expected ${EMOJI.sha256}`);
+  }
+  fs.mkdirSync(path.dirname(EMOJI.file), {recursive: true});
+  fs.writeFileSync(`${EMOJI.file}.part`, bytes);
+  fs.renameSync(`${EMOJI.file}.part`, EMOJI.file);
+  return EMOJI.file;
+}
+
+async function fontconfig(dir: string): Promise<string> {
+  const fonts = path.join(dir, "fonts");
+  fs.mkdirSync(fonts);
+  for (const file of [...FONT_FILES, await emojiFont()]) {
+    fs.copyFileSync(file, path.join(fonts, path.basename(file)));
+  }
+
+  const family = (name: string) => `<family>${name}</family>`;
+  const aliases = Object.entries(GENERICS)
+    .map(([generic, prefer]) => `<alias binding="strong">${family(generic)}<prefer>${prefer.map(family).join("")}</prefer></alias>`)
+    .join("\n  ");
+  const file = path.join(dir, "fonts.conf");
+  fs.writeFileSync(file, `<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+  <dir>${fonts}</dir>
+  <cachedir>${path.join(dir, "cache")}</cachedir>
+  ${aliases}
+  <!-- Chromium asks for system-ui without a family name; it gets Roboto. -->
+  <match target="pattern">
+    <edit name="family" mode="append_last"><string>${SANS[0]}</string></edit>
+  </match>
+  <match target="font">
+    <edit name="antialias" mode="assign"><bool>true</bool></edit>
+    <edit name="hinting" mode="assign"><bool>false</bool></edit>
+    <edit name="rgba" mode="assign"><const>none</const></edit>
+  </match>
+</fontconfig>
+`);
+  return file;
+}
+
+/** Playwright's own Chromium with the fixed fonts; Linux only, as fontconfig is. */
+async function launchFixed(dir: string): Promise<Browser> {
+  if (process.platform !== "linux") {
+    throw new Error("the screenshots are rendered on Linux; download them from the CI screenshots job instead");
+  }
+  return chromium.launch({
+    headless: true,
+    channel: "chromium",
+    args: ARGS,
+    env: {...process.env, FONTCONFIG_FILE: await fontconfig(dir)},
+  });
+}
+
 /** Renders every page and writes the pictures. */
 async function main(): Promise<void> {
   fs.mkdirSync(OUT, {recursive: true});
-  const browser = await launch();
+  const fonts = fs.mkdtempSync(path.join(os.tmpdir(), "ankiquest-fonts-"));
+  const browser = await launchFixed(fonts);
+  console.log(`Chromium ${browser.version()}`);
   const missing = new Set<string>();
   try {
     for (const shot of SHOTS) {
@@ -157,6 +273,7 @@ async function main(): Promise<void> {
     }
   } finally {
     await browser.close();
+    fs.rmSync(fonts, {recursive: true, force: true});
   }
   if (missing.size > 0) {
     console.warn(`no example for: ${[...missing].join(", ")}`);

@@ -1,4 +1,4 @@
-import {day, escape as esc, lexical, nativeAccount, number as num} from "../common";
+import {type ClosingWeek, type NextWeek, day, escape as esc, lexical, nativeAccount, number as num, weekNotice} from "../common";
 import {failure, request, send} from "../http";
 
 const {t:aqText,html:aqHtml} = AnkiQuestI18n;
@@ -79,10 +79,6 @@ interface Profile extends Person {
   next_week?: NextWeek;
 }
 
-/** The closing week, still counting the player's current day (`ClosingWeek` in src/game.rs). */
-interface ClosingWeek { xp: number; ends_at: number; }
-/** The week the board switches to next, already counting the player's current day (`NextWeek` in src/game.rs). */
-interface NextWeek { xp: number; starts_at: number; }
 
 /** A hard card learned at last (`Conquest` in src/game.rs). */
 interface Conquest { at: number; lapses: number; answers: number; since: number; leech: boolean; }
@@ -296,20 +292,6 @@ function boardTitle(period: Period) {
   const h = Math.floor(left / 3600000), d = Math.floor(h / 24);
   const when = new Date(weekEnds).toLocaleString(AnkiQuestI18n.language, { weekday: "short", hour: "2-digit", minute: "2-digit" });
   return aqHtml`This week · resets in ${d ? `${d}d ${h % 24}h` : h ? `${h}h` : "<1h"}<span class="sub"> · ${when}</span>`;
-}
-
-/** The week that reset on the board but still counts this player's day, until that day ends. */
-function closingWeek(closing: ClosingWeek | undefined) {
-  if (!closing || !(closing.ends_at > Date.now())) return "";
-  const at = new Date(closing.ends_at).toLocaleTimeString(AnkiQuestI18n.language, { hour: "2-digit", minute: "2-digit" });
-  return aqHtml`<section class="notice closing-week wide" role="status">${esc(aqText`Last week still counting: ${num(closing.xp)} XP · closes at ${at}`)}</section>`;
-}
-
-/** The week the board has yet to reach but already counts this player's day, until the board switches. */
-function nextWeek(next: NextWeek | undefined) {
-  if (!next || !(next.starts_at > Date.now())) return "";
-  const at = new Date(next.starts_at).toLocaleTimeString(AnkiQuestI18n.language, { hour: "2-digit", minute: "2-digit" });
-  return aqHtml`<section class="notice next-week wide" role="status">${esc(aqText`Next week already counting: ${num(next.xp)} XP · the board switches at ${at}`)}</section>`;
 }
 
 function streakIcon(state: string) {
@@ -577,7 +559,7 @@ ${AnkiQuestAki.profile(p)}
   </div>
 </section>
 ${p.at_risk ? (p.today.streak_minutes ?? 0) > 0 ? aqHtml`<section class="notice risk wide">Your ${p.streak} day streak is waiting: ${Math.min(p.today.minutes, p.today.streak_minutes!)} of ${p.today.streak_minutes!} minutes today.</section>` : aqHtml`<section class="notice risk wide">Your ${p.streak} day streak is waiting for today's reviews.</section>` : ""}
-${closingWeek(p.closing_week)}${nextWeek(p.next_week)}
+${weekNotice(p.closing_week, p.next_week, "wide")}
 <div class="kpis wide">
   ${AnkiQuestSite.kpi(aqText("Day streak"), num(p.streak), (p.today.streak_minutes ?? 0) > 0 ? aqText`${num(Math.min(p.today.minutes, p.today.streak_minutes!))} of ${num(p.today.streak_minutes!)} minutes today` : aqText("Keep showing up"), "gold")}
   ${AnkiQuestSite.kpi(aqText("Streak freezes"), freezeCount(p.stored_freezes ?? p.freezes) + "/3", p.freezes_enabled ? aqText("Ready to protect your progress") : aqText("Protection paused"), "blue")}
