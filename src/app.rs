@@ -434,6 +434,41 @@ mod tests {
     }
 
     #[test]
+    fn a_resend_fills_in_the_button_in_the_cached_player() {
+        let (app, path) = fixture();
+        let review = |id, ease| Review {
+            id,
+            cid: id,
+            last_ivl: 1,
+            ivl: Some(2),
+            ease,
+            time_ms: 4000,
+            kind: 1,
+        };
+        let upload = |reviews: &[Review]| {
+            let mut store = app.store.lock().unwrap();
+            store
+                .upsert("cerro", reviews, &[], Clock::default())
+                .unwrap();
+            app.apply_upload(&store, "cerro", reviews, &[]).unwrap();
+            let cached = app.players.read().unwrap()["cerro"].reviews.clone();
+            assert_eq!(*cached, store.reviews("cerro").unwrap());
+            cached
+        };
+
+        // An older client's rows have no button; a newer client's resend fills it in.
+        upload(&[review(1, None), review(2, Some(1))]);
+        let cached = upload(&[review(1, Some(3)), review(2, Some(3))]);
+        assert_eq!(cached[0].ease, Some(3), "a missing button is filled in");
+        assert_eq!(cached[1].ease, Some(1), "a known button is kept");
+
+        // The same row twice in one upload keeps the button either copy has.
+        let cached = upload(&[review(4, None), review(4, Some(2))]);
+        assert_eq!(cached[2].ease, Some(2));
+        cleanup(app, path);
+    }
+
+    #[test]
     fn standings_are_cached_until_the_player_changes_and_stay_small() {
         // Keep the fixture's last ten minutes within one study day.
         let study_time = 1_793_183_400_000;
