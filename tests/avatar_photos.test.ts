@@ -123,11 +123,13 @@ async function main() {
 
     const escapedUser = 'qa-"/<player>?&', escapedName = '<img src=x> Alice';
     await page.evaluate(({ escapedUser, escapedName }) => {
-      document.getElementById('avatars')!.innerHTML = AnkiQuestSite.avatar('cerro', 'Cerro') + AnkiQuestSite.avatar('missing', 'Missing Picture') + AnkiQuestSite.avatar('broken', 'Broken Picture') + AnkiQuestSite.avatar(escapedUser, escapedName);
+      document.getElementById('avatars')!.innerHTML = AnkiQuestSite.avatar('cerro', 'Cerro') + AnkiQuestSite.avatar('hill', 'hill') + AnkiQuestSite.avatar('missing', 'Missing Picture') + AnkiQuestSite.avatar('broken', 'Broken Picture') + AnkiQuestSite.avatar(escapedUser, escapedName);
     }, { escapedUser, escapedName });
     assert.equal(await page.locator('#avatars img').count(), 0, 'Absent metadata uses initials without image requests');
     assert.equal(await page.locator('#avatars .avatar').last().getAttribute('data-avatar-user'), escapedUser);
-    assert.equal(await page.locator('#avatars .avatar').last().textContent(), '<S', 'Display text is escaped');
+    assert.equal(await page.locator('#avatars .avatar').last().textContent(), '<s', 'Display text is escaped');
+    assert.equal(await page.locator('#avatars [data-avatar-user=hill]').textContent(), 'h', 'Initials keep the name\'s case');
+    assert.equal(await page.locator('#avatars [data-avatar-user=cerro]').textContent(), 'C', 'Initials keep the name\'s case');
     metadata.cerro = '1'; metadata.broken = '1'; metadata[escapedUser] = '1'; metadata.missing = 'https://invalid.example/picture';
     broken.add('broken');
     await refresh();
