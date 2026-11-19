@@ -196,6 +196,49 @@ const ART: &[Art] = &[
     widget("anki_tan_sad", "static/anki-tan/sad.png"),
     widget("anki_tan_neglected", "static/anki-tan/neglected.png"),
     widget("anki_tan_chibi_frozen", "static/anki-tan/chibi/frozen.png"),
+    // Anki-tan's other poses, from Shigeyuki's pack as
+    // static/anki-tan/README.md maps them. The pack's pictures are smaller
+    // than WIDGET and are kept at their size.
+    widget(
+        "anki_tan_face",
+        "static/anki-tan/sprite/idle/anki-tan_idle_0001.png",
+    ),
+    widget(
+        "anki_tan_happy",
+        "static/anki-tan/sticker/anki_tan_good.png",
+    ),
+    widget(
+        "anki_tan_streak",
+        "static/anki-tan/emoji/Ankitan_09_fire_eyes.png",
+    ),
+    widget(
+        "anki_tan_hopeful",
+        "static/anki-tan/sticker/ankitan_lets_study.png",
+    ),
+    widget(
+        "anki_tan_welcome",
+        "static/anki-tan/sticker/anki_tan_hello.png",
+    ),
+    widget(
+        "anki_tan_review",
+        "static/anki-tan/sticker/press_spacebar.png",
+    ),
+    widget(
+        "anki_tan_streak_legend",
+        "static/anki-tan/emoji/Ankitan_43_crown.png",
+    ),
+    widget(
+        "anki_tan_streak_milestone",
+        "static/anki-tan/emoji/Ankitan_48_perfect_streaks.png",
+    ),
+    widget(
+        "anki_tan_hurt",
+        "static/anki-tan/emoji/Ankitan_28_spiral_eyes.png",
+    ),
+    widget(
+        "anki_tan_dead",
+        "static/anki-tan/emoji/Ankitan_39_crossed_out_eyes.png",
+    ),
     // Anki-tan's launcher icons (AnkiQuest-Android AnkiquestIcon), CC BY-SA 4.0.
     // The pack's icon is 256 px and is kept at that size.
     art("anki_tan_icon", "static/anki-tan/icon.png", 432),
@@ -477,6 +520,16 @@ mod tests {
             "anki_tan_sad",
             "anki_tan_neglected",
             "anki_tan_chibi_frozen",
+            "anki_tan_face",
+            "anki_tan_happy",
+            "anki_tan_streak",
+            "anki_tan_hopeful",
+            "anki_tan_welcome",
+            "anki_tan_review",
+            "anki_tan_streak_legend",
+            "anki_tan_streak_milestone",
+            "anki_tan_hurt",
+            "anki_tan_dead",
         ];
         let large: Vec<_> = ART.iter().filter(|art| art.size == WIDGET).collect();
         let names: Vec<_> = large.iter().map(|art| art.name).collect();

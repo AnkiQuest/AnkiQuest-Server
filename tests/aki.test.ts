@@ -70,6 +70,22 @@ test('the cow is drawn with Ankilope art turned purple until it has its own',()=
   companion.setChoice('ankilope');
   assert.equal(companion.filter(),'none');
 });
+test('Anki-tan is drawn with her own art',()=>{
+  // #61: choosing Anki-tan drew Aki.
+  const companion=fixture();
+  companion.setChoice('anki_tan');
+  assert.equal(companion.choice(),'anki_tan');
+  assert.equal(companion.artOwner(),'anki_tan');
+  assert.match(companion.image('welcome'),/src="\/anki-tan\/welcome.png"/);
+  assert.match(companion.image('review'),/src="\/anki-tan\/review.png"/);
+  assert.match(companion.image('celebrate'),/src="\/anki-tan\/happy.png"/);
+  assert.match(companion.image('streak'),/src="\/anki-tan\/streak.png"/);
+  assert.match(companion.image('freeze'),/src="\/anki-tan\/frozen.png"/);
+  assert.match(companion.image('winner'),/src="\/anki-tan\/happy.png"/);
+  assert.match(companion.image('face'),/src="\/anki-tan\/face-192.png"/);
+  assert.equal(companion.source('winner'),'/anki-tan/happy.png');
+  assert.equal(companion.filter(),'none');
+});
 test('Aki encouragement is translated before it reaches the page',()=>{
   const markup=fixture('es').profile({streak_state:'protected',today:{reviews:0}});
   assert.match(markup,/Un protector mantiene tu racha/);
