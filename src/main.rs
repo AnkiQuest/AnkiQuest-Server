@@ -63,7 +63,7 @@ use axum::extract::Path as UrlPath;
 use axum::http::{StatusCode, header};
 use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
-use cli::{parse_args, send_message};
+use cli::parse_args;
 use config::Config;
 use game::Periods;
 use std::collections::HashMap;
@@ -129,8 +129,8 @@ fn inherited_listener() -> Option<std::net::TcpListener> {
 async fn main() -> Result<(), Error> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let admin_at = args.iter().position(|a| a == "admin").filter(|&i| i <= 1);
-    let (given, message) = match admin_at {
-        Some(at) => (args[..at].first().cloned(), None),
+    let given = match admin_at {
+        Some(at) => args[..at].first().cloned(),
         None => parse_args(&args)?,
     };
     let path = given
@@ -194,11 +194,6 @@ async fn main() -> Result<(), Error> {
     game::set_review_weighting(config.review_weighting);
 
     config.check()?;
-
-    // Sending needs no tokens, and the running service holds the only readable copy.
-    if let Some(message) = message {
-        return send_message(&config, &message);
-    }
 
     config.load_tokens()?;
 

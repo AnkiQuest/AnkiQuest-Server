@@ -520,8 +520,9 @@ impl Store {
         Ok(SentPage { items, next_before })
     }
 
-    /// Puts one message straight into a player's inbox, for the `message` command.
+    /// Puts one message straight into a player's inbox, for tests that need one.
     /// The delivery loop pushes it like any other notification.
+    #[cfg(test)]
     pub fn send(&mut self, message: &Outgoing<'_>, day: i64, now_ms: i64) -> Result<i64, Error> {
         insert_notification(&self.conn, message, day, now_ms, false)
     }
