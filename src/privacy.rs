@@ -288,6 +288,13 @@ const NOT_NAMES: &[&str] = &[
     "competition_periods.kind",
     "competition_periods.payload",
     "conquest_labels.label",
+    // Crash reports are stripped of account and device identifiers before they are stored.
+    "crash_reports.android_version",
+    "crash_reports.report",
+    "crash_reports.signature",
+    "crash_signatures.app_versions",
+    "crash_signatures.exception",
+    "crash_signatures.signature",
     "deck_completions.deck_id",
     "deck_copy_offers.deck",
     "deck_recipients.deck_id",
@@ -353,6 +360,9 @@ const SHARED: &[&str] = &[
     "community_weekly_goals",
     "groups",
     "group_members",
+    // Not linked to any account; deleted after 30 days.
+    "crash_reports",
+    "crash_signatures",
 ];
 
 fn value(value: ValueRef) -> serde_json::Value {

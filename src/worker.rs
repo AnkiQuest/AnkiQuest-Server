@@ -217,6 +217,8 @@ pub(crate) fn tick(app: &App) -> Result<(), Error> {
             now,
         )?);
         admin::flush(&store.conn, now, settings.log_retention_days)?;
+        crate::crash_reports::prune(&store.conn, now)?;
+        app.crash_reports.forget(now);
         app.accounts.save_uses(&store.conn)?;
         privacy::carry_out_removals(app, &store.conn)?;
         for user in freezes::grant_reloads(&store.conn)? {
