@@ -238,6 +238,9 @@ pub fn notification(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n;
+    use crate::study::{profile, upload};
+    use crate::test_support::*;
 
     /// The calls whose first argument is a catalog key the server writes.
     const MARKERS: [&str; 5] = ["english(", "phrase(", "say(", "template(", "i18n::text("];
@@ -515,5 +518,95 @@ mod tests {
             ),
             "6 von 10 Minuten heute. Deine Lernserie von 5 Tagen wartet noch."
         );
+    }
+
+    #[tokio::test]
+    async fn languages_require_owner_auth_and_public_views_do_not_change_preferences() {
+        let (app, _path) = fixture();
+        let preference = || {
+            Json(i18n::Preference {
+                language: "es-AR".into(),
+            })
+        };
+        assert_eq!(
+            i18n::set(
+                State(app.clone()),
+                UrlPath("cerro".into()),
+                headers("hill"),
+                preference()
+            )
+            .await
+            .err()
+            .unwrap(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            i18n::get(
+                State(app.clone()),
+                UrlPath("cerro".into()),
+                HeaderMap::new()
+            )
+            .await
+            .err()
+            .unwrap(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            i18n::set(
+                State(app.clone()),
+                UrlPath("cerro".into()),
+                headers("cerro"),
+                preference()
+            )
+            .await
+            .unwrap()
+            .0
+            .language,
+            "es"
+        );
+        assert_eq!(
+            i18n::set(
+                State(app.clone()),
+                UrlPath("cerro".into()),
+                headers("cerro"),
+                Json(i18n::Preference {
+                    language: "es\r\nx".into()
+                })
+            )
+            .await
+            .err()
+            .unwrap(),
+            StatusCode::BAD_REQUEST
+        );
+        let _ = upload(
+            State(app.clone()),
+            UrlPath("cerro".into()),
+            headers("cerro"),
+            Json(sample_upload(2, false)),
+        )
+        .await
+        .unwrap();
+        // hill, who has studied, looks at Cerro's profile in English.
+        with_reviews(&app, "hill", 1);
+        let mut public = headers("hill");
+        public.insert(header::ACCEPT_LANGUAGE, "en-US".parse().unwrap());
+        let viewed = profile(State(app.clone()), UrlPath("cerro".into()), public)
+            .await
+            .unwrap()
+            .0;
+        assert!(
+            viewed
+                .quests
+                .iter()
+                .any(|quest| quest.title.contains("Review"))
+        );
+        assert_eq!(app.store.lock().unwrap().language("cerro").unwrap(), "es");
+        let mut owner = headers("cerro");
+        owner.insert(header::ACCEPT_LANGUAGE, "en-US".parse().unwrap());
+        let _ = profile(State(app.clone()), UrlPath("cerro".into()), owner)
+            .await
+            .unwrap();
+        assert_eq!(app.store.lock().unwrap().language("cerro").unwrap(), "en");
+        assert_eq!(app.store.lock().unwrap().language("hill").unwrap(), "en");
     }
 }
