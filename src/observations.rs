@@ -469,6 +469,82 @@ mod tests {
         cleanup(app, path);
     }
 
+    /// A test app with alice signed in and the clock at `now`.
+    fn alice_at(now: i64) -> (Arc<App>, std::path::PathBuf) {
+        crate::app::fix_now_ms(Some(now));
+        crate::test_support::app_with(json!({
+            "configured_tokens": "enabled",
+            "users": {"alice": {"token": "alice-token"}}
+        }))
+    }
+
+    #[tokio::test]
+    async fn an_older_card_snapshot_does_not_undo_a_newer_answer() {
+        let now = NOON_SECS * 1000 + 3_600_000;
+        let (app, path) = alice_at(now);
+        let uri = "/api/observations/alice";
+        let older = observation(
+            json!([card(7, 5, 2, 12, NOON_SECS)]),
+            json!([]),
+            now - 60_000,
+        );
+        let newer = observation(json!([card(7, 6, 2, 20, NOON_SECS + 30)]), json!([]), now);
+        post_json(&app, uri, older.clone()).await;
+        post_json(&app, uri, newer).await;
+
+        // The retried older read must not look like an undo of the sixth answer.
+        let (status, body) = post_json(&app, uri, older).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["observed"]["undone"], 0);
+        let observed = load(&app.store.lock().unwrap().conn, "alice").unwrap();
+        assert_eq!(observed.answers.len(), 2);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn an_older_snapshot_does_not_restore_an_undone_answer() {
+        let now = NOON_SECS * 1000 + 3_600_000;
+        let (app, path) = alice_at(now);
+        let uri = "/api/observations/alice";
+        // Undo in AnkiDroid also puts back the previous review time.
+        let answered = observation(
+            json!([card(8, 2, 1, 0, NOON_SECS + 60)]),
+            json!([]),
+            now - 60_000,
+        );
+        let undone = observation(json!([card(8, 1, 1, 0, NOON_SECS - 3600)]), json!([]), now);
+        post_json(&app, uri, answered.clone()).await;
+        post_json(&app, uri, undone).await;
+
+        // Retrying the read from before the undo leaves the answer undone.
+        let (status, body) = post_json(&app, uri, answered).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["observed"]["answered"], 0);
+        assert!(
+            load(&app.store.lock().unwrap().conn, "alice")
+                .unwrap()
+                .answers
+                .is_empty()
+        );
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn an_older_day_count_does_not_replace_a_newer_one() {
+        let now = NOON_SECS * 1000 + 3_600_000;
+        let (app, path) = alice_at(now);
+        let uri = "/api/observations/alice";
+        let older = observation(json!([]), json!([{"day": 20705, "cards": 1}]), now - 60_000);
+        let newer = observation(json!([]), json!([{"day": 20705, "cards": 2}]), now);
+        post_json(&app, uri, older.clone()).await;
+        post_json(&app, uri, newer).await;
+        post_json(&app, uri, older).await;
+
+        let observed = load(&app.store.lock().unwrap().conn, "alice").unwrap();
+        assert_eq!(observed.days.get(&20705), Some(&2));
+        cleanup(app, path);
+    }
+
     #[tokio::test]
     async fn uploads_from_the_future_or_unbounded_are_refused() {
         let now = NOON_SECS * 1000;
