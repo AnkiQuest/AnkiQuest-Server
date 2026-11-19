@@ -1940,6 +1940,59 @@ mod tests {
     }
 
     #[test]
+    fn the_button_decides_a_lapse_when_the_client_sends_it() {
+        // Rows as a client uploads them, one card answered a day apart:
+        // (kind, last_ivl, ivl, ease), where ease 0 means the client left it out.
+        let upload = |cid: i64, answers: &[(u8, i64, i64, u8)]| -> Vec<Review> {
+            answers
+                .iter()
+                .enumerate()
+                .map(|(i, &(kind, last_ivl, ivl, ease))| {
+                    let mut row = serde_json::json!({
+                        "id": (cid * 1000 + i as i64) * DAY_MS,
+                        "cid": cid,
+                        "last_ivl": last_ivl,
+                        "ivl": ivl,
+                        "time_ms": 5000,
+                        "kind": kind,
+                    });
+                    if ease > 0 {
+                        row["ease"] = ease.into();
+                    }
+                    serde_json::from_value(row).unwrap()
+                })
+                .collect()
+        };
+        let now = i64::MAX / 2;
+
+        // Forks with intraday review intervals log a pass under 12 hours as negative
+        // seconds. Eight such passes, then a mature interval: no lapse, so no leech.
+        let mut passes = vec![(0, 0, 1, 3)];
+        passes.extend([(1, 1, -3600, 3); 8]);
+        passes.push((1, 1, 25, 3));
+        let intraday = upload(1, &passes);
+        assert!(conquests(&intraday, now).is_empty(), "passes are no lapses");
+        let at = intraday.last().unwrap().id;
+        let profile = compute("hill", "hill", &intraday, &utc(), &Week::default(), at);
+        assert_eq!(profile.lifetime.conquered, 0);
+        assert_eq!(profile.lifetime.leeches_tamed, 0);
+
+        // Again is a lapse, also without relearning steps, where the new interval is days.
+        let mut again = vec![(0, 0, 1, 3)];
+        again.extend([(1, 3, 1, 1); 4]);
+        again.push((1, 1, 25, 3));
+        let found = conquests(&upload(2, &again), now);
+        assert_eq!(found.iter().map(|c| c.lapses).collect::<Vec<_>>(), [4]);
+
+        // Rows without the button keep the interval rule.
+        let mut older = vec![(0, 0, 1, 0)];
+        older.extend([(1, 1, -3600, 0); 4]);
+        older.push((1, 1, 25, 0));
+        let found = conquests(&upload(3, &older), now);
+        assert_eq!(found.iter().map(|c| c.lapses).collect::<Vec<_>>(), [4]);
+    }
+
+    #[test]
     fn recent_conquests_are_announced_and_listed_newest_first() {
         let mut answers = vec![(0, 0, Some(1))];
         for _ in 0..4 {
