@@ -779,7 +779,12 @@ pub(crate) async fn i18n_wasm() -> impl IntoResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::decks::{get_decks, set_decks};
+    use crate::inbox::{ReplyRequest, get_notifications, reply};
+    use crate::study::upload;
+    use crate::subscriptions::get_incoming_preferences;
     use crate::test_support::cleanup;
+    use crate::test_support::*;
 
     #[test]
     fn signing_in_again_counts_briefly_for_its_own_session_only() {
@@ -1965,5 +1970,82 @@ mod tests {
         std::fs::write(&password_file, "shared-master\n").unwrap();
         assert!(Access::from_config(&config).is_ok());
         cleanup(store, path);
+    }
+
+    #[test]
+    fn empty_configured_token_never_authorizes_private_data() {
+        let (mut app, path) = crate::test_support::fixture();
+        Arc::get_mut(&mut app)
+            .unwrap()
+            .config
+            .set_token("cerro", "");
+        assert!(!authorized(&app, "cerro", &HeaderMap::new()));
+        let mut empty_bearer = HeaderMap::new();
+        empty_bearer.insert(header::AUTHORIZATION, "Bearer ".parse().unwrap());
+        assert!(!authorized(&app, "cerro", &empty_bearer));
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn all_private_handlers_reject_missing_and_other_users_tokens() {
+        let (app, path) = crate::test_support::fixture();
+        for auth in [HeaderMap::new(), headers("hill")] {
+            assert_eq!(
+                get_incoming_preferences(State(app.clone()), UrlPath("cerro".into()), auth.clone())
+                    .await
+                    .unwrap_err(),
+                StatusCode::UNAUTHORIZED
+            );
+            assert_eq!(
+                get_decks(State(app.clone()), UrlPath("cerro".into()), auth.clone())
+                    .await
+                    .unwrap_err(),
+                StatusCode::UNAUTHORIZED
+            );
+            assert_eq!(
+                set_decks(
+                    State(app.clone()),
+                    UrlPath("cerro".into()),
+                    auth.clone(),
+                    Json(preferences(&["hill"]))
+                )
+                .await
+                .unwrap_err(),
+                StatusCode::UNAUTHORIZED
+            );
+            assert_eq!(
+                get_notifications(State(app.clone()), UrlPath("cerro".into()), auth.clone())
+                    .await
+                    .unwrap_err(),
+                StatusCode::UNAUTHORIZED
+            );
+            assert_eq!(
+                reply(
+                    State(app.clone()),
+                    UrlPath("cerro".into()),
+                    auth.clone(),
+                    Json(ReplyRequest {
+                        notification: 1,
+                        message: "Good job!".into()
+                    })
+                )
+                .await
+                .unwrap_err(),
+                StatusCode::UNAUTHORIZED
+            );
+            assert_eq!(
+                upload(
+                    State(app.clone()),
+                    UrlPath("cerro".into()),
+                    auth,
+                    Json(sample_upload(0, false))
+                )
+                .await
+                .unwrap_err(),
+                StatusCode::UNAUTHORIZED
+            );
+        }
+        assert!(app.store.lock().unwrap().decks("cerro").unwrap().is_empty());
+        cleanup(app, path);
     }
 }
