@@ -297,12 +297,18 @@ test('logout clears the native account even if the access refresh throws', async
     const disconnect = AnkiQuestSite.disconnectMember;
     AnkiQuestSite.disconnectMember = async () => {
       await disconnect();
+      // A slow refresh: the page shows Connect well before the throw (CI job 135226175435).
+      await new Promise(resolve => setTimeout(resolve, 300));
       throw new Error('Access refresh failed');
     };
   });
   await view.locator('[data-disconnect]').click();
   await view.locator('[data-connect]').waitFor();
   assert.equal(control.cookieUser, null);
+
+  // The lock event shows Connect before disconnect() handles the throw and clears the
+  // native account, so wait for disconnect() to finish rather than for Connect.
+  await page.waitForFunction(() => !('ankiquestSession' in window), undefined, {timeout:5000});
   assert.equal(await page.evaluate(() => window.ankiquestSession), undefined);
 });
 
