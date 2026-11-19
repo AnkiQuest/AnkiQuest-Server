@@ -249,10 +249,18 @@ jobs:
             mkdir -p "$1"
             cp "../../target/${{ matrix.target }}/bindings/${{ matrix.lib }}" "$1/"
           }
+          # Windows has sha256sum, macOS shasum.
+          hash() {
+            if command -v sha256sum > /dev/null; then
+              sha256sum "$@"
+            else
+              shasum -a 256 "$@"
+            fi
+          }
           build "$RUNNER_TEMP/first"
           build "$out"
-          first=$(cd "$RUNNER_TEMP/first" && shasum -a 256 ${{ matrix.lib }})
-          (cd "$out" && shasum -a 256 ${{ matrix.lib }}) > "$RUNNER_TEMP/SHA256SUMS"
+          first=$(cd "$RUNNER_TEMP/first" && hash ${{ matrix.lib }})
+          (cd "$out" && hash ${{ matrix.lib }}) > "$RUNNER_TEMP/SHA256SUMS"
           cat "$RUNNER_TEMP/SHA256SUMS"
           [ "$first" = "$(cat "$RUNNER_TEMP/SHA256SUMS")" ]
 
@@ -267,7 +275,13 @@ jobs:
           cp bindings/python/ankiquest_rules.py desktop/
           mv SHA256SUMS desktop/
           bytes=$(wc -c < "desktop/${{ matrix.lib }}" | tr -d ' ')
-          echo "| ${{ matrix.name }} | ${{ matrix.lib }} | $bytes |" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "| Platform | Library | Bytes |"
+            echo "| --- | --- | ---: |"
+            echo "| ${{ matrix.name }} | ${{ matrix.lib }} | $bytes |"
+            echo
+            echo "Byte-identical across two clean builds."
+          } >> "$GITHUB_STEP_SUMMARY"
           if [ "${{ runner.os }}" = Linux ]; then
             glibc=$(objdump -T "desktop/${{ matrix.lib }}" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
             echo "Newest glibc symbol: $glibc" >> "$GITHUB_STEP_SUMMARY"
