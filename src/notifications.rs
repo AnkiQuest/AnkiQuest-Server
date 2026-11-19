@@ -81,7 +81,7 @@ macro_rules! action_required_sql {
     and n.kind='challenge_invite' and m.user=n.recipient and m.status='invited'
     and c.cancelled=0 and c.end_at>?2)
     or exists(select 1 from group_invitations gi where n.kind='group_invite'
-    and gi.group_id=n.group_id and gi.user=n.recipient))"
+    and gi.notification=n.id and gi.state='pending'))"
     };
 }
 

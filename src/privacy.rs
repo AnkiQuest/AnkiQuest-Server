@@ -74,7 +74,9 @@ const EXPORT: &[(&str, &str)] = &[
     ("challenge_requests", "select request_id, challenge, payload from community_requests where creator = ?1"),
     ("weekly_suggestions", "select * from community_weekly_suggestions where owner = ?1 or friend = ?1"),
     ("groups", "select g.id, g.name, m.owner, m.joined_at from group_members m join groups g on g.id = m.group_id where m.user = ?1"),
-    ("group_invitations", "select group_id, user, invited_by, created_at from group_invitations
+    // Only the invitee sees whether they declined, as the app shows the owner no difference.
+    ("group_invitations", "select group_id, user, invited_by, created_at,
+         case when user = ?1 then state end as state from group_invitations
          where user = ?1 or invited_by = ?1 order by created_at"),
     ("friendships", "select case when a = ?1 then b else a end as friend, requested_by, accepted, created_at
          from friendships where a = ?1 or b = ?1"),
@@ -300,6 +302,7 @@ const NOT_NAMES: &[&str] = &[
     "decks.name",
     "freeze_grants.date",
     "goals.mode",
+    "group_invitations.state",
     "groups.invite",
     "groups.name",
     "languages.language",

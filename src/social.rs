@@ -24,6 +24,27 @@ pub(crate) const INVITATION_AGE_MS: i64 = crate::notifications::ACTIVITY_AGE_MS;
 /// Invitations to one group that may wait for an answer at once.
 pub const MAX_INVITATIONS: i64 = 50;
 
+/// Where an invitation to a group stands until it expires, `INVITATION_AGE_MS` after it was
+/// sent. Joining the group, by the invitation or by link, deletes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InvitationState {
+    /// Waiting for `accept_invite` or `decline_invite`.
+    Pending,
+    /// Declined. The owner still sees the player as invited and inviting again does nothing,
+    /// so a decline is as private as a mute.
+    Declined,
+}
+
+impl InvitationState {
+    fn parse(state: &str) -> Option<Self> {
+        match state {
+            "pending" => Some(Self::Pending),
+            "declined" => Some(Self::Declined),
+            _ => None,
+        }
+    }
+}
+
 pub fn initialize(conn: &Connection) -> Result<(), Error> {
     conn.execute_batch(
         "create table if not exists groups (
@@ -66,6 +87,9 @@ pub fn initialize(conn: &Connection) -> Result<(), Error> {
              user text not null,
              invited_by text not null,
              created_at integer not null,
+             state text not null default 'pending' check (state in ('pending', 'declined')),
+             -- The inbox row this invitation put there; null when the invitee muted the owner.
+             notification integer,
              primary key (group_id, user)
          ) without rowid;
          create index if not exists group_invitations_user on group_invitations (user);
@@ -363,7 +387,8 @@ pub struct Group {
     /// Only owners see the invite code.
     pub invite: Option<String>,
     pub members: Vec<Person>,
-    /// Players the owner invited who have not answered yet; only owners see them.
+    /// Players the owner invited who have not joined, declined ones included until their
+    /// invitation expires; only owners see them.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub invited: Vec<Person>,
 }
@@ -445,7 +470,8 @@ fn overview(app: &App, conn: &Connection, user: &str) -> rusqlite::Result<Overvi
     })
 }
 
-/// Who is invited to `group` and has not answered since `cutoff`.
+/// Who was invited to `group` since `cutoff` and has not joined. Declined invitations count,
+/// so the owner cannot tell a decline from no answer.
 fn invited(conn: &Connection, group: i64, cutoff: i64) -> rusqlite::Result<Vec<String>> {
     conn.prepare("select user from group_invitations where group_id = ?1 and created_at >= ?2")?
         .query_map(params![group, cutoff], |r| r.get(0))?
@@ -464,7 +490,7 @@ fn invitations(
             "select g.id, g.name, (select count(*) from group_members m where m.group_id = g.id),
                     i.invited_by
              from group_invitations i join groups g on g.id = i.group_id
-             where i.user = ?1 and i.created_at >= ?2 and not {}
+             where i.user = ?1 and i.created_at >= ?2 and i.state = 'pending' and not {}
              order by i.created_at desc, g.id",
             muted_sql("?1", "i.invited_by")
         ))?
@@ -628,7 +654,7 @@ async fn change(
                 user: invitee,
             } => invite_player(&app, conn, group, &user, &normalize_user(&invitee), now)?,
             Change::AcceptInvite { group } => {
-                if !is_invited(conn, group, &user, now)? {
+                if invitation(conn, group, &user, now)? != Some(InvitationState::Pending) {
                     return Ok(Err((
                         StatusCode::NOT_FOUND,
                         "That invitation is not valid any more.",
@@ -637,7 +663,7 @@ async fn change(
                 join(conn, group, &user, now)?
             }
             Change::DeclineInvite { group } => {
-                answer_invitation(conn, group, &user, now)?;
+                decline(conn, group, &user, now)?;
                 Ok(())
             }
             Change::Leave { group } => {
@@ -781,7 +807,7 @@ type Refusal = (StatusCode, &'static str);
 /// Puts `user` in `group`, by invite link or invitation, within the group limits.
 fn join(conn: &Connection, group: i64, user: &str, now: i64) -> Result<Result<(), Refusal>, Error> {
     if is_member(conn, group, user)? {
-        answer_invitation(conn, group, user, now)?;
+        end_invitation(conn, group, user, now)?;
         return Ok(Ok(()));
     }
     let mine: i64 = conn.query_row(
@@ -804,34 +830,68 @@ fn join(conn: &Connection, group: i64, user: &str, now: i64) -> Result<Result<()
         "insert into group_members (group_id, user, owner, joined_at) values (?1, ?2, 0, ?3)",
         params![group, user, now],
     )?;
-    answer_invitation(conn, group, user, now)?;
+    end_invitation(conn, group, user, now)?;
     Ok(Ok(()))
 }
 
-/// Whether `user` has an invitation to `group` that has not expired.
-fn is_invited(conn: &Connection, group: i64, user: &str, now: i64) -> rusqlite::Result<bool> {
-    conn.prepare(
-        "select 1 from group_invitations where group_id = ?1 and user = ?2 and created_at >= ?3",
-    )?
-    .exists(params![group, user, now - INVITATION_AGE_MS])
+/// The state of `user`'s invitation to `group`, or `None` when there is none that has not expired.
+fn invitation(
+    conn: &Connection,
+    group: i64,
+    user: &str,
+    now: i64,
+) -> rusqlite::Result<Option<InvitationState>> {
+    let state: Option<String> = conn
+        .query_row(
+            "select state from group_invitations
+             where group_id = ?1 and user = ?2 and created_at >= ?3",
+            params![group, user, now - INVITATION_AGE_MS],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(state.as_deref().and_then(InvitationState::parse))
 }
 
-/// Ends `user`'s invitation to `group`, joined or declined, and marks its inbox row read.
-fn answer_invitation(conn: &Connection, group: i64, user: &str, now: i64) -> rusqlite::Result<()> {
-    conn.execute(
-        "delete from group_invitations where group_id = ?1 and user = ?2",
-        params![group, user],
-    )?;
+/// Marks the inbox row of `user`'s invitation to `group` read, as it needs no answer any more.
+fn read_invitation_row(
+    conn: &Connection,
+    group: i64,
+    user: &str,
+    now: i64,
+) -> rusqlite::Result<()> {
     conn.execute(
         "update notifications set read_at = coalesce(read_at, ?3)
-         where recipient = ?2 and group_id = ?1 and kind = 'group_invite'",
+         where id = (select notification from group_invitations where group_id = ?1 and user = ?2)",
         params![group, user, now],
     )?;
     Ok(())
 }
 
+/// Declines a pending invitation. It stays until it expires, so inviting again does nothing.
+fn decline(conn: &Connection, group: i64, user: &str, now: i64) -> rusqlite::Result<()> {
+    if invitation(conn, group, user, now)? != Some(InvitationState::Pending) {
+        return Ok(());
+    }
+    read_invitation_row(conn, group, user, now)?;
+    conn.execute(
+        "update group_invitations set state = 'declined' where group_id = ?1 and user = ?2",
+        params![group, user],
+    )?;
+    Ok(())
+}
+
+/// Ends `user`'s invitation to `group` once they joined it.
+fn end_invitation(conn: &Connection, group: i64, user: &str, now: i64) -> rusqlite::Result<()> {
+    read_invitation_row(conn, group, user, now)?;
+    conn.execute(
+        "delete from group_invitations where group_id = ?1 and user = ?2",
+        params![group, user],
+    )?;
+    Ok(())
+}
+
 /// The owner of `group` invites `invitee`, who gets an inbox row unless they muted the owner.
-/// Inviting again while the invitation waits changes nothing.
+/// Inviting again while an invitation waits, or before a declined one expires, changes nothing.
 fn invite_player(
     app: &App,
     conn: &Connection,
@@ -866,7 +926,7 @@ fn invite_player(
     if !app.visible(conn, &viewer, invitee)? {
         return Ok(Err(nobody));
     }
-    if is_invited(conn, group, invitee, now)? {
+    if invitation(conn, group, invitee, now)?.is_some() {
         return Ok(Ok(()));
     }
     let waiting: i64 = conn.query_row(
@@ -885,7 +945,8 @@ fn invite_player(
     conn.execute(
         "insert into group_invitations (group_id, user, invited_by, created_at) values (?1, ?2, ?3, ?4)
          on conflict (group_id, user) do update
-         set invited_by = excluded.invited_by, created_at = excluded.created_at",
+         set invited_by = excluded.invited_by, created_at = excluded.created_at,
+             state = 'pending', notification = null",
         params![group, invitee, owner, now],
     )?;
 
@@ -912,6 +973,10 @@ fn invite_player(
     conn.execute(
         "update notifications set group_id = ?1 where id = ?2",
         params![group, id],
+    )?;
+    conn.execute(
+        "update group_invitations set notification = ?3 where group_id = ?1 and user = ?2",
+        params![group, invitee, id],
     )?;
     Ok(Ok(()))
 }
@@ -1840,7 +1905,7 @@ mod tests {
             }
         };
 
-        // Declining removes it for both sides; declining again is fine.
+        // Declining removes it for Bobby only; declining again is fine.
         assert_eq!(invite("bobby").await, StatusCode::OK);
         for _ in 0..2 {
             let (status, overview) = act(
@@ -1865,7 +1930,10 @@ mod tests {
             serde_json::Value::Null,
         )
         .await;
-        assert!(owner["groups"][0].get("invited").is_none());
+        assert_eq!(
+            owner["groups"][0]["invited"][0]["user"], "bobby",
+            "Ana cannot tell Bobby declined"
+        );
 
         // An invitation lasts as long as the inbox keeps its row.
         assert_eq!(invite("cyril").await, StatusCode::OK);
