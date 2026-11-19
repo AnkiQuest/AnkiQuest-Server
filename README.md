@@ -29,7 +29,7 @@ AnkiQuest adds XP, streaks, daily quests, friends and leaderboards to Anki. Clie
 
 ## Install
 
-To play, create an account on a server, such as [ankiquest.rationality-munich.com](https://ankiquest.rationality-munich.com), then sign in from the desktop add-on or the Android app.
+To play, create an account on a server, such as [ankiquest.org](https://ankiquest.org), then sign in from the desktop add-on or the Android app.
 
 To run your own server, follow the [installation guide](docs/install.md) for a local build, NixOS with HTTPS, health checks, backups and updates, and [server configuration](docs/server.md) for settings and administration. AnkiQuest does not replace AnkiWeb or an Anki sync server.
 

@@ -19,7 +19,7 @@
     {"name": "token_in_preference_key", "in": "preference_key", "text": "lastSync:0123456789abcdef0123456789abcdef", "expected": "lastSync:[removed]"}
   ],
   "device": [
-    {"name": "default_host", "hosts": ["ankiquest.rationality-munich.com"], "text": "Unable to resolve host \"ankiquest.rationality-munich.com\": No address associated with hostname", "expected": "Unable to resolve host \"[server]\": No address associated with hostname"},
+    {"name": "default_host", "hosts": ["ankiquest.org"], "text": "Unable to resolve host \"ankiquest.org\": No address associated with hostname", "expected": "Unable to resolve host \"[server]\": No address associated with hostname"},
     {"name": "host_any_case_in_url", "hosts": ["quest.example.net"], "text": "GET https://Quest.Example.NET/api/profile/hill failed", "expected": "GET https://[server]/api/profile/hill failed"},
     {"name": "host_with_port", "hosts": ["quest.example.net"], "text": "connect quest.example.net:8443", "expected": "connect [server]:8443"},
     {"name": "host_at_sentence_end", "hosts": ["quest.example.net"], "text": "Cannot reach quest.example.net.", "expected": "Cannot reach [server]."},
@@ -28,13 +28,13 @@
     {"name": "host_with_ipv4", "hosts": ["quest.example.net"], "text": "Failed to connect to quest.example.net/203.0.113.7:443", "expected": "Failed to connect to [server]:443"},
     {"name": "host_with_ipv6", "hosts": ["quest.example.net"], "text": "Failed to connect to quest.example.net/2001:db8::7", "expected": "Failed to connect to [server]"},
     {"name": "path_after_host_kept", "hosts": ["quest.example.net"], "text": "quest.example.net/api/reviews", "expected": "[server]/api/reviews"},
-    {"name": "two_hosts", "hosts": ["ankiquest.rationality-munich.com", "quest.example.net"], "text": "moved from ankiquest.rationality-munich.com to quest.example.net", "expected": "moved from [server] to [server]"},
+    {"name": "two_hosts", "hosts": ["ankiquest.org", "quest.example.net"], "text": "moved from ankiquest.org to quest.example.net", "expected": "moved from [server] to [server]"},
     {"name": "stored_token", "hosts": [], "token": "hill-device-token", "text": "X-Token: hill-device-token;", "expected": "X-Token: [removed];"},
     {"name": "short_stored_token_kept", "hosts": [], "token": "abc123", "text": "abc123 xyz", "expected": "abc123 xyz"},
     {"name": "host_token_and_bearer", "hosts": ["quest.example.net"], "token": "hill-device-token", "text": "POST quest.example.net/203.0.113.7 Bearer hill-device-token", "expected": "POST [server] Bearer [removed]"},
     {"name": "host_in_account_key", "in": "preference_key", "hosts": ["quest.example.net"], "text": "ankiquestUploadedThrough:https://quest.example.net/hill", "expected": "ankiquestUploadedThrough:https://[server]/hill"},
     {"name": "host_and_port_in_server_key", "in": "preference_key", "hosts": ["quest.example.net"], "text": "ankiquestCapabilities:http://quest.example.net:8080", "expected": "ankiquestCapabilities:http://[server]:8080"},
-    {"name": "default_host_in_key", "in": "preference_key", "hosts": ["ankiquest.rationality-munich.com"], "text": "ankiquestUnlocks:https://ankiquest.rationality-munich.com/hill", "expected": "ankiquestUnlocks:https://[server]/hill"},
+    {"name": "default_host_in_key", "in": "preference_key", "hosts": ["ankiquest.org"], "text": "ankiquestUnlocks:https://ankiquest.org/hill", "expected": "ankiquestUnlocks:https://[server]/hill"},
     {"name": "longer_host_in_key_kept", "in": "preference_key", "hosts": ["quest.example.net"], "text": "ankiquestUploadedThrough:https://quest.example.network/hill", "expected": "ankiquestUploadedThrough:https://quest.example.network/hill"}
   ]
 }
