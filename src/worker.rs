@@ -433,7 +433,6 @@ fn deliver_notifications(app: &App, budget: Duration) -> Result<(), Error> {
                         &delivery.notification,
                         &profile,
                         &clock,
-                        &app.week,
                         now,
                     ));
                     reminders::delivery_guard(
