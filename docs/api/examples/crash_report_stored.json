@@ -29,9 +29,9 @@
   "ENVIRONMENT": {
     "getDataDirectory": "/data"
   },
-  "FILE_PATH": "/data/user/0/com.ichi2.anki.quest/files",
+  "FILE_PATH": "/data/user/0/dev.hilll.anki/files",
   "LOGCAT": "10-28 10:29:57.901 I/AnkiQuest: upload 12 reviews\n10-28 10:29:57.950 D/AnkiQuest: Authorization: Bearer [removed]\n",
-  "PACKAGE_NAME": "com.ichi2.anki.quest",
+  "PACKAGE_NAME": "dev.hilll.anki",
   "PHONE_MODEL": "Pixel 8",
   "PRODUCT": "shiba",
   "REPORT_ID": "5c1d4b1e-8a5f-4b8e-9b0e-2f8b5d0a6c11",
