@@ -23,6 +23,8 @@ mod companions;
 mod competition;
 mod config;
 mod conquests;
+mod crash_reports;
+mod crash_signature;
 #[cfg(test)]
 mod day_verdicts;
 mod deck_copies;
@@ -151,11 +153,16 @@ async fn main() -> Result<(), Error> {
                     .map(|(user, c)| admin::Configured {
                         user: user.clone(),
                         display: c.display.clone(),
-                        token: c.token.clone(),
+                        token: config.token(user).map(str::to_string),
                     })
                     .collect();
                 admin::adopt(&config.state_dir, &players, now_ms())
             }),
+            Some(Ok(admin::Command::SignIns)) => admin::sign_ins(
+                &config.state_dir,
+                &config.token_players(),
+                &config.oauth.named(),
+            ),
             Some(Ok(command)) if command.is_about_people() => {
                 let backups = std::env::var_os("ANKIQUEST_BACKUP_DIR")
                     .map_or_else(|| config.state_dir.join("backups"), Into::into);
@@ -218,6 +225,7 @@ async fn main() -> Result<(), Error> {
         standings: Default::default(),
         heartbeat: Default::default(),
         rank_weeks: Default::default(),
+        crash_reports: Default::default(),
         store: Mutex::new(store),
     });
 
@@ -268,6 +276,7 @@ fn router(app: Arc<App>) -> Router {
         .merge(cards::routes())
         .merge(capabilities::routes())
         .merge(synced_settings::routes())
+        .merge(crash_reports::routes())
         .route("/api/health", get(worker::health))
         .route("/", get(index))
         .route("/records", get(index))
@@ -499,10 +508,7 @@ mod tests {
         Arc::get_mut(&mut app)
             .unwrap()
             .config
-            .users
-            .get_mut("cerro")
-            .unwrap()
-            .token = Some(String::new());
+            .set_token("cerro", "");
         assert!(!authorized(&app, "cerro", &HeaderMap::new()));
         let mut empty_bearer = HeaderMap::new();
         empty_bearer.insert(header::AUTHORIZATION, "Bearer ".parse().unwrap());

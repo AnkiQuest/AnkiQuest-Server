@@ -532,7 +532,7 @@ fn challenge_win(
                     &player.display,
                     &player.reviews,
                     &player.clock_history,
-                    &crate::game::Week::default(),
+                    &crate::game::Week::BOARD,
                     now,
                     &player.freeze_policy,
                 ))

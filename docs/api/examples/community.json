@@ -163,7 +163,7 @@
     "initialized_at": 1793183400000,
     "month": 10,
     "rollover_hour": 4,
-    "scoring_note": "Each full Anki day's XP counts toward the shared competition date containing that Anki day's start, matching the weekly leaderboard. Results accept syncs for 24 hours after the common cutoff, then remain fixed. Later syncs still count on the live leaderboard. Reconstructed results use the review history available when archived; coverage begins with the earliest retained history and may predate this server.",
+    "scoring_note": "Each full Anki day's XP counts toward that day's date on the player's own clock, matching the weekly leaderboard. Results accept syncs for 24 hours after the common cutoff, then remain fixed. Later syncs still count on the live leaderboard. Reconstructed results use the review history available when archived; coverage begins with the earliest retained history and may predate this server.",
     "start_date": "2026-10-25",
     "start_source": "available_history",
     "time_zone": "UTC",

@@ -1,0 +1,18 @@
+{
+  "account": false,
+  "linked_unavailable": false,
+  "password": false,
+  "providers": [
+    {
+      "linked": false,
+      "name": "Google",
+      "provider": "google"
+    },
+    {
+      "linked": false,
+      "name": "GitHub",
+      "provider": "github"
+    }
+  ],
+  "sign_in": "token_only"
+}

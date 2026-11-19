@@ -16,6 +16,11 @@ folder is left out: its pictures reuse other works.
 The pack's art serves as Anki-tan's poses until we draw our own, or for
 good. Where the full version has no picture, it uses the chibi face.
 
+The poses each version uses are listed in [`poses.json`](poses.json) and
+[`chibi/poses.json`](chibi/poses.json); `xtask art-coverage` and CI read
+those lists, so change them with this table. They use the generated
+masters below for asleep, sad, neglected and frozen.
+
 | Core pose | Anki-tan | Anki-tan chibi |
 |---|---|---|
 | face | `sprite/idle/anki-tan_idle_0001.png` | `emoji/Ankitan_00_smile.png` |
@@ -24,7 +29,7 @@ good. Where the full version has no picture, it uses the chibi face.
 | streak | `emoji/Ankitan_09_fire_eyes.png` | `emoji/Ankitan_09_fire_eyes.png` |
 | sad | `emoji/Ankitan_02_cry.png` | `emoji/Ankitan_02_cry.png` |
 | hopeful | `sticker/ankitan_lets_study.png` | `emoji/Ankitan_06_pleading.png` |
-| frozen | missing | missing |
+| frozen | `frozen.png` (generated) | `chibi/frozen.png` (generated) |
 | neglected | `emoji/Ankitan_49_lost_streaks.png` | `emoji/Ankitan_49_lost_streaks.png` |
 
 Extensions, both versions unless noted:
@@ -39,8 +44,6 @@ Extensions, both versions unless noted:
 | dead | `emoji/Ankitan_39_crossed_out_eyes.png` |
 | celebrate (unlock reveal) | `illust/anki_tan_main.png` |
 | idle and wave animations | `sprite/idle`, `sprite/hello` |
-
-Both versions lack only `frozen`.
 
 ## Generated additions
 

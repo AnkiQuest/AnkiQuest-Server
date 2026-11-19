@@ -701,12 +701,24 @@ fn avatar(
         svg.circle(cx, cy, r, "#FFFFFF");
     } else {
         svg.circle(cx, cy, r, palette.dark);
-        let initial: String = display
-            .chars()
-            .find(|c| c.is_alphanumeric())
-            .map_or_else(|| "?".into(), |c| c.to_uppercase().collect());
-        svg.text(cx, cy + r * 0.36, r, true, "#FFFFFF", "middle", &initial);
+        svg.text(
+            cx,
+            cy + r * 0.36,
+            r,
+            true,
+            "#FFFFFF",
+            "middle",
+            &initial(display),
+        );
     }
+}
+
+/// The avatar's initial: the name's first letter or digit in its own case, so hill shows "h".
+fn initial(display: &str) -> String {
+    display
+        .chars()
+        .find(|c| c.is_alphanumeric())
+        .map_or_else(|| "?".into(), String::from)
 }
 
 fn one_line(text: &str, sizes: &[f32], max_width: f32, bold: bool) -> (f32, String) {
@@ -1602,6 +1614,14 @@ mod tests {
     }
 
     #[test]
+    fn avatar_initials_keep_the_names_case() {
+        assert_eq!(initial("hill"), "h");
+        assert_eq!(initial("Cerro Torre"), "C");
+        assert_eq!(initial("  ¡ana!"), "a");
+        assert_eq!(initial("…"), "?");
+    }
+
+    #[test]
     fn the_cow_is_ankilope_turned_purple() {
         let ankilope = art_pixmap(art("ankilope", "celebrate").unwrap()).unwrap();
         let cow = art_pixmap(art("cow", "celebrate").unwrap()).unwrap();
@@ -1652,7 +1672,7 @@ mod tests {
         assert_eq!(first, again);
         assert_eq!(first.as_ptr(), again.as_ptr(), "served from the cache");
         let mut renamed = card();
-        renamed.display = "hill".into();
+        renamed.display = "Aldana".into();
         assert_ne!(
             first.as_ptr(),
             png(renamed, Shape::Wide).await.unwrap().as_ptr()
@@ -1728,6 +1748,7 @@ mod tests {
     fn fixture(private_site: bool, public_url: Option<&str>) -> (Arc<App>, PathBuf) {
         let mut config = serde_json::json!({
             "private_site": private_site,
+            "configured_tokens": "enabled",
             "users": {
                 "cerro": {"display": "Cerro", "token": "cerro-secret"},
                 "hill": {"display": "hill", "token": "hill-secret"}

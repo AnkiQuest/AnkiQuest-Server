@@ -1,7 +1,8 @@
-//! Persistent competition history. Anki-day XP is credited to the shared date
-//! containing that Anki day's start, matching game::Periods. The live leaderboard
-//! keeps its existing scoring; this archive freezes each result after a late-sync
-//! grace period and never rewrites a finalized winner.
+//! Persistent competition history. Anki-day XP is credited to the date of that Anki
+//! day on the player's own clock, as on the live board; archives started before that
+//! keep their earlier allocation for finalized days (see `Allocation`). This archive
+//! freezes each result after a late-sync grace period and never rewrites a finalized
+//! winner.
 
 use crate::app::{App, now_ms};
 use crate::game::{self, ClockHistory, DAY_MS, FreezePolicy, Week};
@@ -84,6 +85,52 @@ struct Metadata {
     initialized_at: i64,
     time_zone: String,
     rollover_hour: u32,
+    /// Absent in archives written before own dates, which read as `ArchiveClock`.
+    #[serde(default)]
+    allocation: Allocation,
+}
+
+/// Which date an Anki day's XP is credited to. Finalized rows are never rewritten, so an
+/// archive that began on the archive clock keeps it for every day it had finalized.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum Allocation {
+    /// Every Anki day on the date its start falls on, on the archive clock. Only read from
+    /// archives written before own dates; the next refresh moves them to `OwnDatesFrom`.
+    #[default]
+    ArchiveClock,
+    /// Anki days the archive clock put before `from` stay there; later ones count on the
+    /// player's own date, but never before `from`.
+    OwnDatesFrom { from: String },
+    /// Every Anki day on the player's own date.
+    OwnDates,
+}
+
+impl Allocation {
+    /// Move an archive-clock archive to own dates from the day after its last finalized day.
+    fn upgrade(self, finalized: impl Iterator<Item = NaiveDate>) -> Self {
+        if self != Self::ArchiveClock {
+            return self;
+        }
+        finalized
+            .max()
+            .map_or(Self::OwnDates, |last| Self::OwnDatesFrom {
+                from: (last + Duration::days(1)).to_string(),
+            })
+    }
+
+    /// The date `day` counts toward.
+    fn date(&self, day: &game::HistoryDay, archive_week: &Week) -> Result<NaiveDate, Error> {
+        let Self::OwnDatesFrom { from } = self else {
+            return Ok(own_date(day));
+        };
+        let from = date(from)?;
+        let shared = archive_week.competition_date(day.at);
+        if shared < from {
+            return Ok(shared);
+        }
+        Ok(own_date(day).max(from))
+    }
 }
 
 pub fn initialize(conn: &Connection) -> Result<(), Error> {
@@ -134,6 +181,11 @@ fn read_period(conn: &Connection, kind: &str, key: &str) -> Result<Option<Period
 
 fn date(value: &str) -> Result<NaiveDate, Error> {
     Ok(NaiveDate::parse_from_str(value, "%Y-%m-%d")?)
+}
+
+/// The date of a player's Anki day on their own clock, the date its XP counts toward.
+fn own_date(day: &game::HistoryDay) -> NaiveDate {
+    NaiveDate::parse_from_str(&day.date, "%Y-%m-%d").unwrap_or_default()
 }
 
 /// The Monday starting the week that contains `day`.
@@ -234,6 +286,7 @@ pub fn refresh(
         initialized_at: now_ms,
         time_zone: week.tz.to_string(),
         rollover_hour: week.rollover_hour,
+        allocation: Allocation::OwnDates,
     });
     // The archive's time zone is fixed at creation. A later server config change
     // must not quietly re-label finalized dates or change old contest boundaries.
@@ -242,6 +295,21 @@ pub fn refresh(
         rollover_hour: meta.rollover_hour,
     };
     let today = archive_week.competition_date(now_ms);
+
+    // Finalized days are kept as stored; an archive from before own dates switches to
+    // them only after its last finalized day, so no Anki day is counted twice.
+    let old = read_periods(&store.conn)?;
+    let finalized_days: HashMap<_, _> = old
+        .into_iter()
+        .filter(|p| p.kind == "day" && p.is_final())
+        .map(|p| (p.key.clone(), p))
+        .collect();
+    let finalized_dates = finalized_days
+        .keys()
+        .map(|key| date(key))
+        .collect::<Result<Vec<_>, _>>()?;
+    meta.allocation = meta.allocation.upgrade(finalized_dates.into_iter());
+
     let mut credits: BTreeMap<NaiveDate, BTreeMap<String, Standing>> = BTreeMap::new();
     let mut joined = HashMap::new();
     let mut earliest = None;
@@ -262,16 +330,13 @@ pub fn refresh(
             now_ms,
             &player.freeze_policy,
         );
+        let first_day = profile.history.iter().find(|day| day.reviews > 0);
         joined.insert(
             player.user.clone(),
-            profile
-                .history
-                .iter()
-                .find(|day| day.reviews > 0)
-                .map_or(today, |day| archive_week.competition_date(day.at)),
+            first_day.map_or(Ok(today), |day| meta.allocation.date(day, &archive_week))?,
         );
         for day in profile.history {
-            let common_day = archive_week.competition_date(day.at);
+            let common_day = meta.allocation.date(&day, &archive_week)?;
             if common_day > today {
                 continue;
             }
@@ -292,8 +357,7 @@ pub fn refresh(
             standing.reviews += day.reviews;
             standing.time_ms += day.time_ms;
             standing.new_cards += day.new_cards;
-            // At DST transitions two fixed-offset Anki-day starts can map to the
-            // same competition date. Consistency still counts that date once.
+            // A date counts once for consistency, however many reviews it has.
             standing.days_active = u64::from(standing.reviews > 0);
             standing.best_streak = standing.best_streak.max(day.streak);
             standing.freezes_used += u64::from(day.frozen);
@@ -310,12 +374,6 @@ pub fn refresh(
         }
     };
     meta.start_date = first.map(|d| d.to_string());
-    let old = read_periods(&store.conn)?;
-    let finalized_days: HashMap<_, _> = old
-        .into_iter()
-        .filter(|p| p.kind == "day" && p.is_final())
-        .map(|p| (p.key.clone(), p))
-        .collect();
     let mut periods = Vec::new();
     if let Some(first) = first.filter(|first| *first <= today) {
         let mut day = first;
@@ -808,6 +866,7 @@ pub fn dashboard(
         initialized_at: now_ms,
         time_zone: week.tz.to_string(),
         rollover_hour: week.rollover_hour,
+        allocation: Allocation::OwnDates,
     });
     let periods = read_periods(&store.conn)?;
     let days: Vec<_> = periods.iter().filter(|p| p.kind == "day").collect();
@@ -955,12 +1014,16 @@ pub fn dashboard(
         }
     }
     let winner_history = winner_history_from_periods(Some(&meta), players, &periods)?;
+    // The allocation is how this archive stores days, not part of the answer.
     let mut metadata = serde_json::to_value(meta)?;
+    if let Some(fields) = metadata.as_object_mut() {
+        fields.remove("allocation");
+    }
     metadata["year"] = json!(year);
     metadata["month"] = json!(month);
     metadata["grace_hours"] = json!(24);
     metadata["scoring_note"] = json!(
-        "Each full Anki day's XP counts toward the shared competition date containing that Anki day's start, matching the weekly leaderboard. Results accept syncs for 24 hours after the common cutoff, then remain fixed. Later syncs still count on the live leaderboard. Reconstructed results use the review history available when archived; coverage begins with the earliest retained history and may predate this server."
+        "Each full Anki day's XP counts toward that day's date on the player's own clock, matching the weekly leaderboard. Results accept syncs for 24 hours after the common cutoff, then remain fixed. Later syncs still count on the live leaderboard. Reconstructed results use the review history available when archived; coverage begins with the earliest retained history and may predate this server."
     );
     Ok(json!({
         "meta":metadata,"players":summaries,
@@ -1611,6 +1674,136 @@ mod tests {
         assert_eq!(recap.days_studied, 1);
     }
 
+    /// The players of `testdata/competition_utc_archive.json`: east of UTC, whose Monday Anki
+    /// day began on Sunday in UTC, and one on UTC.
+    fn legacy_players() -> Vec<Participant> {
+        let mut eastern = player("east", reviews("2026-09-14", 2));
+        eastern.clock_history = ClockHistory::single(Clock {
+            offset_west_min: -600,
+            rollover_hour: 4,
+        });
+        let mut both = reviews("2026-09-13", 1);
+        both.extend(reviews("2026-09-14", 1));
+        vec![eastern, player("utc", both)]
+    }
+
+    /// Each player's reviews over the archive's periods of `kind`.
+    fn archived_reviews(db: &Store, kind: &str) -> BTreeMap<String, u64> {
+        let mut totals = BTreeMap::new();
+        for period in read_periods(&db.conn).unwrap() {
+            if period.kind != kind {
+                continue;
+            }
+            for standing in period.standings {
+                *totals.entry(standing.user).or_default() += standing.reviews;
+            }
+        }
+        totals
+    }
+
+    #[test]
+    fn an_archive_from_before_own_dates_keeps_its_finalized_rows() {
+        let mut db = Database::new();
+
+        // Load the archive the previous version wrote: Sunday is final and holds east's
+        // Monday, which began on Sunday in UTC; Monday is still provisional.
+        let legacy: Value =
+            serde_json::from_str(include_str!("testdata/competition_utc_archive.json")).unwrap();
+        let conn = &db.get().conn;
+        conn.execute(
+            "insert into competition_meta (id, payload) values (1, ?1)",
+            [legacy["meta"].as_str().unwrap()],
+        )
+        .unwrap();
+        let mut frozen = BTreeMap::new();
+        for row in legacy["periods"].as_array().unwrap() {
+            let field = |name: &str| row[name].as_str().unwrap().to_string();
+            conn.execute(
+                "insert into competition_periods (kind, key, finalized, payload)
+                 values (?1, ?2, ?3, ?4)",
+                params![
+                    field("kind"),
+                    field("key"),
+                    row["finalized"].as_i64(),
+                    field("payload")
+                ],
+            )
+            .unwrap();
+            if row["finalized"] == 1 {
+                frozen.insert((field("kind"), field("key")), field("payload"));
+            }
+        }
+        assert!(frozen.contains_key(&("day".into(), "2026-09-13".into())));
+
+        // This version refreshes while Monday is provisional, and again once it is final.
+        let players = legacy_players();
+        let expected = BTreeMap::from([("east".to_string(), 2), ("utc".to_string(), 2)]);
+        for now in [at("2026-09-15", 6), at("2026-09-17", 6)] {
+            refresh(db.get(), &players, &Week::default(), now, None).unwrap();
+
+            // Finalized rows stay byte for byte, and each review counts once.
+            for ((kind, key), payload) in &frozen {
+                let stored: String = db
+                    .get()
+                    .conn
+                    .query_row(
+                        "select payload from competition_periods where kind = ?1 and key = ?2",
+                        [kind, key],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(&stored, payload, "{kind} {key}");
+            }
+            assert_eq!(archived_reviews(db.get(), "day"), expected);
+            assert_eq!(archived_reviews(db.get(), "week"), expected);
+            assert_eq!(archived_reviews(db.get(), "month"), expected);
+        }
+    }
+
+    #[test]
+    fn a_new_archive_dates_month_ends_on_the_players_clock() {
+        let mut db = Database::new();
+
+        // East of UTC, 30 September 20:00 UTC is 1 October on their clock, as is
+        // 31 December 20:00 UTC for 1 January.
+        let review = |id: i64| game::Review {
+            id,
+            cid: id,
+            last_ivl: 10,
+            ivl: None,
+            time_ms: 10_000,
+            kind: 1,
+        };
+        let mut eastern = player(
+            "east",
+            vec![review(at("2026-09-30", 20)), review(at("2026-12-31", 20))],
+        );
+        eastern.clock_history = ClockHistory::single(Clock {
+            offset_west_min: -600,
+            rollover_hour: 4,
+        });
+        let players = vec![eastern, player("utc", reviews("2026-09-29", 1))];
+        refresh(
+            db.get(),
+            &players,
+            &Week::default(),
+            at("2027-01-05", 6),
+            None,
+        )
+        .unwrap();
+        let mut reviews_in = |key: &str| {
+            period(db.get(), "month", key)
+                .standings
+                .iter()
+                .find(|s| s.user == "east")
+                .map_or(0, |s| s.reviews)
+        };
+        assert_eq!(reviews_in("2026-09"), 0);
+        assert_eq!(reviews_in("2026-10"), 1);
+        assert_eq!(reviews_in("2026-12"), 0);
+        assert_eq!(reviews_in("2027-01"), 1);
+    }
+
     #[test]
     fn different_player_clocks_match_existing_weekly_allocation() {
         let mut db = Database::new();
@@ -1623,9 +1816,10 @@ mod tests {
         let players = vec![eastern, player("utc", reviews("2026-09-14", 1))];
         let now = at("2026-09-14", 14);
         refresh(db.get(), &players, &week, now, None).unwrap();
-        let sunday = period(db.get(), "day", "2026-09-13");
+        // East of UTC their Monday began on Sunday in UTC, and counts for Monday.
+        let monday = period(db.get(), "day", "2026-09-14");
         assert_eq!(
-            sunday
+            monday
                 .standings
                 .iter()
                 .find(|s| s.user == "east")
@@ -1656,7 +1850,7 @@ mod tests {
     }
 
     #[test]
-    fn repeated_hour_can_combine_anki_days_but_counts_one_competition_day() {
+    fn repeated_hour_keeps_anki_days_on_their_own_dates() {
         let mut db = Database::new();
         let week = Week {
             tz: chrono_tz::Europe::Berlin,
@@ -1669,9 +1863,12 @@ mod tests {
         clock.rollover_hour = 2;
         participant.clock_history = ClockHistory::single(clock);
         refresh(db.get(), &[participant], &week, at("2026-10-27", 12), None).unwrap();
-        let repeated = period(db.get(), "day", "2026-10-24");
-        assert_eq!(repeated.standings[0].reviews, 2);
-        assert_eq!(repeated.standings[0].days_active, 1);
+        // The archive's fall-back hour no longer merges two Anki days into one date.
+        for date in ["2026-10-24", "2026-10-25"] {
+            let day = period(db.get(), "day", date);
+            assert_eq!(day.standings[0].reviews, 1, "{date}");
+            assert_eq!(day.standings[0].days_active, 1, "{date}");
+        }
     }
 
     #[test]
@@ -1914,6 +2111,7 @@ mod tests {
     async fn community_empty_history_has_no_invented_champions_and_rejects_bad_filters() {
         let (app, path) = app_with(serde_json::json!({
             "registration": true,
+            "configured_tokens": "enabled",
             "users": {
                 "cerro": {"token": "cerro-secret"},
                 "hill": {"token": "hill-secret"},

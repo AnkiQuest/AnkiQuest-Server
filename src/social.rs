@@ -811,6 +811,7 @@ mod tests {
     fn fixture() -> (Arc<App>, PathBuf) {
         crate::test_support::app_with(serde_json::json!({
             "registration": true,
+            "configured_tokens": "enabled",
             "users": {"alice": {"token": "alice-token"}, "bob": {"token": "bob-token"}}
         }))
     }
