@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
-const MAX_PENDING: usize = 5000;
+pub(crate) const MAX_PENDING: usize = 5000;
 
 pub(crate) async fn profile(
     State(app): State<Arc<App>>,
@@ -374,6 +374,41 @@ fn record_upload(
             .map_err(store_error)?;
         (announced, changed)
     };
+    let upload = Recorded {
+        before,
+        changed,
+        silent,
+        announced,
+    };
+    answer_upload(app, user, headers, upload)
+}
+
+/// What recording an upload of study did, for [`answer_upload`].
+pub(crate) struct Recorded {
+    /// The profile before the upload; none for a silent one.
+    pub(crate) before: Option<Profile>,
+    /// Whether the player's study or clock changed.
+    pub(crate) changed: bool,
+    /// Whether the upload's events are taken as seen instead of announced.
+    pub(crate) silent: bool,
+    pub(crate) announced: Vec<decks::Announcement>,
+}
+
+/// The answer to an upload of study: the new profile with the feedback on what it changed.
+pub(crate) fn answer_upload(
+    app: &App,
+    user: &str,
+    headers: &HeaderMap,
+    upload: Recorded,
+) -> Result<UploadResponse, StatusCode> {
+    let store_error = failed_for("upload for", user);
+    let Recorded {
+        before,
+        changed,
+        silent,
+        announced,
+    } = upload;
+
     // An upload that added nothing leaves the profile as it was, so it is worked out once.
     let mut profile = match &before {
         Some(before) if !changed => before.clone(),

@@ -1337,6 +1337,46 @@ async fn examples_match_the_handlers() {
     drop(converted.app);
     std::fs::remove_dir_all(&converted.path).unwrap();
 
+    // A player on AnkiQuest Lite, which reads stock AnkiDroid: two answered cards, one of them
+    // seen before, and a day's count with a card no state covers. On a server of its own, so the
+    // examples above keep only exact review rows.
+    let lite = Fixture::new();
+    let secs = |ms: i64| ms / 1000;
+    let clock = json!({"offset_west_min": 0, "rollover_hour": 4});
+    let today = Clock::default().day(NOW_MS);
+    lite.call(
+        "POST",
+        "/api/observations/cerro",
+        Some("cerro-secret"),
+        json!({"clock": clock, "read_at_ms": NOW_MS - 900_000, "cards": [
+            {"cid": 1_700_000_000_001i64, "reps": 4, "type": 2, "interval": 9,
+             "last_review_time_secs": secs(NOW_MS - 9 * 86_400_000)}
+        ]}),
+    )
+    .await;
+    examples.push((
+        "observations",
+        lite.call(
+            "POST",
+            "/api/observations/cerro",
+            Some("cerro-secret"),
+            json!({"clock": clock, "read_at_ms": NOW_MS - 60_000, "cards": [
+                {"cid": 1_700_000_000_001i64, "reps": 5, "type": 2, "interval": 21,
+                 "last_review_time_secs": secs(NOW_MS - 300_000)},
+                {"cid": 1_700_000_000_002i64, "reps": 2, "type": 1, "interval": 0,
+                 "last_review_time_secs": secs(NOW_MS - 240_000)}
+            ], "days": [{"day": today, "cards": 3}]}),
+        )
+        .await,
+    ));
+    examples.push((
+        "leaderboard_observed",
+        lite.call("GET", "/api/leaderboard", Some("cerro-secret"), Value::Null)
+            .await,
+    ));
+    drop(lite.app);
+    std::fs::remove_dir_all(&lite.path).unwrap();
+
     let update = std::env::var_os("UPDATE_API_EXAMPLES").is_some_and(|v| v == "1");
     let dir = examples_dir();
     let mut stale = Vec::new();

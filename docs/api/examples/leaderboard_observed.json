@@ -1,0 +1,26 @@
+[
+  {
+    "day_ends_at": 1793246400000,
+    "display": "Cerro",
+    "level": 1,
+    "period": "week",
+    "periods": {
+      "all": 32,
+      "day": 22,
+      "hour": 16,
+      "month": 32,
+      "week": 22,
+      "year": 32
+    },
+    "streak": 1,
+    "streak_minutes": 0,
+    "streak_state": "studied",
+    "today_minutes": 0,
+    "today_reviews": 3,
+    "user": "cerro",
+    "week_xp": 22,
+    "xp": 22,
+    "xp_source": "observed",
+    "xp_total": 32
+  }
+]

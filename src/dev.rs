@@ -674,6 +674,7 @@ mod tests {
             user.into(),
             crate::app::Player {
                 reviews: Arc::new(at.iter().copied().map(review).collect()),
+                observed: Default::default(),
                 clock: Clock::default(),
                 clock_history: ClockHistory::default(),
                 freeze_policy: FreezePolicy::default(),

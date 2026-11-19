@@ -42,6 +42,11 @@ const EXPORT: &[(&str, &str)] = &[
     ("anki_day_history", "select effective_from_ms, offset_west_min, rollover_hour
          from clock_history where user = ?1 order by effective_from_ms"),
     ("syncs", "select received_at from review_syncs where user = ?1"),
+    ("observed_cards", "select cid, reps, type, interval, last_review_time_secs, read_at_ms
+         from observed_cards where user = ?1 order by cid"),
+    ("observed_answers", "select cid, at, kind, last_ivl, ivl, timing
+         from observed_answers where user = ?1 order by at, cid"),
+    ("observed_days", "select day, cards from observed_days where user = ?1 order by day"),
     ("language", "select language from languages where user = ?1"),
     ("companion", "select companion from companion_preferences where user = ?1"),
     ("companion_unlocks", "select unlock, unlocked_at from companion_unlocks where user = ?1 order by unlock"),
@@ -135,6 +140,9 @@ const OWNED: &[(&str, &str)] = &[
     ("clocks", "user = ?1"),
     ("clock_history", "user = ?1"),
     ("review_syncs", "user = ?1"),
+    ("observed_cards", "user = ?1"),
+    ("observed_answers", "user = ?1"),
+    ("observed_days", "user = ?1"),
     ("sync_signatures", "user = ?1"),
     (
         "seen",
@@ -257,6 +265,9 @@ pub(crate) const NAMED: &[(&str, &str)] = &[
     ("muted_people", "sender"),
     ("notifications", "recipient"),
     ("notifications", "sender"),
+    ("observed_answers", "user"),
+    ("observed_cards", "user"),
+    ("observed_days", "user"),
     ("player_settings", "user"),
     ("player_streak_minutes", "user"),
     ("reactions", "reactor"),
@@ -333,6 +344,7 @@ const NOT_NAMES: &[&str] = &[
     "notifications.reply_to_title",
     "notifications.title",
     "notifications.topic",
+    "observed_answers.timing",
     "reminder_baselines.kind",
     "reminder_settings.settings",
     // Keys can name another player; `forget` matches those patterns.

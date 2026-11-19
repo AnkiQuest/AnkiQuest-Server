@@ -27,6 +27,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "group_invites",
     "messages",
     "mute",
+    crate::observations::FEATURE,
     "reactions",
     "review_offsets",
     "settings_sync",

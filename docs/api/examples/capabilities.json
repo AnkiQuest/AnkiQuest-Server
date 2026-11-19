@@ -13,6 +13,7 @@
     "group_invites",
     "messages",
     "mute",
+    "observed_reviews",
     "reactions",
     "review_offsets",
     "settings_sync",
