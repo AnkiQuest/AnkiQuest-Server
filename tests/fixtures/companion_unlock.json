@@ -5,7 +5,9 @@
     {"companion": "cow", "kind": "study_hours", "goal": 10, "secret": false, "status": "live"},
     {"companion": "anki_tan", "kind": "streak", "goal": 66, "secret": false, "status": "live"},
     {"companion": "anki_tan_chibi", "kind": "taps", "goal": 9, "requires": "anki_tan", "secret": true, "status": "planned"},
-    {"companion": "leech_tan", "kind": "leeches_tamed", "goal": 3, "secret": true, "status": "planned"}
+    {"companion": "quest_chan", "kind": "level", "goal": 50, "secret": false, "status": "planned"},
+    {"companion": "quest_chan_chibi", "kind": "taps", "goal": 9, "requires": "quest_chan", "secret": true, "status": "planned"},
+    {"companion": "leech_kun", "kind": "leeches_tamed", "goal": 3, "secret": true, "status": "planned"}
   ],
   "checks": [
     {"name": "level 29 is not enough", "companion": "ankilope", "value": 29, "unlocks": false},
@@ -16,8 +18,11 @@
     {"name": "a 65-day streak is not enough", "companion": "anki_tan", "value": 65, "unlocks": false},
     {"name": "a 66-day streak unlocks Anki-tan", "companion": "anki_tan", "value": 66, "unlocks": true},
     {"name": "a longer streak still unlocks", "companion": "anki_tan", "value": 100, "unlocks": true},
-    {"name": "2 tamed leeches are not enough", "companion": "leech_tan", "value": 2, "unlocks": false},
-    {"name": "3 tamed leeches unlock Leech-tan", "companion": "leech_tan", "value": 3, "unlocks": true}
+    {"name": "level 49 is not enough for Quest-chan", "companion": "quest_chan", "value": 49, "unlocks": false},
+    {"name": "level 50 unlocks Quest-chan", "companion": "quest_chan", "value": 50, "unlocks": true},
+    {"name": "a later level still unlocks Quest-chan", "companion": "quest_chan", "value": 51, "unlocks": true},
+    {"name": "2 tamed leeches are not enough", "companion": "leech_kun", "value": 2, "unlocks": false},
+    {"name": "3 tamed leeches unlock Leech-kun", "companion": "leech_kun", "value": 3, "unlocks": true}
   ],
   "taps": 9,
   "max_gap_ms": 2000,
@@ -38,14 +43,18 @@
     {"name": "taps on a locked base show no hint and never unlock", "unlocked": [], "sequence": [["anki_tan", 0], ["anki_tan", 300], ["anki_tan", 600], ["anki_tan", 900], ["anki_tan", 1200], ["anki_tan", 1500], ["anki_tan", 1800], ["anki_tan", 2100], ["anki_tan", 2400]], "hints": [null, null, null, null, null, null, null, null, null], "unlocks": false},
     {"name": "taps on an unlocked base hint from tap 4 and unlock on tap 9", "unlocked": ["anki_tan"], "sequence": [["anki_tan", 0], ["anki_tan", 300], ["anki_tan", 600], ["anki_tan", 900], ["anki_tan", 1200], ["anki_tan", 1500], ["anki_tan", 1800], ["anki_tan", 2100], ["anki_tan", 2400]], "hints": [null, null, null, "You are 5 taps away from chibi", "You are 4 taps away from chibi", "You are 3 taps away from chibi", "You are 2 taps away from chibi", "You are 1 tap away from chibi", null], "unlocks": true},
     {"name": "a longer gap starts the hints again", "unlocked": ["anki_tan"], "sequence": [["anki_tan", 0], ["anki_tan", 300], ["anki_tan", 600], ["anki_tan", 900], ["anki_tan", 5000], ["anki_tan", 5300], ["anki_tan", 5600], ["anki_tan", 5900]], "hints": [null, null, null, "You are 5 taps away from chibi", null, null, null, "You are 5 taps away from chibi"], "unlocks": false},
-    {"name": "taps on a companion without a chibi count nothing", "unlocked": ["anki_tan", "cow"], "sequence": [["cow", 0], ["cow", 300], ["cow", 600], ["cow", 900], ["cow", 1200], ["cow", 1500], ["cow", 1800], ["cow", 2100], ["cow", 2400]], "hints": [null, null, null, null, null, null, null, null, null], "unlocks": false}
+    {"name": "taps on a companion without a chibi count nothing", "unlocked": ["anki_tan", "cow"], "sequence": [["cow", 0], ["cow", 300], ["cow", 600], ["cow", 900], ["cow", 1200], ["cow", 1500], ["cow", 1800], ["cow", 2100], ["cow", 2400]], "hints": [null, null, null, null, null, null, null, null, null], "unlocks": false},
+    {"name": "taps on unlocked Quest-chan unlock her chibi", "unlocked": ["quest_chan"], "sequence": [["quest_chan", 0], ["quest_chan", 300], ["quest_chan", 600], ["quest_chan", 900], ["quest_chan", 1200], ["quest_chan", 1500], ["quest_chan", 1800], ["quest_chan", 2100], ["quest_chan", 2400]], "hints": [null, null, null, "You are 5 taps away from chibi", "You are 4 taps away from chibi", "You are 3 taps away from chibi", "You are 2 taps away from chibi", "You are 1 tap away from chibi", null], "unlocks": true},
+    {"name": "a tap on the other base starts again", "unlocked": ["anki_tan", "quest_chan"], "sequence": [["anki_tan", 0], ["anki_tan", 300], ["anki_tan", 600], ["anki_tan", 900], ["quest_chan", 1200], ["quest_chan", 1500], ["quest_chan", 1800], ["quest_chan", 2100], ["quest_chan", 2400]], "hints": [null, null, null, "You are 5 taps away from chibi", null, null, null, "You are 5 taps away from chibi", "You are 4 taps away from chibi"], "unlocks": false}
   ],
   "requests": [
     {"name": "the chibi is refused while her base is locked", "unlock": "anki_tan_chibi", "unlocked": [], "status": 409},
     {"name": "the chibi joins once her base is unlocked", "unlock": "anki_tan_chibi", "unlocked": ["anki_tan"], "status": 200},
     {"name": "asking again once she joined answers the list", "unlock": "anki_tan_chibi", "unlocked": ["anki_tan", "anki_tan_chibi"], "status": 200},
     {"name": "a tap run from a released app is ignored", "unlock": "anki_tan_chibi", "unlocked": ["anki_tan"], "taps": [["anki_tan", 0], ["anki_tan", 300], ["anki_tan", 600], ["anki_tan", 900], ["anki_tan", 1200], ["anki_tan", 1500], ["anki_tan", 1800], ["anki_tan", 2100], ["anki_tan", 2400]], "status": 200},
-    {"name": "a tap run does not help while her base is locked", "unlock": "anki_tan_chibi", "unlocked": [], "taps": [["anki_tan", 0], ["anki_tan", 300], ["anki_tan", 600], ["anki_tan", 900], ["anki_tan", 1200], ["anki_tan", 1500], ["anki_tan", 1800], ["anki_tan", 2100], ["anki_tan", 2400]], "status": 409}
+    {"name": "a tap run does not help while her base is locked", "unlock": "anki_tan_chibi", "unlocked": [], "taps": [["anki_tan", 0], ["anki_tan", 300], ["anki_tan", 600], ["anki_tan", 900], ["anki_tan", 1200], ["anki_tan", 1500], ["anki_tan", 1800], ["anki_tan", 2100], ["anki_tan", 2400]], "status": 409},
+    {"name": "Quest-chan's chibi is refused while Quest-chan is locked", "unlock": "quest_chan_chibi", "unlocked": ["anki_tan"], "status": 409},
+    {"name": "Quest-chan's chibi joins once Quest-chan is unlocked", "unlock": "quest_chan_chibi", "unlocked": ["quest_chan"], "status": 200}
   ],
   "cases": [
     {

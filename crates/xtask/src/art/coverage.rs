@@ -42,7 +42,9 @@ const COMPANIONS: &[(&str, &str)] = &[
     ("cow", "cow"),
     ("anki_tan", "anki-tan"),
     ("anki_tan_chibi", "anki-tan/chibi"),
-    ("leech_tan", "leech-tan"),
+    ("quest_chan", "quest-chan"),
+    ("quest_chan_chibi", "quest-chan/chibi"),
+    ("leech_kun", "leech-kun"),
 ];
 
 /// The names players and hill use for each companion id.
@@ -52,7 +54,9 @@ const NAMES: &[(&str, &str)] = &[
     ("cow", "Bluma"),
     ("anki_tan", "Anki-tan"),
     ("anki_tan_chibi", "Anki-tan chibi"),
-    ("leech_tan", "Leech-kun"),
+    ("quest_chan", "Quest-chan"),
+    ("quest_chan_chibi", "Quest-chan chibi"),
+    ("leech_kun", "Leech-kun"),
 ];
 
 /// Poses whose masters may still have the file name they had before the
