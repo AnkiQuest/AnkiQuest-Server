@@ -10,6 +10,8 @@
 mod art;
 mod contract;
 mod event;
+#[cfg(test)]
+mod runners;
 
 use std::env;
 use std::path::{Path, PathBuf};
