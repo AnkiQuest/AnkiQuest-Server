@@ -25,9 +25,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Jobs that need only Cargo or Nix run on AnkiQuest's self-hosted runners
+# for pushes and dispatches on master, which their runner group allows;
+# pull requests and merge queue groups stay on GitHub's runners. web and
+# screenshots stay there too, since Playwright installs packages with
+# apt, and so does nix: the server's tests connect over loopback, which
+# the self-hosted runners block to keep their hosts' services out of
+# reach.
 jobs:
   android-contract:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.ref == 'refs/heads/master' && fromJSON('["self-hosted","Linux","X64","ankiquest","build"]') || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -44,7 +51,7 @@ jobs:
         run: cargo run -p ankiquest-xtask -- android-contract --android-resources android-client/AnkiDroid/src/test/resources
 
   art:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.ref == 'refs/heads/master' && fromJSON('["self-hosted","Linux","X64","ankiquest","build"]') || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -157,11 +164,13 @@ jobs:
         run: nix develop --command cargo clippy --workspace --all-targets -- -D warnings
 
   package:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.ref == 'refs/heads/master' && fromJSON('["self-hosted","Linux","X64","ankiquest","build"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # The self-hosted runners bring their own single-user Nix.
       - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
+        if: runner.environment == 'github-hosted'
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
