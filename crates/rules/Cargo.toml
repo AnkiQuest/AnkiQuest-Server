@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["hill <hill@hilll.dev>"]
 edition = "2024"
 rust-version = "1.88"
-license = "AGPL-3.0-only"
+license = "AGPL-3.0-or-later"
 description = "The rules AnkiQuest's server and clients compute alike, with UniFFI bindings for Kotlin and Python"
 
 # `lib` for the server, `cdylib` for the Kotlin and Python bindings.
