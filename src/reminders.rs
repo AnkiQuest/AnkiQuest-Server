@@ -766,6 +766,7 @@ mod tests {
                 cid: 1,
                 last_ivl: 1,
                 ivl: None,
+                ease: None,
                 time_ms: 10_000,
                 kind: 1,
             }],
@@ -1108,6 +1109,7 @@ mod tests {
         let mut store = Store::open(&path).unwrap();
         let mut p = profile(&clock, at(33));
         p.history.push(HistoryDay {
+            observed: 0,
             at: at(4),
             date: game::date_string(DATE),
             xp: 0,
@@ -1411,6 +1413,7 @@ mod tests {
         let clock = Clock::default();
         let mut p = profile(&clock, at(20));
         p.history.push(HistoryDay {
+            observed: 0,
             at: at(4) - DAY_MS,
             date: game::date_string(DATE - 1),
             xp: 0,
@@ -1437,6 +1440,7 @@ mod tests {
             "no historical freeze notification on opt-in"
         );
         p.history.push(HistoryDay {
+            observed: 0,
             at: at(4),
             date: game::date_string(DATE),
             xp: 0,

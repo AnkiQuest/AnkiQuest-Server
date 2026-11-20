@@ -32,11 +32,6 @@ a replacement for the real client contract tests. Preserve behavior for
 released apps too: a compatible recording cannot prove that every response
 or optional-field combination is safe.
 
-Until Android publishes `names.json`, the job emits a notice and succeeds,
-as the transition in #230 requires. Once the catalog exists, malformed
-catalogs, pins and missing vendored examples fail instead of silently
-disabling the check.
-
 Run the guard locally after checking out Android:
 
 ```sh

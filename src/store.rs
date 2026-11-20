@@ -136,6 +136,7 @@ impl Store {
                  ivl integer,
                  time_ms integer not null,
                  kind integer not null,
+                 ease integer,
                  primary key (user, id)
              ) without rowid;
              create table if not exists clocks (
@@ -161,6 +162,7 @@ impl Store {
              ) without rowid;",
         )?;
         crate::accounts::initialize(&conn)?;
+        crate::two_factor::initialize(&conn)?;
         crate::oauth::initialize(&conn)?;
         crate::social::initialize(&conn)?;
         crate::avatars::initialize(&conn)?;
@@ -181,6 +183,7 @@ impl Store {
         crate::wins::initialize(&conn)?;
         crate::synced_settings::initialize(&conn)?;
         crate::crash_reports::initialize(&conn)?;
+        crate::observations::initialize(&conn)?;
         initialize_sync_signatures(&conn)?;
         crate::migrations::run(&conn)?;
         Ok(Self { conn, scratch })
@@ -196,7 +199,7 @@ impl Store {
 
     pub fn reviews(&self, user: &str) -> Result<Vec<Review>, Error> {
         let mut stmt = self.conn.prepare(
-            "select id, cid, last_ivl, ivl, time_ms, kind from reviews where user = ?1 order by id",
+            "select id, cid, last_ivl, ivl, time_ms, kind, ease from reviews where user = ?1 order by id",
         )?;
         let reviews = stmt
             .query_map([user], |r| {
@@ -205,6 +208,7 @@ impl Store {
                     cid: r.get(1)?,
                     last_ivl: r.get(2)?,
                     ivl: r.get(3)?,
+                    ease: r.get(6)?,
                     time_ms: r.get(4)?,
                     kind: r.get(5)?,
                 })
@@ -378,14 +382,16 @@ impl Store {
         let tx = self.conn.transaction()?;
         {
             let mut insert = tx.prepare(
-                // A resend from a newer client fills in the interval older uploads left out.
-                "insert into reviews (user, id, cid, last_ivl, ivl, time_ms, kind)
-                 values (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                 on conflict (user, id) do update set ivl = coalesce(reviews.ivl, excluded.ivl)",
+                // A resend from a newer client fills in the interval and button older uploads left out.
+                "insert into reviews (user, id, cid, last_ivl, ivl, time_ms, kind, ease)
+                 values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 on conflict (user, id) do update set
+                     ivl = coalesce(reviews.ivl, excluded.ivl),
+                     ease = coalesce(reviews.ease, excluded.ease)",
             )?;
             for r in reviews {
                 insert.execute(params![
-                    user, r.id, r.cid, r.last_ivl, r.ivl, r.time_ms, r.kind
+                    user, r.id, r.cid, r.last_ivl, r.ivl, r.time_ms, r.kind, r.ease
                 ])?;
             }
             let mut delete = tx.prepare("delete from reviews where user = ?1 and id = ?2")?;
@@ -527,7 +533,7 @@ fn initialize_sync_signatures(conn: &Connection) -> rusqlite::Result<()> {
 fn read_collection(path: &Path) -> Result<(Vec<Review>, Clock), Error> {
     let conn = Connection::open(path)?;
     let mut stmt = conn.prepare(
-        "select id, cid, lastIvl, ivl, time, type from revlog where ease > 0 and type < 4 order by id",
+        "select id, cid, lastIvl, ivl, time, type, ease from revlog where ease > 0 and type < 4 order by id",
     )?;
     let reviews = stmt
         .query_map([], |r| {
@@ -536,6 +542,7 @@ fn read_collection(path: &Path) -> Result<(Vec<Review>, Clock), Error> {
                 cid: r.get(1)?,
                 last_ivl: r.get(2)?,
                 ivl: Some(r.get(3)?),
+                ease: Some(r.get(6)?),
                 time_ms: r.get(4)?,
                 kind: r.get(5)?,
             })
@@ -594,6 +601,7 @@ mod tests {
             cid: id,
             last_ivl: 0,
             ivl: None,
+            ease: None,
             time_ms: 5_000,
             kind: 1,
         };
@@ -706,6 +714,7 @@ mod tests {
             cid: id,
             last_ivl: 0,
             ivl: None,
+            ease: None,
             time_ms: 5_000,
             kind: 1,
         };
@@ -750,6 +759,7 @@ mod tests {
             cid: id,
             last_ivl: 0,
             ivl: None,
+            ease: None,
             time_ms: 5_000,
             kind: 1,
         };
@@ -851,6 +861,11 @@ mod tests {
         assert_eq!(reviews.len(), 2);
         assert_eq!(reviews[1].last_ivl, 30);
         assert_eq!(
+            reviews.iter().map(|r| r.ease).collect::<Vec<_>>(),
+            [Some(3), Some(1)],
+            "the button comes from the revlog"
+        );
+        assert_eq!(
             store.clock("hill").unwrap(),
             Clock {
                 offset_west_min: -120,
@@ -876,30 +891,39 @@ mod tests {
     }
 
     #[test]
-    fn a_resend_fills_in_intervals_older_uploads_left_out() {
+    fn a_resend_fills_in_intervals_and_buttons_older_uploads_left_out() {
         let dir = temp_dir("intervals");
         let mut store = Store::open(&dir).unwrap();
-        let review = |ivl| Review {
+        let review = |ivl, ease| Review {
             id: 1,
             cid: 1,
             last_ivl: 0,
             ivl,
+            ease,
             time_ms: 5000,
             kind: 1,
         };
         let clock = Clock::default();
-        store.upsert("hill", &[review(None)], &[], clock).unwrap();
-        assert_eq!(store.reviews("hill").unwrap()[0].ivl, None);
         store
-            .upsert("hill", &[review(Some(4))], &[], clock)
+            .upsert("hill", &[review(None, None)], &[], clock)
+            .unwrap();
+        assert_eq!(store.reviews("hill").unwrap()[0].ivl, None);
+        assert_eq!(store.reviews("hill").unwrap()[0].ease, None);
+        store
+            .upsert("hill", &[review(Some(4), Some(3))], &[], clock)
             .unwrap();
         store
-            .upsert("hill", &[review(Some(9))], &[], clock)
+            .upsert("hill", &[review(Some(9), Some(1))], &[], clock)
             .unwrap();
         assert_eq!(
             store.reviews("hill").unwrap()[0].ivl,
             Some(4),
             "a known interval stays"
+        );
+        assert_eq!(
+            store.reviews("hill").unwrap()[0].ease,
+            Some(3),
+            "a known button stays"
         );
         cleanup(store, dir);
     }
@@ -913,6 +937,7 @@ mod tests {
             cid: 1,
             last_ivl: 0,
             ivl: None,
+            ease: None,
             time_ms: 4000,
             kind: 1,
         };

@@ -4,8 +4,9 @@
 //! `<script data-entry="…"></script>` placeholders replaced by the compiled code.
 //!
 //! Also exports the companion pictures the server embeds into `OUT_DIR/art`,
-//! downscaled from the masters in `static/<companion>/`: share-card art and
-//! the small face icons.
+//! downscaled from the masters in `static/<companion>/`: share-card art, the
+//! small face icons and the web pictures of companions whose masters a
+//! `poses.json` lists (Anki-tan).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -40,12 +41,20 @@ const CARD_POSES: [&str; 5] = ["happy", "streak", "frozen", "freeze", "winner"];
 /// Share-card art edge in pixels: cards draw it at up to 470 px.
 const CARD_SIZE: u32 = 512;
 
-/// Face icons the pages use: companion, file name and edge in pixels.
-const ICONS: [(&str, &str, u32); 3] = [
+/// Face icons the pages use: master folder, file name and edge in pixels.
+const ICONS: [(&str, &str, u32); 4] = [
     ("aki", "face-192", 192),
     ("aki", "face-32", 32),
     ("ankilope", "face-192", 192),
+    ("anki-tan", "face-192", 192),
 ];
+
+/// Poses the web pages draw from a listed folder, as `<pose>.png` next to
+/// its face icon. `web/aki.ts` maps the page's moods onto these.
+const WEB_POSES: [&str; 5] = ["welcome", "review", "happy", "streak", "frozen"];
+
+/// Web picture edge in pixels: pages draw them at up to 132 CSS pixels.
+const WEB_SIZE: u32 = 320;
 
 type Error = Box<dyn std::error::Error>;
 
@@ -76,22 +85,22 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-/// Writes the card art and face icons, and `cards.rs`, which lists the
-/// card art by companion and master file name for `src/cards.rs`.
+/// Writes the card art, face icons and web pictures, and `cards.rs`, which
+/// lists the card art by companion and master file name for `src/cards.rs`.
 fn art(root: &Path, out: &Path) -> Result<(), Error> {
     std::fs::create_dir_all(out)?;
     let masters = root.join("static");
     let mut table = String::from("[\n");
     let mut count = 0;
 
-    // Card art for every folder in static/ with a happy master: a companion.
-    for companion in ankiquest_art::companions_with(&masters, "happy")? {
+    // Card art for every companion folder in static/.
+    for (companion, folder) in companions(&masters)? {
+        let folder = masters.join(folder);
         for pose in CARD_POSES {
             let stem = ankiquest_art::stem(pose);
-            let master = masters.join(&companion).join(format!("{stem}.png"));
-            if !master.is_file() {
+            let Some(master) = master(&folder, pose)? else {
                 continue;
-            }
+            };
             let path = out
                 .join("cards")
                 .join(&companion)
@@ -109,15 +118,57 @@ fn art(root: &Path, out: &Path) -> Result<(), Error> {
     std::fs::write(out.join("cards.rs"), code)?;
 
     // Face icons, from each companion's face master.
-    for (companion, name, size) in ICONS {
-        let master = masters.join(companion).join("face.png");
-        export(
-            &master,
-            &out.join(companion).join(format!("{name}.png")),
-            size,
-        )?;
+    for (folder, name, size) in ICONS {
+        let master = master(&masters.join(folder), "face")?
+            .ok_or_else(|| format!("static/{folder} has no face master"))?;
+        export(&master, &out.join(folder).join(format!("{name}.png")), size)?;
+    }
+
+    // Web pictures for listed folders; the others are served from static/.
+    for (_, folder) in companions(&masters)? {
+        if ankiquest_art::listed(&masters.join(&folder))?.is_none() {
+            continue;
+        }
+        for pose in WEB_POSES {
+            let master = master(&masters.join(&folder), pose)?
+                .ok_or_else(|| format!("static/{folder} has no {pose} master"))?;
+            export(
+                &master,
+                &out.join(&folder).join(format!("{pose}.png")),
+                WEB_SIZE,
+            )?;
+        }
     }
     Ok(())
+}
+
+/// The master for `pose` in `folder`: the file the folder's `poses.json`
+/// lists, else `<stem>.png`; `None` when there is none.
+fn master(folder: &Path, pose: &str) -> Result<Option<PathBuf>, Error> {
+    if let Some(files) = ankiquest_art::listed(folder)? {
+        return Ok(files.get(pose).filter(|file| file.is_file()).cloned());
+    }
+    let file = folder.join(format!("{}.png", ankiquest_art::stem(pose)));
+    Ok(file.is_file().then_some(file))
+}
+
+/// Companions with a happy master, by id and folder in static/, sorted by
+/// id. A folder's id is its name with `-` as `_` (`anki-tan` is `anki_tan`).
+fn companions(masters: &Path) -> Result<Vec<(String, String)>, Error> {
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(masters)? {
+        let entry = entry?;
+        if !entry.path().is_dir() || master(&entry.path(), "happy")?.is_none() {
+            continue;
+        }
+        let folder = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| "folder name is not UTF-8")?;
+        found.push((folder.replace('-', "_"), folder));
+    }
+    found.sort();
+    Ok(found)
 }
 
 /// Writes `master` fitted into `size` square as PNG to `path`.

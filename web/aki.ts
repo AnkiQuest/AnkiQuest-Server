@@ -6,7 +6,9 @@ import {escape} from "./common";
   type Mood = "review" | "celebrate" | "streak" | "freeze";
   const poses = new Set<string>(["welcome", "review", "celebrate", "streak", "freeze", "winner", "face"]);
   const ankilopePoses: Record<string, string> = {welcome:"welcome", review:"study", celebrate:"celebrate", streak:"study", freeze:"study", winner:"celebrate", face:"face"};
-  const choices = new Set<string>(["aki", "ankilope", "cow", "none"]);
+  // Anki-tan's pictures are exported by build.rs under fixture pose names; winner shows its fallback, happy.
+  const ankiTanPoses: Record<string, string> = {welcome:"welcome", review:"review", celebrate:"happy", streak:"streak", freeze:"frozen", winner:"happy", face:"face-192"};
+  const choices = new Set<string>(["aki", "ankilope", "cow", "anki_tan", "none"]);
   // The cow has no art yet (#88): it is Ankilope's, turned purple by this CSS filter,
   // which site.css applies through --cow-filter.
   const cowFilter = "hue-rotate(250deg)";
@@ -14,7 +16,12 @@ import {escape} from "./common";
   let choice = "aki", identity: string | null | undefined = null, identityEpoch = 0;
   // The face is only ever drawn small, as the brand icon, so it uses the small copy.
   const file = (pose: string) => pose === "face" ? "face-192" : pose;
-  const source = (pose: string) => artOwner(choice) === "ankilope" ? `/ankilope/${file(ankilopePoses[pose] || "welcome")}.png` : `/aki/${file(pose)}.png`;
+  const source = (pose: string) => {
+    const owner = artOwner(choice);
+    if (owner === "ankilope") return `/ankilope/${file(ankilopePoses[pose] || "welcome")}.png`;
+    if (owner === "anki_tan") return `/anki-tan/${ankiTanPoses[pose] || "welcome"}.png`;
+    return `/aki/${file(pose)}.png`;
+  };
   const image = (pose = "welcome", extra = "") => {
     pose = poses.has(pose) ? pose : "welcome";
     return `<img class="aki-art ${escape(extra)}" data-companion-pose="${pose}" src="${source(pose)}" width="128" height="128" alt="" aria-hidden="true" decoding="async" loading="lazy">`;
@@ -30,7 +37,8 @@ import {escape} from "./common";
     if (endsAt > 0 && endsAt <= Date.now()) return "review";
     if (profile?.streak_state === "protected" && !((profile?.today?.reviews ?? 0) > 0)) return "freeze";
     if (profile?.quests?.length && profile.quests.every(q => q.done === true)) return "celebrate";
-    if (profile?.streak_state === "studied" && (profile?.today?.reviews ?? 0) > 0) return "streak";
+    const counted = profile?.streak_state === "studied" || profile?.streak_state === "unverified";
+    if (counted && (profile?.today?.reviews ?? 0) > 0) return "streak";
     return "review";
   }
   // While cards are due Aki shows only the pose, as on Android and Desktop.
@@ -69,7 +77,7 @@ import {escape} from "./common";
       if (epoch === identityEpoch) setChoice(saved.companion);
     } catch (_) { /* Keep the last visible choice while offline. */ }
   }
-  window.AnkiQuestAki = {image, profile, decorate, setChoice, choice:()=>choice, artOwner:()=>artOwner(choice), filter:()=>choice === "cow" ? cowFilter : "none", cowName:"Bluma"};
+  window.AnkiQuestAki = {image, source, profile, decorate, setChoice, choice:()=>choice, artOwner:()=>artOwner(choice), filter:()=>choice === "cow" ? cowFilter : "none", cowName:"Bluma"};
   addEventListener("ankiquest:identity", event => loadChoice(event.detail?.user));
   addEventListener("ankiquest:locked", () => loadChoice(null));
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && identity) loadChoice(identity); });

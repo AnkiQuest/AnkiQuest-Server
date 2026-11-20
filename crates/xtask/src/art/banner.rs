@@ -1,7 +1,8 @@
 //! Composes the README banner and the social preview from the committed
 //! website screenshots and the duo art. `npm run screenshots:web` renders the
 //! screenshots into `docs/screenshots/web/` from the pages in `static/` and
-//! the API examples in `docs/api/examples/`.
+//! the API examples in `docs/api/examples/`; `npm run screenshots` runs that
+//! and then this command for both images.
 //!
 //! Both follow the Android README banner (`tools/ankiquest-banner` in
 //! AnkiQuest-Android): its blue gradient, the warm glow, Roboto title and
