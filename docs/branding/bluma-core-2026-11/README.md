@@ -37,7 +37,7 @@ core pose for the custom-companion template. Active masters now use the
 fixture names in `static/cow/`, matching the companion id. Happy and
 asleep export as `bluma_happy` and `bluma_asleep`. Earlier `static/bluma/`
 masters and the `celebrate`/`sleeping` exports remain byte-identical in
-`static/cow/archive/`, outside the app package, as old art. The canonical
+`static/retired/cow/`, outside the app package. The canonical
 paths contain exact copies of the same generated art, without processing.
 
 The existing Rust exporters produced canonical 256 px add-on PNGs and

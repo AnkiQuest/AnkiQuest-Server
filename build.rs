@@ -33,6 +33,10 @@ const PAGES: [&str; 8] = [
     "oauth",
 ];
 
+/// The folder in static/ that keeps masters nothing uses any more; no
+/// export reads it.
+const RETIRED: &str = "retired";
+
 /// Poses a share card shows, as the fixture names them, and `freeze`
 /// (a used streak freeze), which the fixture does not name. A companion
 /// without one falls back through the fixture when the card is drawn.
@@ -152,13 +156,16 @@ fn master(folder: &Path, pose: &str) -> Result<Option<PathBuf>, Error> {
     Ok(file.is_file().then_some(file))
 }
 
-/// Companions with a happy master, by id and folder in static/, sorted by
-/// id. A folder's id is its name with `-` as `_` (`anki-tan` is `anki_tan`).
+/// Companions with a happy master, by id and folder in static/ other than
+/// `RETIRED`, sorted by id. A folder's id is its name with `-` as `_` (`anki-tan` is `anki_tan`).
 fn companions(masters: &Path) -> Result<Vec<(String, String)>, Error> {
     let mut found = Vec::new();
     for entry in std::fs::read_dir(masters)? {
         let entry = entry?;
-        if !entry.path().is_dir() || master(&entry.path(), "happy")?.is_none() {
+        if !entry.path().is_dir() || entry.file_name() == RETIRED {
+            continue;
+        }
+        if master(&entry.path(), "happy")?.is_none() {
             continue;
         }
         let folder = entry

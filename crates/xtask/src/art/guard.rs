@@ -3,8 +3,8 @@
 //!
 //! An image is companion art when its path names a companion, or when it
 //! looks like a master scaled to another size. It may only sit in
-//! `static/<companion>/`, which keeps the masters and old art, or be an
-//! export in the art manifest. Animations are not compared with masters.
+//! `static/<companion>/` (masters) or `static/retired/<companion>/`
+//! (masters nothing uses any more), or be an export in the art manifest. Animations are not compared with masters.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -23,6 +23,9 @@ const SKIPPED: [&str; 3] = ["target", "node_modules", ".git"];
 
 /// The fixture that names every companion but Aki.
 const UNLOCKS: &str = "tests/fixtures/companion_unlock.json";
+
+/// The folder in `static/` that keeps masters nothing uses any more.
+const RETIRED: &str = "retired";
 
 /// Fingerprint edge: images are compared at this size.
 const PRINT: u32 = 16;
@@ -92,7 +95,7 @@ fn companions() -> Vec<String> {
         names.push(companion["companion"].as_str().unwrap().to_string());
     }
     for folder in fs::read_dir(root().join("static")).unwrap().flatten() {
-        if folder.path().is_dir() {
+        if folder.path().is_dir() && folder.file_name() != RETIRED {
             names.push(folder.file_name().to_string_lossy().into_owned());
         }
     }
@@ -180,7 +183,7 @@ fn misplaced(
     masters: &[(String, Print)],
     names: &[String],
 ) -> Option<String> {
-    // static/<companion>/ keeps masters and old art, used or not.
+    // static/<companion>/ keeps masters, static/retired/ unused ones.
     if master_folder(image).is_some() {
         return None;
     }
@@ -250,6 +253,34 @@ fn listed_files_exist() {
         assert!(root().join(&export.file).is_file(), "{}", export.file);
         assert!(master_folder(&export.master).is_some(), "{}", export.master);
         assert!(root().join(&export.master).is_file(), "{}", export.master);
+    }
+}
+
+#[test]
+fn nothing_reads_retired_masters() {
+    // Code, pages and exporters read masters from static/<companion>/ only.
+    let mut code = Vec::new();
+    for folder in ["src", "web", "crates", "build.rs"] {
+        let path = root().join(folder);
+        if path.is_file() {
+            code.push(path);
+        } else {
+            files(&path, &mut code);
+        }
+    }
+    let pages = fs::read_dir(root().join("static")).unwrap().flatten();
+    code.extend(
+        pages
+            .map(|entry| entry.path())
+            .filter(|path| path.is_file()),
+    );
+    let this = root().join(file!());
+    let folder = format!("static/{RETIRED}/");
+    for file in code.iter().filter(|file| **file != this) {
+        let Ok(text) = fs::read_to_string(file) else {
+            continue;
+        };
+        assert!(!text.contains(&folder), "{} reads {folder}", relative(file));
     }
 }
 

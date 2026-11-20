@@ -72,13 +72,16 @@ The README banner and social preview are drawn by `xtask banner` and
 checked by its own tests against a fresh render. Android's WebPs live in
 the Android repository, which checks them against the pinned server commit.
 
-## Old art
+## Retired art
 
-Only `static/<companion>/` keeps old art: masters nothing uses any more,
-earlier versions and archived copies stay there so they can be reused or
-merged later. Exported copies elsewhere are generated: a copy that was
-renamed, retired or is no longer used is deleted with its references,
-never kept in a `retired/` folder or listed as unused.
+A master nothing uses any more moves to `static/retired/<companion>/`; it
+is never deleted, so it can be reused or merged later. No exporter, page or
+server route reads that folder, and `build.rs` skips it. It holds Aki's and
+Ankilope's old hand-made face icons, Anki-tan's earlier generated poses and
+Bluma's earlier masters, each folder with a README where it has one.
+Exported copies elsewhere are generated: a copy that was renamed, retired
+or is no longer used is deleted with its references, never kept in a
+`retired/` folder of a client or listed as unused.
 
 ## The guard
 
@@ -86,8 +89,8 @@ never kept in a `retired/` folder or listed as unused.
 repository. An image is companion art when its path names a companion (Aki,
 the companions in `tests/fixtures/companion_unlock.json`, or a folder in
 `static/`), or when its 16 px fingerprint matches a master at another size.
-It fails unless such an image sits in `static/<companion>/` or is an
-export in the manifest. Animated PNGs get no fingerprint:
+It fails unless such an image sits in `static/<companion>/` or
+`static/retired/<companion>/`, or is an export in the manifest. Animated PNGs get no fingerprint:
 their frames are not a scaled copy of one still.
 
 Anki-tan's folder holds Shigeyuki's asset pack as published
