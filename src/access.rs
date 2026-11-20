@@ -71,6 +71,8 @@ pub(crate) struct Access {
     password: Option<String>,
     sessions: Mutex<Sessions>,
     pub(crate) oauth: crate::oauth::Flows,
+    /// Recent wrong two-factor codes per account.
+    pub(crate) two_factor: crate::two_factor::Attempts,
 }
 
 impl Access {
@@ -102,6 +104,7 @@ impl Access {
             password,
             sessions: Mutex::new(Sessions::default()),
             oauth: Default::default(),
+            two_factor: Default::default(),
         })
     }
 
@@ -607,6 +610,9 @@ struct Password {
     /// Present when an account signs in with its own password.
     #[serde(default)]
     user: Option<String>,
+    /// The second factor, sent once the server has answered `"second_factor": true`.
+    #[serde(default)]
+    code: Option<String>,
 }
 
 // A reverse proxy may identify the original client only when explicitly trusted
@@ -660,15 +666,16 @@ pub(crate) async fn session(
         if let Some(Password {
             password,
             user: Some(user),
+            code,
         }) = &credential
         {
             let user = normalize_user(user);
-            if !crate::accounts::password_matches(&app, &user, password).await {
-                app.access.failure(client, now);
-                return json_error(
-                    StatusCode::UNAUTHORIZED,
-                    "Username or password not recognized.",
-                );
+            let step = crate::two_factor::sign_in(&app, &user, password, code.as_deref()).await;
+            if step != crate::two_factor::SignInStep::SignedIn {
+                if step.failed() {
+                    app.access.failure(client, now);
+                }
+                return step.refusal();
             }
             return open_session(&app, &headers, Some(user), None);
         }
@@ -779,7 +786,12 @@ pub(crate) async fn i18n_wasm() -> impl IntoResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::decks::{get_decks, set_decks};
+    use crate::inbox::{ReplyRequest, get_notifications, reply};
+    use crate::study::upload;
+    use crate::subscriptions::get_incoming_preferences;
     use crate::test_support::cleanup;
+    use crate::test_support::*;
 
     #[test]
     fn signing_in_again_counts_briefly_for_its_own_session_only() {
@@ -1965,5 +1977,82 @@ mod tests {
         std::fs::write(&password_file, "shared-master\n").unwrap();
         assert!(Access::from_config(&config).is_ok());
         cleanup(store, path);
+    }
+
+    #[test]
+    fn empty_configured_token_never_authorizes_private_data() {
+        let (mut app, path) = crate::test_support::fixture();
+        Arc::get_mut(&mut app)
+            .unwrap()
+            .config
+            .set_token("cerro", "");
+        assert!(!authorized(&app, "cerro", &HeaderMap::new()));
+        let mut empty_bearer = HeaderMap::new();
+        empty_bearer.insert(header::AUTHORIZATION, "Bearer ".parse().unwrap());
+        assert!(!authorized(&app, "cerro", &empty_bearer));
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn all_private_handlers_reject_missing_and_other_users_tokens() {
+        let (app, path) = crate::test_support::fixture();
+        for auth in [HeaderMap::new(), headers("hill")] {
+            assert_eq!(
+                get_incoming_preferences(State(app.clone()), UrlPath("cerro".into()), auth.clone())
+                    .await
+                    .unwrap_err(),
+                StatusCode::UNAUTHORIZED
+            );
+            assert_eq!(
+                get_decks(State(app.clone()), UrlPath("cerro".into()), auth.clone())
+                    .await
+                    .unwrap_err(),
+                StatusCode::UNAUTHORIZED
+            );
+            assert_eq!(
+                set_decks(
+                    State(app.clone()),
+                    UrlPath("cerro".into()),
+                    auth.clone(),
+                    Json(preferences(&["hill"]))
+                )
+                .await
+                .unwrap_err(),
+                StatusCode::UNAUTHORIZED
+            );
+            assert_eq!(
+                get_notifications(State(app.clone()), UrlPath("cerro".into()), auth.clone())
+                    .await
+                    .unwrap_err(),
+                StatusCode::UNAUTHORIZED
+            );
+            assert_eq!(
+                reply(
+                    State(app.clone()),
+                    UrlPath("cerro".into()),
+                    auth.clone(),
+                    Json(ReplyRequest {
+                        notification: 1,
+                        message: "Good job!".into()
+                    })
+                )
+                .await
+                .unwrap_err(),
+                StatusCode::UNAUTHORIZED
+            );
+            assert_eq!(
+                upload(
+                    State(app.clone()),
+                    UrlPath("cerro".into()),
+                    auth,
+                    Json(sample_upload(0, false))
+                )
+                .await
+                .unwrap_err(),
+                StatusCode::UNAUTHORIZED
+            );
+        }
+        assert!(app.store.lock().unwrap().decks("cerro").unwrap().is_empty());
+        cleanup(app, path);
     }
 }

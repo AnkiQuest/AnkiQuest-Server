@@ -1,0 +1,150 @@
+{
+  "_about": "Study time from the local review log: Today, This week, This month, Total and the average per study day. A review counts when ease > 0 and type < 4 (learning, review, relearning, filtered); manual (4) and rescheduled (5) entries and unanswered rows do not. Its study day is study_day(id, offset_west_min, rollover_hour) from clients.json, with the clock at now_ms; reviews on a later study day than now's are left out. today is now's study day as a date; the week starts on Monday; the month is today's calendar month; total is every study day up to today. study_days counts days with at least one counted review, also when its time is 0; average_ms is total_ms / study_days rounded down, 0 without study days. durations: clients show floor(ms / 60000) minutes, as minutes alone under an hour and as hours and minutes from 60 minutes on. The desktop add-on (addon/study_time.py) and the Android app (AnkiquestStudyTime.kt) test their copies against these cases.",
+  "cases": [
+    {
+      "name": "an empty collection has no study time",
+      "now_ms": 1795003200000,
+      "clock": {"offset_west_min": 0, "rollover_hour": 4},
+      "reviews": [],
+      "expected": {"today": "2026-11-18", "today_ms": 0, "week_ms": 0, "month_ms": 0, "total_ms": 0, "study_days": 0, "average_ms": 0}
+    },
+    {
+      "name": "Berlin: today, this week, this month and total follow the study day",
+      "now_ms": 1794999600000,
+      "clock": {"offset_west_min": -60, "rollover_hour": 4},
+      "reviews": [
+        {"id": 1794992400000, "time_ms": 30000, "type": 1, "ease": 3},
+        {"id": 1794969000000, "time_ms": 20000, "type": 1, "ease": 3},
+        {"id": 1794816000000, "time_ms": 15000, "type": 1, "ease": 3},
+        {"id": 1794794400000, "time_ms": 7000, "type": 1, "ease": 3},
+        {"id": 1794780000000, "time_ms": 11000, "type": 1, "ease": 3},
+        {"id": 1793502000000, "time_ms": 5000, "type": 1, "ease": 3},
+        {"id": 1793501940000, "time_ms": 3000, "type": 1, "ease": 3},
+        {"id": 1793480400000, "time_ms": 2000, "type": 1, "ease": 3}
+      ],
+      "expected": {"today": "2026-11-18", "today_ms": 30000, "week_ms": 65000, "month_ms": 88000, "total_ms": 93000, "study_days": 6, "average_ms": 15500}
+    },
+    {
+      "name": "manual, rescheduled and unanswered entries are not study",
+      "now_ms": 1795003200000,
+      "clock": {"offset_west_min": 0, "rollover_hour": 4},
+      "reviews": [
+        {"id": 1794988800000, "time_ms": 10000, "type": 0, "ease": 1},
+        {"id": 1794988860000, "time_ms": 20000, "type": 2, "ease": 1},
+        {"id": 1794988920000, "time_ms": 40000, "type": 3, "ease": 3},
+        {"id": 1794988980000, "time_ms": 80000, "type": 4, "ease": 0},
+        {"id": 1794989040000, "time_ms": 160000, "type": 5, "ease": 0},
+        {"id": 1794989100000, "time_ms": 320000, "type": 1, "ease": 0}
+      ],
+      "expected": {"today": "2026-11-18", "today_ms": 70000, "week_ms": 70000, "month_ms": 70000, "total_ms": 70000, "study_days": 1, "average_ms": 70000}
+    },
+    {
+      "name": "a review on a later study day than now is left out",
+      "now_ms": 1795003200000,
+      "clock": {"offset_west_min": 0, "rollover_hour": 4},
+      "reviews": [
+        {"id": 1794999600000, "time_ms": 10000, "type": 1, "ease": 3},
+        {"id": 1795060800000, "time_ms": 20000, "type": 1, "ease": 3},
+        {"id": 1795060740000, "time_ms": 40000, "type": 1, "ease": 3}
+      ],
+      "expected": {"today": "2026-11-18", "today_ms": 50000, "week_ms": 50000, "month_ms": 50000, "total_ms": 50000, "study_days": 1, "average_ms": 50000}
+    },
+    {
+      "name": "Monday before the rollover is still last week",
+      "now_ms": 1796009400000,
+      "clock": {"offset_west_min": 0, "rollover_hour": 4},
+      "reviews": [
+        {"id": 1796013000000, "time_ms": 10000, "type": 1, "ease": 3},
+        {"id": 1796007600000, "time_ms": 20000, "type": 1, "ease": 3},
+        {"id": 1795989600000, "time_ms": 40000, "type": 1, "ease": 3}
+      ],
+      "expected": {"today": "2026-11-29", "today_ms": 60000, "week_ms": 60000, "month_ms": 60000, "total_ms": 60000, "study_days": 1, "average_ms": 60000}
+    },
+    {
+      "name": "Monday after the rollover starts the new week",
+      "now_ms": 1796014800000,
+      "clock": {"offset_west_min": 0, "rollover_hour": 4},
+      "reviews": [
+        {"id": 1796013000000, "time_ms": 10000, "type": 1, "ease": 3},
+        {"id": 1796007600000, "time_ms": 20000, "type": 1, "ease": 3},
+        {"id": 1795989600000, "time_ms": 40000, "type": 1, "ease": 3}
+      ],
+      "expected": {"today": "2026-11-30", "today_ms": 10000, "week_ms": 10000, "month_ms": 70000, "total_ms": 70000, "study_days": 2, "average_ms": 35000}
+    },
+    {
+      "name": "the month starts on the 1st even in the middle of a week",
+      "now_ms": 1796119200000,
+      "clock": {"offset_west_min": 0, "rollover_hour": 4},
+      "reviews": [
+        {"id": 1796115600000, "time_ms": 10000, "type": 1, "ease": 3},
+        {"id": 1796029200000, "time_ms": 20000, "type": 1, "ease": 3},
+        {"id": 1796090400000, "time_ms": 40000, "type": 1, "ease": 3}
+      ],
+      "expected": {"today": "2026-12-01", "today_ms": 10000, "week_ms": 70000, "month_ms": 10000, "total_ms": 70000, "study_days": 2, "average_ms": 35000}
+    },
+    {
+      "name": "before the rollover on New Year's Day it is still December",
+      "now_ms": 1798768800000,
+      "clock": {"offset_west_min": 0, "rollover_hour": 4},
+      "reviews": [
+        {"id": 1798765200000, "time_ms": 10000, "type": 1, "ease": 3},
+        {"id": 1798434000000, "time_ms": 20000, "type": 1, "ease": 3},
+        {"id": 1798412400000, "time_ms": 40000, "type": 1, "ease": 3},
+        {"id": 1767268800000, "time_ms": 80000, "type": 1, "ease": 3}
+      ],
+      "expected": {"today": "2026-12-31", "today_ms": 10000, "week_ms": 30000, "month_ms": 70000, "total_ms": 150000, "study_days": 4, "average_ms": 37500}
+    },
+    {
+      "name": "UTC+14: a Monday-night review is in this week",
+      "now_ms": 1795032000000,
+      "clock": {"offset_west_min": -840, "rollover_hour": 4},
+      "reviews": [
+        {"id": 1794819600000, "time_ms": 10000, "type": 1, "ease": 3},
+        {"id": 1794942000000, "time_ms": 20000, "type": 1, "ease": 3}
+      ],
+      "expected": {"today": "2026-11-19", "today_ms": 0, "week_ms": 30000, "month_ms": 30000, "total_ms": 30000, "study_days": 2, "average_ms": 15000}
+    },
+    {
+      "name": "UTC-10 with a midnight rollover: the same review was on Sunday, last week",
+      "now_ms": 1795032000000,
+      "clock": {"offset_west_min": 600, "rollover_hour": 0},
+      "reviews": [
+        {"id": 1794819600000, "time_ms": 10000, "type": 1, "ease": 3},
+        {"id": 1794942000000, "time_ms": 20000, "type": 1, "ease": 3}
+      ],
+      "expected": {"today": "2026-11-18", "today_ms": 0, "week_ms": 20000, "month_ms": 30000, "total_ms": 30000, "study_days": 2, "average_ms": 15000}
+    },
+    {
+      "name": "with the rollover at 23:00 a day is named by the date it starts on",
+      "now_ms": 1795003200000,
+      "clock": {"offset_west_min": 0, "rollover_hour": 23},
+      "reviews": [
+        {"id": 1794958200000, "time_ms": 10000, "type": 1, "ease": 3},
+        {"id": 1794954600000, "time_ms": 20000, "type": 1, "ease": 3}
+      ],
+      "expected": {"today": "2026-11-17", "today_ms": 10000, "week_ms": 30000, "month_ms": 30000, "total_ms": 30000, "study_days": 2, "average_ms": 15000}
+    },
+    {
+      "name": "the average counts only days with answers, a zero-time answer included, and rounds down",
+      "now_ms": 1795003200000,
+      "clock": {"offset_west_min": 0, "rollover_hour": 4},
+      "reviews": [
+        {"id": 1794988800000, "time_ms": 50000, "type": 1, "ease": 3},
+        {"id": 1794992400000, "time_ms": 50001, "type": 1, "ease": 3},
+        {"id": 1794297600000, "time_ms": 0, "type": 1, "ease": 3},
+        {"id": 1793520000000, "time_ms": 0, "type": 4, "ease": 0},
+        {"id": 1792483200000, "time_ms": 2, "type": 1, "ease": 3}
+      ],
+      "expected": {"today": "2026-11-18", "today_ms": 100001, "week_ms": 100001, "month_ms": 100001, "total_ms": 100003, "study_days": 3, "average_ms": 33334}
+    }
+  ],
+  "durations": [
+    {"ms": 0, "hours": 0, "minutes": 0},
+    {"ms": 59999, "hours": 0, "minutes": 0},
+    {"ms": 60000, "hours": 0, "minutes": 1},
+    {"ms": 3599999, "hours": 0, "minutes": 59},
+    {"ms": 3600000, "hours": 1, "minutes": 0},
+    {"ms": 5430000, "hours": 1, "minutes": 30},
+    {"ms": 360000000, "hours": 100, "minutes": 0}
+  ]
+}

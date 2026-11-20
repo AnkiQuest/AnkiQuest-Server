@@ -4,7 +4,8 @@
 //! The clock is pinned to [`NOW_MS`]. Random values are replaced before comparing, numbered in
 //! the order they appear: device tokens by `example-token-N`, win link tokens by
 //! `example-link-N`, device ids by `example-device-N`, group invite codes by `example-invite-N`
-//! and app sign-in tickets by `example-ticket-N`.
+//! app sign-in tickets by `example-ticket-N`, two-factor secrets by `example-secret-N` and
+//! recovery codes by `example-recovery-N`.
 
 use crate::app::App;
 use crate::game::{Clock, Event};
@@ -67,6 +68,31 @@ impl Fixture {
         body: Value,
         headers: &[(&str, &str)],
     ) -> Value {
+        let (status, answer) = self.answer_with(method, uri, token, body, headers).await;
+        assert!(status.is_success(), "{method} {uri}: {status} {answer}");
+        answer
+    }
+
+    /// The status and JSON of a call that may be refused.
+    async fn answer(
+        &self,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+    ) -> (axum::http::StatusCode, Value) {
+        self.answer_with(method, uri, token, body, &[]).await
+    }
+
+    /// [`Self::answer`] with extra request `headers`.
+    async fn answer_with(
+        &self,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Value,
+        headers: &[(&str, &str)],
+    ) -> (axum::http::StatusCode, Value) {
         let mut request = Request::builder()
             .method(method)
             .uri(uri)
@@ -86,12 +112,7 @@ impl Fixture {
         let response = crate::test_support::route(&self.app, request.body(body).unwrap()).await;
         let status = response.status();
         let bytes = to_bytes(response.into_body(), 1 << 20).await.unwrap();
-        assert!(
-            status.is_success(),
-            "{method} {uri}: {status} {}",
-            String::from_utf8_lossy(&bytes)
-        );
-        serde_json::from_slice(&bytes).unwrap()
+        (status, serde_json::from_slice(&bytes).unwrap())
     }
 
     fn reviews(&self, count: i64) -> Value {
@@ -105,7 +126,8 @@ impl Fixture {
                     "last_ivl": 1,
                     "ivl": 3,
                     "time_ms": 8_000,
-                    "kind": 1
+                    "kind": 1,
+                    "ease": 3
                 })
             })
             .collect();
@@ -280,6 +302,23 @@ async fn examples_match_the_handlers() {
                 "notify_rank": {"value": false, "updated_at": NOW_MS - 60_000},
                 "streak_warning_hours": {"value": 4, "updated_at": NOW_MS - 60_000},
                 "future_setting": {"value": true, "updated_at": NOW_MS - 60_000}
+            }}),
+        )
+        .await,
+    ));
+
+    // A countdown list, synced as one value: an exam with a deck to finish and an event without.
+    examples.push((
+        "settings_countdowns",
+        f.call(
+            "PUT",
+            "/api/settings/hill",
+            Some("hill-secret"),
+            json!({"settings": {
+                "countdowns": {"value": [
+                    {"name": "Spanish exam", "date": "2026-11-09", "deck": "Spanish::A1"},
+                    {"name": "Driving theory", "date": "2026-12-01", "deck": null}
+                ], "updated_at": NOW_MS - 60_000}
             }}),
         )
         .await,
@@ -603,7 +642,8 @@ async fn examples_match_the_handlers() {
                     "last_ivl": 1,
                     "ivl": 3,
                     "time_ms": 9_000,
-                    "kind": 1
+                    "kind": 1,
+                    "ease": 3
                 })
             })
         })
@@ -679,6 +719,57 @@ async fn examples_match_the_handlers() {
     f.keep_secret(&Value::from(ticket.unwrap()), "example-ticket");
     examples.push(("sign_in_browser", browser));
 
+    // Ana turns two-factor on, signs in with a code, then turns it off with a recovery code.
+    examples.push((
+        "two_factor",
+        f.call("GET", "/api/two-factor/ana", Some(&ana), Value::Null)
+            .await,
+    ));
+    let begun = f
+        .call(
+            "POST",
+            "/api/two-factor/ana",
+            Some(&ana),
+            json!({"action": "begin"}),
+        )
+        .await;
+    let secret = begun["secret"].as_str().unwrap().to_string();
+    f.keep_secret(&begun["secret"], "example-secret");
+    examples.push(("two_factor_begin", begun));
+    let enabled = f
+        .call(
+            "POST",
+            "/api/two-factor/ana",
+            Some(&ana),
+            json!({"action": "enable", "password": "an even longer pw", "code": crate::two_factor::code_at(&secret, NOW_MS)}),
+        )
+        .await;
+    for code in enabled["recovery_codes"].as_array().unwrap() {
+        f.keep_secret(code, "example-recovery");
+    }
+    let recovery = enabled["recovery_codes"][0].as_str().unwrap().to_string();
+    examples.push(("two_factor_enable", enabled));
+    let (status, asked) = f
+        .answer(
+            "POST",
+            "/api/accounts/tokens",
+            None,
+            json!({"user": "ana", "password": "an even longer pw", "device": "Pixel 9"}),
+        )
+        .await;
+    assert_eq!(status, axum::http::StatusCode::UNAUTHORIZED, "{asked}");
+    examples.push(("sign_in_second_factor", asked));
+    examples.push((
+        "two_factor_disable",
+        f.call(
+            "POST",
+            "/api/two-factor/ana",
+            Some(&ana),
+            json!({"action": "disable", "password": "an even longer pw", "code": recovery}),
+        )
+        .await,
+    ));
+
     // Community reminders, the competition calendar and a conquered card, which the app's own
     // screens read. hill keeps the defaults until saving his choice.
     examples.push((
@@ -748,23 +839,24 @@ async fn examples_match_the_handlers() {
     ));
     // One card hill forgot four times over the past weeks before it earned a 25-day interval
     // yesterday: a review failed into relearning, then the relearning step, four times. He says
-    // what the card was.
-    let answers: Vec<(i64, i64, i64)> = std::iter::once((0, 0, 1))
-        .chain((0..4).flat_map(|_| [(1, 3, -600), (2, -600, 1)]))
-        .chain([(1, 1, 8), (1, 8, 25)])
+    // what the card was. Rows: (kind, last_ivl, ivl, ease), ease 1 being Again.
+    let answers: Vec<(i64, i64, i64, i64)> = std::iter::once((0, 0, 1, 3))
+        .chain((0..4).flat_map(|_| [(1, 3, -600, 1), (2, -600, 1, 3)]))
+        .chain([(1, 1, 8, 3), (1, 8, 25, 3)])
         .collect();
     let first = NOW_MS - answers.len() as i64 * 86_400_000;
     let card: Vec<Value> = answers
         .iter()
         .enumerate()
-        .map(|(index, &(kind, last_ivl, ivl))| {
+        .map(|(index, &(kind, last_ivl, ivl, ease))| {
             json!({
                 "id": first + index as i64 * 86_400_000,
                 "cid": 9_000,
                 "last_ivl": last_ivl,
                 "ivl": ivl,
                 "time_ms": 7_000,
-                "kind": kind
+                "kind": kind,
+                "ease": ease
             })
         })
         .collect();
@@ -1026,7 +1118,7 @@ async fn examples_match_the_handlers() {
         "/api/reviews/cerro",
         Some("cerro-secret"),
         json!({
-            "reviews": [{"id": NOW_MS - 60_000, "cid": 9_000, "last_ivl": 1, "ivl": 3, "time_ms": 36_000_000, "kind": 1}],
+            "reviews": [{"id": NOW_MS - 60_000, "cid": 9_000, "last_ivl": 1, "ivl": 3, "time_ms": 36_000_000, "kind": 1, "ease": 3}],
             "clock": {"offset_west_min": 0, "rollover_hour": 4}
         }),
     )
@@ -1160,6 +1252,83 @@ async fn examples_match_the_handlers() {
         std::fs::remove_dir_all(&extra.path).unwrap();
     }
 
+    // Invitations to a group and messages between friends, in their own server so no
+    // earlier example changes. hill and Cerro are friends; hill owns Spanish club.
+    let mut social = Fixture::new();
+    for user in ["hill", "cerro"] {
+        crate::test_support::with_reviews(&social.app, user, 5);
+    }
+    for (user, token, other) in [
+        ("hill", "hill-secret", "cerro"),
+        ("cerro", "cerro-secret", "hill"),
+    ] {
+        social
+            .call(
+                "POST",
+                &format!("/api/social/{user}"),
+                Some(token),
+                json!({"action": "befriend", "user": other}),
+            )
+            .await;
+    }
+    let created = social
+        .call(
+            "POST",
+            "/api/social/hill",
+            Some("hill-secret"),
+            json!({"action": "create_group", "name": "Spanish club"}),
+        )
+        .await;
+    social.keep_secret(&created["groups"][0]["invite"], "example-invite");
+    let club = created["groups"][0]["id"].clone();
+    let invited = social
+        .call(
+            "POST",
+            "/api/social/hill",
+            Some("hill-secret"),
+            json!({"action": "invite", "group": club, "user": "cerro"}),
+        )
+        .await;
+    examples.push(("group_invite", social.stable(invited)));
+    let invitations = social
+        .call(
+            "GET",
+            "/api/social/cerro",
+            Some("cerro-secret"),
+            Value::Null,
+        )
+        .await;
+    examples.push(("social_invitation", social.stable(invitations)));
+    let sent = social
+        .call(
+            "POST",
+            "/api/messages/hill",
+            Some("hill-secret"),
+            json!({"to": "cerro", "message": "Want to do the verbs together?"}),
+        )
+        .await;
+    examples.push(("message", social.stable(sent)));
+    let inbox = social
+        .call(
+            "GET",
+            "/api/activity/cerro?category=messages",
+            Some("cerro-secret"),
+            Value::Null,
+        )
+        .await;
+    examples.push(("activity_messages", social.stable(inbox)));
+    let accepted = social
+        .call(
+            "POST",
+            "/api/social/cerro",
+            Some("cerro-secret"),
+            json!({"action": "accept_invite", "group": club}),
+        )
+        .await;
+    examples.push(("group_invite_accept", social.stable(accepted)));
+    drop(social.app);
+    std::fs::remove_dir_all(&social.path).unwrap();
+
     // Cerro, from the configuration, signs in only with his token until he sets a password.
     // On a server of its own, so the examples above keep him configured.
     let converted = Fixture::new();
@@ -1187,6 +1356,46 @@ async fn examples_match_the_handlers() {
     ));
     drop(converted.app);
     std::fs::remove_dir_all(&converted.path).unwrap();
+
+    // A player on AnkiQuest Lite, which reads stock AnkiDroid: two answered cards, one of them
+    // seen before, and a day's count with a card no state covers. On a server of its own, so the
+    // examples above keep only exact review rows.
+    let lite = Fixture::new();
+    let secs = |ms: i64| ms / 1000;
+    let clock = json!({"offset_west_min": 0, "rollover_hour": 4});
+    let today = Clock::default().day(NOW_MS);
+    lite.call(
+        "POST",
+        "/api/observations/cerro",
+        Some("cerro-secret"),
+        json!({"clock": clock, "read_at_ms": NOW_MS - 900_000, "cards": [
+            {"cid": 1_700_000_000_001i64, "reps": 4, "type": 2, "interval": 9,
+             "last_review_time_secs": secs(NOW_MS - 9 * 86_400_000)}
+        ]}),
+    )
+    .await;
+    examples.push((
+        "observations",
+        lite.call(
+            "POST",
+            "/api/observations/cerro",
+            Some("cerro-secret"),
+            json!({"clock": clock, "read_at_ms": NOW_MS - 60_000, "cards": [
+                {"cid": 1_700_000_000_001i64, "reps": 5, "type": 2, "interval": 21,
+                 "last_review_time_secs": secs(NOW_MS - 300_000)},
+                {"cid": 1_700_000_000_002i64, "reps": 2, "type": 1, "interval": 0,
+                 "last_review_time_secs": secs(NOW_MS - 240_000)}
+            ], "days": [{"day": today, "cards": 3}]}),
+        )
+        .await,
+    ));
+    examples.push((
+        "leaderboard_observed",
+        lite.call("GET", "/api/leaderboard", Some("cerro-secret"), Value::Null)
+            .await,
+    ));
+    drop(lite.app);
+    std::fs::remove_dir_all(&lite.path).unwrap();
 
     let update = std::env::var_os("UPDATE_API_EXAMPLES").is_some_and(|v| v == "1");
     let dir = examples_dir();

@@ -19,6 +19,31 @@ pub const MAX_MEMBERS: i64 = 200;
 pub const MAX_PENDING: i64 = 50;
 pub const MAX_MUTED: i64 = 500;
 const MAX_GROUP_NAME: usize = 40;
+/// How long an invitation to a group waits for an answer: as long as the inbox keeps its row.
+pub(crate) const INVITATION_AGE_MS: i64 = crate::notifications::ACTIVITY_AGE_MS;
+/// Invitations to one group that may wait for an answer at once.
+pub const MAX_INVITATIONS: i64 = 50;
+
+/// Where an invitation to a group stands until it expires, `INVITATION_AGE_MS` after it was
+/// sent. Joining the group, by the invitation or by link, deletes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InvitationState {
+    /// Waiting for `accept_invite` or `decline_invite`.
+    Pending,
+    /// Declined. The owner still sees the player as invited and inviting again does nothing,
+    /// so a decline is as private as a mute.
+    Declined,
+}
+
+impl InvitationState {
+    fn parse(state: &str) -> Option<Self> {
+        match state {
+            "pending" => Some(Self::Pending),
+            "declined" => Some(Self::Declined),
+            _ => None,
+        }
+    }
+}
 
 pub fn initialize(conn: &Connection) -> Result<(), Error> {
     conn.execute_batch(
@@ -57,6 +82,17 @@ pub fn initialize(conn: &Connection) -> Result<(), Error> {
              created_at integer not null,
              primary key (recipient, sender)
          ) without rowid;
+         create table if not exists group_invitations (
+             group_id integer not null references groups (id) on delete cascade,
+             user text not null,
+             invited_by text not null,
+             created_at integer not null,
+             state text not null default 'pending' check (state in ('pending', 'declined')),
+             -- The inbox row this invitation put there; null when the invitee muted the owner.
+             notification integer,
+             primary key (group_id, user)
+         ) without rowid;
+         create index if not exists group_invitations_user on group_invitations (user);
          create table if not exists global_board_hides (
              viewer text not null,
              target text not null,
@@ -351,6 +387,20 @@ pub struct Group {
     /// Only owners see the invite code.
     pub invite: Option<String>,
     pub members: Vec<Person>,
+    /// Players the owner invited who have not joined, declined ones included until their
+    /// invitation expires; only owners see them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub invited: Vec<Person>,
+}
+
+/// A group someone invited this player to, waiting for `accept_invite` or `decline_invite`.
+#[derive(Debug, Serialize)]
+pub struct Invitation {
+    pub group: i64,
+    pub name: String,
+    /// How many members the group has.
+    pub members: i64,
+    pub from: Person,
 }
 
 #[derive(Debug, Serialize)]
@@ -362,6 +412,9 @@ pub struct Overview {
     pub public: bool,
     /// People this player muted, by display name.
     pub muted: Vec<Person>,
+    /// Groups this player is invited to, newest first, except by people they muted.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub invitations: Vec<Invitation>,
 }
 
 fn overview(app: &App, conn: &Connection, user: &str) -> rusqlite::Result<Overview> {
@@ -372,15 +425,22 @@ fn overview(app: &App, conn: &Connection, user: &str) -> rusqlite::Result<Overvi
         )?
         .query_map([user], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
         .collect::<Result<_, _>>()?;
+    let cutoff = now_ms() - INVITATION_AGE_MS;
     let mut groups = Vec::new();
     for (id, name, invite, owner) in rows {
         let members = app.sorted_recipients(group_members(conn, id)?);
+        let invited = if owner {
+            app.sorted_recipients(invited(conn, id, cutoff)?)
+        } else {
+            Vec::new()
+        };
         groups.push(Group {
             id,
             name,
             owner,
             invite: owner.then_some(invite),
             members,
+            invited,
         });
     }
     let requests = |incoming: bool| -> rusqlite::Result<Vec<Person>> {
@@ -406,7 +466,47 @@ fn overview(app: &App, conn: &Connection, user: &str) -> rusqlite::Result<Overvi
         outgoing: requests(false)?,
         public: app.is_public(conn, user)?,
         muted,
+        invitations: invitations(app, conn, user, cutoff)?,
     })
+}
+
+/// Who was invited to `group` since `cutoff` and has not joined. Declined invitations count,
+/// so the owner cannot tell a decline from no answer.
+fn invited(conn: &Connection, group: i64, cutoff: i64) -> rusqlite::Result<Vec<String>> {
+    conn.prepare("select user from group_invitations where group_id = ?1 and created_at >= ?2")?
+        .query_map(params![group, cutoff], |r| r.get(0))?
+        .collect()
+}
+
+/// The groups `user` is invited to since `cutoff`, leaving out invitations from people they muted.
+fn invitations(
+    app: &App,
+    conn: &Connection,
+    user: &str,
+    cutoff: i64,
+) -> rusqlite::Result<Vec<Invitation>> {
+    let rows: Vec<(i64, String, i64, String)> = conn
+        .prepare(&format!(
+            "select g.id, g.name, (select count(*) from group_members m where m.group_id = g.id),
+                    i.invited_by
+             from group_invitations i join groups g on g.id = i.group_id
+             where i.user = ?1 and i.created_at >= ?2 and i.state = 'pending' and not {}
+             order by i.created_at desc, g.id",
+            muted_sql("?1", "i.invited_by")
+        ))?
+        .query_map(params![user, cutoff], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?
+        .collect::<Result<_, _>>()?;
+    Ok(rows
+        .into_iter()
+        .map(|(group, name, members, from)| Invitation {
+            group,
+            name,
+            members,
+            from: app.recipient(from),
+        })
+        .collect())
 }
 
 fn failed(error: impl std::fmt::Display) -> Response {
@@ -443,6 +543,9 @@ enum Change {
     RenameGroup { group: i64, name: String },
     NewInvite { group: i64 },
     Join { invite: String },
+    Invite { group: i64, user: String },
+    AcceptInvite { group: i64 },
+    DeclineInvite { group: i64 },
     Leave { group: i64 },
     Remove { group: i64, member: String },
     Befriend { user: String },
@@ -544,29 +647,23 @@ async fn change(
                         "That invite link is not valid any more.",
                     )));
                 };
-                if is_member(conn, group, &user)? {
-                    return Ok(Ok(()));
-                }
-                let mine: i64 = conn.query_row(
-                    "select count(*) from group_members where user = ?1",
-                    [&user],
-                    |r| r.get(0),
-                )?;
-                let size: i64 = conn.query_row(
-                    "select count(*) from group_members where group_id = ?1",
-                    [group],
-                    |r| r.get(0),
-                )?;
-                if mine >= MAX_GROUPS || size >= MAX_MEMBERS {
+                join(conn, group, &user, now)?
+            }
+            Change::Invite {
+                group,
+                user: invitee,
+            } => invite_player(&app, conn, group, &user, &normalize_user(&invitee), now)?,
+            Change::AcceptInvite { group } => {
+                if invitation(conn, group, &user, now)? != Some(InvitationState::Pending) {
                     return Ok(Err((
-                        StatusCode::CONFLICT,
-                        "That group, or your list of groups, is full.",
+                        StatusCode::NOT_FOUND,
+                        "That invitation is not valid any more.",
                     )));
                 }
-                conn.execute(
-                    "insert into group_members (group_id, user, owner, joined_at) values (?1, ?2, 0, ?3)",
-                    params![group, user, now],
-                )?;
+                join(conn, group, &user, now)?
+            }
+            Change::DeclineInvite { group } => {
+                decline(conn, group, &user, now)?;
                 Ok(())
             }
             Change::Leave { group } => {
@@ -703,6 +800,185 @@ async fn change(
         Ok(Err((status, message))) => json_error(status, message),
         Err(error) => failed(error),
     }
+}
+
+type Refusal = (StatusCode, &'static str);
+
+/// Puts `user` in `group`, by invite link or invitation, within the group limits.
+fn join(conn: &Connection, group: i64, user: &str, now: i64) -> Result<Result<(), Refusal>, Error> {
+    if is_member(conn, group, user)? {
+        end_invitation(conn, group, user, now)?;
+        return Ok(Ok(()));
+    }
+    let mine: i64 = conn.query_row(
+        "select count(*) from group_members where user = ?1",
+        [user],
+        |r| r.get(0),
+    )?;
+    let size: i64 = conn.query_row(
+        "select count(*) from group_members where group_id = ?1",
+        [group],
+        |r| r.get(0),
+    )?;
+    if mine >= MAX_GROUPS || size >= MAX_MEMBERS {
+        return Ok(Err((
+            StatusCode::CONFLICT,
+            "That group, or your list of groups, is full.",
+        )));
+    }
+    conn.execute(
+        "insert into group_members (group_id, user, owner, joined_at) values (?1, ?2, 0, ?3)",
+        params![group, user, now],
+    )?;
+    end_invitation(conn, group, user, now)?;
+    Ok(Ok(()))
+}
+
+/// The state of `user`'s invitation to `group`, or `None` when there is none that has not expired.
+fn invitation(
+    conn: &Connection,
+    group: i64,
+    user: &str,
+    now: i64,
+) -> rusqlite::Result<Option<InvitationState>> {
+    let state: Option<String> = conn
+        .query_row(
+            "select state from group_invitations
+             where group_id = ?1 and user = ?2 and created_at >= ?3",
+            params![group, user, now - INVITATION_AGE_MS],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(state.as_deref().and_then(InvitationState::parse))
+}
+
+/// Marks the inbox row of `user`'s invitation to `group` read, as it needs no answer any more.
+fn read_invitation_row(
+    conn: &Connection,
+    group: i64,
+    user: &str,
+    now: i64,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "update notifications set read_at = coalesce(read_at, ?3)
+         where id = (select notification from group_invitations where group_id = ?1 and user = ?2)",
+        params![group, user, now],
+    )?;
+    Ok(())
+}
+
+/// Declines a pending invitation. It stays until it expires, so inviting again does nothing.
+fn decline(conn: &Connection, group: i64, user: &str, now: i64) -> rusqlite::Result<()> {
+    if invitation(conn, group, user, now)? != Some(InvitationState::Pending) {
+        return Ok(());
+    }
+    read_invitation_row(conn, group, user, now)?;
+    conn.execute(
+        "update group_invitations set state = 'declined' where group_id = ?1 and user = ?2",
+        params![group, user],
+    )?;
+    Ok(())
+}
+
+/// Ends `user`'s invitation to `group` once they joined it.
+fn end_invitation(conn: &Connection, group: i64, user: &str, now: i64) -> rusqlite::Result<()> {
+    read_invitation_row(conn, group, user, now)?;
+    conn.execute(
+        "delete from group_invitations where group_id = ?1 and user = ?2",
+        params![group, user],
+    )?;
+    Ok(())
+}
+
+/// The owner of `group` invites `invitee`, who gets an inbox row unless they muted the owner.
+/// Inviting again while an invitation waits, or before a declined one expires, changes nothing.
+fn invite_player(
+    app: &App,
+    conn: &Connection,
+    group: i64,
+    owner: &str,
+    invitee: &str,
+    now: i64,
+) -> Result<Result<(), Refusal>, Error> {
+    // Only owners invite, as only they hold the group's invite link.
+    if !owns(conn, group, owner)? {
+        return Ok(Err((
+            StatusCode::FORBIDDEN,
+            "Only the group's owner can do that.",
+        )));
+    }
+    let nobody = (StatusCode::NOT_FOUND, "There is nobody with that username.");
+    if !app.is_user(invitee) {
+        return Ok(Err(nobody));
+    }
+    if is_member(conn, group, invitee)? {
+        return Ok(Err((
+            StatusCode::CONFLICT,
+            "They are already in that group.",
+        )));
+    }
+
+    // The owner can invite only someone whose profile they can see.
+    let viewer = Viewer {
+        member: Some(owner.to_string()),
+        community: false,
+    };
+    if !app.visible(conn, &viewer, invitee)? {
+        return Ok(Err(nobody));
+    }
+    if invitation(conn, group, invitee, now)?.is_some() {
+        return Ok(Ok(()));
+    }
+    let waiting: i64 = conn.query_row(
+        "select count(*) from group_invitations where group_id = ?1 and created_at >= ?2",
+        params![group, now - INVITATION_AGE_MS],
+        |r| r.get(0),
+    )?;
+    if waiting >= MAX_INVITATIONS {
+        return Ok(Err((
+            StatusCode::CONFLICT,
+            "Wait for some invitations to be answered first.",
+        )));
+    }
+
+    // An expired invitation is replaced by the new one.
+    conn.execute(
+        "insert into group_invitations (group_id, user, invited_by, created_at) values (?1, ?2, ?3, ?4)
+         on conflict (group_id, user) do update
+         set invited_by = excluded.invited_by, created_at = excluded.created_at,
+             state = 'pending', notification = null",
+        params![group, invitee, owner, now],
+    )?;
+
+    // A muted owner's invitation waits like any other, but nothing tells the invitee.
+    if muted(conn, invitee, owner)? {
+        return Ok(Ok(()));
+    }
+    let name: String = conn.query_row("select name from groups where id = ?1", [group], |r| {
+        r.get(0)
+    })?;
+    let id = crate::notifications::insert_notification(
+        conn,
+        &crate::notifications::Outgoing {
+            to: invitee,
+            from: owner,
+            title: crate::i18n::phrase("Group invitation"),
+            body: &crate::i18n::english("{0} invited you to {1}.", &[&app.display(owner), &name]),
+            kind: "group_invite",
+        },
+        crate::store::clock_in(conn, invitee)?.day(now),
+        now,
+        false,
+    )?;
+    conn.execute(
+        "update notifications set group_id = ?1 where id = ?2",
+        params![group, id],
+    )?;
+    conn.execute(
+        "update group_invitations set notification = ?3 where group_id = ?1 and user = ?2",
+        params![group, invitee, id],
+    )?;
+    Ok(Ok(()))
 }
 
 /// Takes `user` out of a group. The longest-standing member inherits it, and an empty group is deleted.
@@ -1446,6 +1722,445 @@ mod tests {
         assert_eq!(inbox["friends"][0]["user"], "bobby");
         let (_, records) = call(&app, "GET", "/api/records", &ana, serde_json::Value::Null).await;
         assert!(!records.to_string().contains("alice"));
+        cleanup(app, path);
+    }
+
+    /// Ana owns "Spanish club"; Bobby and Cyril have accounts and have studied.
+    async fn club() -> (Arc<App>, PathBuf, String, String, String, i64) {
+        let (app, path) = fixture();
+        let ana = sign_up(&app, "ana").await;
+        let bo = sign_up(&app, "bobby").await;
+        let cy = sign_up(&app, "cyril").await;
+        for user in ["ana", "bobby", "cyril"] {
+            with_reviews(&app, user, 1);
+        }
+        let (_, created) = call(
+            &app,
+            "POST",
+            "/api/social/ana",
+            &ana,
+            serde_json::json!({"action": "create_group", "name": "Spanish club"}),
+        )
+        .await;
+        let group = created["groups"][0]["id"].as_i64().unwrap();
+        (app, path, ana, bo, cy, group)
+    }
+
+    async fn act(
+        app: &Arc<App>,
+        user: &str,
+        token: &str,
+        body: serde_json::Value,
+    ) -> (StatusCode, serde_json::Value) {
+        call(app, "POST", &format!("/api/social/{user}"), token, body).await
+    }
+
+    async fn invite_rows(app: &Arc<App>, user: &str, token: &str) -> Vec<serde_json::Value> {
+        let (_, activity) = call(
+            app,
+            "GET",
+            &format!("/api/activity/{user}"),
+            token,
+            serde_json::Value::Null,
+        )
+        .await;
+        activity["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["kind"] == "group_invite")
+            .cloned()
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn an_owner_invites_a_player_who_accepts_in_the_app() {
+        let (app, path, ana, bo, cy, group) = club().await;
+
+        // The invitation shows for the owner, for the invitee and in the invitee's inbox.
+        let (status, overview) = act(
+            &app,
+            "ana",
+            &ana,
+            serde_json::json!({"action": "invite", "group": group, "user": "bobby"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{overview}");
+        assert_eq!(overview["groups"][0]["invited"][0]["user"], "bobby");
+        let (_, mine) = call(
+            &app,
+            "GET",
+            "/api/social/bobby",
+            &bo,
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(
+            mine["invitations"],
+            serde_json::json!([{
+                "group": group,
+                "name": "Spanish club",
+                "members": 1,
+                "from": {"user": "ana", "display": "ana"}
+            }])
+        );
+        assert!(mine["groups"].as_array().unwrap().is_empty());
+        let rows = invite_rows(&app, "bobby", &bo).await;
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            (
+                &rows[0]["sender"],
+                &rows[0]["group"],
+                &rows[0]["action_required"]
+            ),
+            (
+                &serde_json::json!("ana"),
+                &serde_json::json!(group),
+                &serde_json::json!(true)
+            )
+        );
+
+        // Inviting again changes nothing and notifies nobody twice.
+        let (status, _) = act(
+            &app,
+            "ana",
+            &ana,
+            serde_json::json!({"action": "invite", "group": group, "user": "bobby"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(invite_rows(&app, "bobby", &bo).await.len(), 1);
+
+        // Only the owner invites, as only the owner holds the invite link.
+        let (status, _) = act(
+            &app,
+            "bobby",
+            &bo,
+            serde_json::json!({"action": "invite", "group": group, "user": "cyril"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        for (who, expected) in [
+            ("nobody", StatusCode::NOT_FOUND),
+            ("ana", StatusCode::CONFLICT),
+        ] {
+            let (status, _) = act(
+                &app,
+                "ana",
+                &ana,
+                serde_json::json!({"action": "invite", "group": group, "user": who}),
+            )
+            .await;
+            assert_eq!(status, expected, "{who}");
+        }
+
+        // Accepting joins the group, answers the inbox row and cannot happen twice.
+        let (status, joined) = act(
+            &app,
+            "bobby",
+            &bo,
+            serde_json::json!({"action": "accept_invite", "group": group}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{joined}");
+        assert_eq!(joined["groups"][0]["id"], group);
+        assert!(joined.get("invitations").is_none());
+        let rows = invite_rows(&app, "bobby", &bo).await;
+        assert_eq!(rows[0]["action_required"], false);
+        assert!(rows[0]["read_at"].is_number());
+        assert_eq!(circle(&app, "bobby"), ["ana", "bobby"]);
+        let (status, _) = act(
+            &app,
+            "bobby",
+            &bo,
+            serde_json::json!({"action": "accept_invite", "group": group}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (status, _) = act(
+            &app,
+            "ana",
+            &ana,
+            serde_json::json!({"action": "invite", "group": group, "user": "bobby"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "Bobby is a member now");
+        let _ = cy;
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn a_declined_expired_or_deleted_invitation_joins_nothing() {
+        let (app, path, ana, bo, cy, group) = club().await;
+        let invite = |who: &'static str| {
+            let (app, ana) = (app.clone(), ana.clone());
+            async move {
+                act(
+                    &app,
+                    "ana",
+                    &ana,
+                    serde_json::json!({"action": "invite", "group": group, "user": who}),
+                )
+                .await
+                .0
+            }
+        };
+
+        // Declining removes it for Bobby only; declining again is fine.
+        assert_eq!(invite("bobby").await, StatusCode::OK);
+        for _ in 0..2 {
+            let (status, overview) = act(
+                &app,
+                "bobby",
+                &bo,
+                serde_json::json!({"action": "decline_invite", "group": group}),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+            assert!(overview.get("invitations").is_none());
+        }
+        assert_eq!(
+            invite_rows(&app, "bobby", &bo).await[0]["action_required"],
+            false
+        );
+        let (_, owner) = call(
+            &app,
+            "GET",
+            "/api/social/ana",
+            &ana,
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(
+            owner["groups"][0]["invited"][0]["user"], "bobby",
+            "Ana cannot tell Bobby declined"
+        );
+
+        // An invitation lasts as long as the inbox keeps its row.
+        assert_eq!(invite("cyril").await, StatusCode::OK);
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .execute(
+                "update group_invitations set created_at = created_at - ?1",
+                [INVITATION_AGE_MS + 1],
+            )
+            .unwrap();
+        let (_, mine) = call(
+            &app,
+            "GET",
+            "/api/social/cyril",
+            &cy,
+            serde_json::Value::Null,
+        )
+        .await;
+        assert!(mine.get("invitations").is_none());
+        let (status, _) = act(
+            &app,
+            "cyril",
+            &cy,
+            serde_json::json!({"action": "accept_invite", "group": group}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        // A deleted group takes its invitations with it.
+        assert_eq!(invite("cyril").await, StatusCode::OK);
+        act(
+            &app,
+            "ana",
+            &ana,
+            serde_json::json!({"action": "leave", "group": group}),
+        )
+        .await;
+        let (_, mine) = call(
+            &app,
+            "GET",
+            "/api/social/cyril",
+            &cy,
+            serde_json::Value::Null,
+        )
+        .await;
+        assert!(mine.get("invitations").is_none());
+        assert_eq!(
+            invite_rows(&app, "cyril", &cy).await[0]["action_required"],
+            false
+        );
+        cleanup(app, path);
+    }
+
+    /// Bobby's group invitation rows, newest first, with whether each needs an answer, and
+    /// his `action_count`.
+    async fn invite_actions(app: &Arc<App>, token: &str) -> (Vec<bool>, u64) {
+        let (_, activity) = call(
+            app,
+            "GET",
+            "/api/activity/bobby",
+            token,
+            serde_json::Value::Null,
+        )
+        .await;
+        let actions = activity["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["kind"] == "group_invite")
+            .map(|row| row["action_required"].as_bool().unwrap())
+            .collect();
+        (actions, activity["action_count"].as_u64().unwrap())
+    }
+
+    #[tokio::test]
+    async fn answered_invitations_stay_answered_after_reinviting() {
+        let (app, path, ana, bo, _, group) = club().await;
+        let invite = || {
+            let (app, ana) = (app.clone(), ana.clone());
+            async move {
+                act(
+                    &app,
+                    "ana",
+                    &ana,
+                    serde_json::json!({"action": "invite", "group": group, "user": "bobby"}),
+                )
+                .await
+            }
+        };
+        let answer = |action: &'static str| {
+            let (app, bo) = (app.clone(), bo.clone());
+            async move {
+                act(
+                    &app,
+                    "bobby",
+                    &bo,
+                    serde_json::json!({"action": action, "group": group}),
+                )
+                .await
+                .0
+            }
+        };
+
+        // Declined: re-inviting during the invitation's lifetime changes nothing for anyone,
+        // and Ana still sees Bobby as invited, so she cannot tell he declined.
+        assert_eq!(invite().await.0, StatusCode::OK);
+        assert_eq!(answer("decline_invite").await, StatusCode::OK);
+        let (status, overview) = invite().await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(overview["groups"][0]["invited"][0]["user"], "bobby");
+        assert_eq!(invite_actions(&app, &bo).await, (vec![false], 0));
+        let (_, mine) = call(
+            &app,
+            "GET",
+            "/api/social/bobby",
+            &bo,
+            serde_json::Value::Null,
+        )
+        .await;
+        assert!(mine.get("invitations").is_none());
+        assert_eq!(answer("accept_invite").await, StatusCode::NOT_FOUND);
+
+        // Once the declined invitation has expired, a new one needs an answer; the old row does not.
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .execute(
+                "update group_invitations set created_at = created_at - ?1",
+                [INVITATION_AGE_MS + 1],
+            )
+            .unwrap();
+        assert_eq!(invite().await.0, StatusCode::OK);
+        assert_eq!(invite_actions(&app, &bo).await, (vec![true, false], 1));
+
+        // Accepted, left, invited again: only the newest row needs an answer.
+        assert_eq!(answer("accept_invite").await, StatusCode::OK);
+        assert_eq!(invite_actions(&app, &bo).await, (vec![false, false], 0));
+        let (status, _) = act(
+            &app,
+            "bobby",
+            &bo,
+            serde_json::json!({"action": "leave", "group": group}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(invite().await.0, StatusCode::OK);
+        assert_eq!(
+            invite_actions(&app, &bo).await,
+            (vec![true, false, false], 1)
+        );
+        let (status, needs) = call(
+            &app,
+            "GET",
+            "/api/activity/bobby?category=needs_action",
+            &bo,
+            serde_json::Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(needs["items"].as_array().unwrap().len(), 1);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn a_muted_owner_s_invitation_is_not_delivered() {
+        let (app, path, ana, bo, _, group) = club().await;
+        act(
+            &app,
+            "bobby",
+            &bo,
+            serde_json::json!({"action": "mute", "user": "ana"}),
+        )
+        .await;
+        let (status, overview) = act(
+            &app,
+            "ana",
+            &ana,
+            serde_json::json!({"action": "invite", "group": group, "user": "bobby"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            overview["groups"][0]["invited"][0]["user"], "bobby",
+            "Ana cannot tell she was muted"
+        );
+        let (_, mine) = call(
+            &app,
+            "GET",
+            "/api/social/bobby",
+            &bo,
+            serde_json::Value::Null,
+        )
+        .await;
+        assert!(mine.get("invitations").is_none());
+        assert!(invite_rows(&app, "bobby", &bo).await.is_empty());
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn an_invite_link_still_joins_and_answers_an_invitation() {
+        let (app, path, ana, bo, _, group) = club().await;
+        let (_, overview) = act(
+            &app,
+            "ana",
+            &ana,
+            serde_json::json!({"action": "invite", "group": group, "user": "bobby"}),
+        )
+        .await;
+        let code = overview["groups"][0]["invite"].clone();
+        let (status, joined) = act(
+            &app,
+            "bobby",
+            &bo,
+            serde_json::json!({"action": "join", "invite": code}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(joined["groups"][0]["id"], group);
+        assert!(joined.get("invitations").is_none());
+        assert_eq!(
+            invite_rows(&app, "bobby", &bo).await[0]["action_required"],
+            false
+        );
         cleanup(app, path);
     }
 

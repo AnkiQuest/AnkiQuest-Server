@@ -6,6 +6,7 @@
         "label": "studied",
         "met": true,
         "minutes": 11,
+        "observed": 0,
         "reviews": 2,
         "streak": 2,
         "streak_minutes": 10,
@@ -28,6 +29,7 @@
         "streak_state": "pending",
         "today": {
           "minutes": 6,
+          "observed": 0,
           "reviews": 1,
           "starts_at": 1762401600000,
           "streak_minutes": 10,
@@ -40,6 +42,7 @@
         "label": "short",
         "met": false,
         "minutes": 9,
+        "observed": 0,
         "reviews": 2,
         "streak": 1,
         "streak_minutes": 10,
@@ -62,6 +65,7 @@
         "streak_state": "pending",
         "today": {
           "minutes": 6,
+          "observed": 0,
           "reviews": 1,
           "starts_at": 1762401600000,
           "streak_minutes": 10,
@@ -74,6 +78,7 @@
         "label": "studied",
         "met": true,
         "minutes": 10,
+        "observed": 0,
         "reviews": 2,
         "streak": 1,
         "streak_minutes": 10,
@@ -96,6 +101,7 @@
         "streak_state": "pending",
         "today": {
           "minutes": 9,
+          "observed": 0,
           "reviews": 1,
           "starts_at": 1762401600000,
           "streak_minutes": 10,
@@ -108,6 +114,7 @@
         "label": "short",
         "met": false,
         "minutes": 9,
+        "observed": 0,
         "reviews": 1,
         "streak": 1,
         "streak_minutes": 10,
@@ -125,6 +132,7 @@
         "streak_state": "pending",
         "today": {
           "minutes": 9,
+          "observed": 0,
           "reviews": 1,
           "starts_at": 1762401600000,
           "streak_minutes": 10,
@@ -137,6 +145,7 @@
         "label": "studied",
         "met": true,
         "minutes": 10,
+        "observed": 0,
         "reviews": 2,
         "streak": 2,
         "streak_minutes": 10,
@@ -163,6 +172,7 @@
         "streak_state": "pending",
         "today": {
           "minutes": 0,
+          "observed": 0,
           "reviews": 0,
           "starts_at": 1762401600000,
           "streak_minutes": 10,
@@ -175,6 +185,7 @@
         "label": "studied",
         "met": true,
         "minutes": 11,
+        "observed": 0,
         "reviews": 2,
         "streak": 2,
         "streak_minutes": 10,
@@ -197,6 +208,7 @@
         "streak_state": "studied",
         "today": {
           "minutes": 11,
+          "observed": 0,
           "reviews": 1,
           "starts_at": 1762401600000,
           "streak_minutes": 10,
@@ -209,6 +221,7 @@
         "label": "short",
         "met": false,
         "minutes": 4,
+        "observed": 0,
         "reviews": 2,
         "streak": 1,
         "streak_minutes": 10,
@@ -231,6 +244,7 @@
         "streak_state": "protected",
         "today": {
           "minutes": 2,
+          "observed": 0,
           "reviews": 1,
           "starts_at": 1762401600000,
           "streak_minutes": 10,
@@ -243,6 +257,7 @@
         "label": "studied",
         "met": true,
         "minutes": 10,
+        "observed": 0,
         "reviews": 2,
         "streak": 2,
         "streak_minutes": 10,
@@ -265,6 +280,7 @@
         "streak_state": "protected",
         "today": {
           "minutes": 2,
+          "observed": 0,
           "reviews": 1,
           "starts_at": 1762401600000,
           "streak_minutes": 10,
@@ -277,6 +293,7 @@
         "label": "pending",
         "met": false,
         "minutes": 0,
+        "observed": 0,
         "reviews": 0,
         "streak": 1,
         "streak_minutes": 10,
@@ -294,6 +311,7 @@
         "streak_state": "pending",
         "today": {
           "minutes": 0,
+          "observed": 0,
           "reviews": 0,
           "starts_at": 1762401600000,
           "streak_minutes": 10,
@@ -306,6 +324,7 @@
         "label": "protected",
         "met": false,
         "minutes": 0,
+        "observed": 0,
         "reviews": 0,
         "streak": 1,
         "streak_minutes": 10,
@@ -323,6 +342,7 @@
         "streak_state": "protected",
         "today": {
           "minutes": 0,
+          "observed": 0,
           "reviews": 0,
           "starts_at": 1762401600000,
           "streak_minutes": 10,
@@ -335,6 +355,7 @@
         "label": "short",
         "met": false,
         "minutes": 0,
+        "observed": 0,
         "reviews": 1,
         "streak": 1,
         "streak_minutes": 10,
@@ -352,6 +373,7 @@
         "streak_state": "protected",
         "today": {
           "minutes": 0,
+          "observed": 0,
           "reviews": 1,
           "starts_at": 1762401600000,
           "streak_minutes": 10,
@@ -364,6 +386,7 @@
         "label": "short",
         "met": false,
         "minutes": 9,
+        "observed": 0,
         "reviews": 2,
         "streak": 1,
         "streak_minutes": 10,
@@ -390,6 +413,7 @@
         "streak_state": "pending",
         "today": {
           "minutes": 6,
+          "observed": 0,
           "reviews": 1,
           "starts_at": 1762401600000,
           "streak_minutes": 10,
@@ -402,6 +426,7 @@
         "label": "unknown",
         "met": false,
         "minutes": 2,
+        "observed": 0,
         "reviews": 1,
         "streak": null,
         "streak_minutes": 10,
@@ -428,6 +453,7 @@
         "streak_state": "pending",
         "today": {
           "minutes": 0,
+          "observed": 0,
           "reviews": 0,
           "starts_at": 1762394400000,
           "streak_minutes": 10,
@@ -440,6 +466,7 @@
         "label": "studied",
         "met": true,
         "minutes": 5,
+        "observed": 0,
         "reviews": 2,
         "streak": 2,
         "streak_minutes": 5,
@@ -462,6 +489,7 @@
         "streak_state": "pending",
         "today": {
           "minutes": 2,
+          "observed": 0,
           "reviews": 1,
           "starts_at": 1762412400000,
           "streak_minutes": 5,
@@ -474,6 +502,7 @@
         "label": "studied",
         "met": true,
         "minutes": 0,
+        "observed": 0,
         "reviews": 1,
         "streak": 2,
         "streak_minutes": 0,
@@ -496,6 +525,7 @@
         "streak_state": "pending",
         "today": {
           "minutes": 0,
+          "observed": 0,
           "reviews": 0,
           "starts_at": 1762401600000,
           "streak_minutes": 0,
@@ -508,6 +538,7 @@
         "label": "studied",
         "met": true,
         "minutes": 10,
+        "observed": 0,
         "reviews": 1,
         "streak": 1,
         "streak_minutes": 10,
@@ -530,6 +561,7 @@
         "streak_state": "pending",
         "today": {
           "minutes": 0,
+          "observed": 0,
           "reviews": 0,
           "starts_at": 1762401600000,
           "streak_minutes": 10,
@@ -554,10 +586,214 @@
         "streak_state": "studied",
         "today": {
           "minutes": 10,
+          "observed": 0,
           "reviews": 1,
           "starts_at": 1762315200000,
           "streak_minutes": 10,
           "time_ms": 600000
+        }
+      }
+    },
+    {
+      "expected": {
+        "label": "unverified",
+        "met": true,
+        "minutes": 0,
+        "observed": 1,
+        "reviews": 1,
+        "streak": 2,
+        "streak_minutes": 10,
+        "streak_state": "unverified",
+        "time_ms": 0,
+        "unsent": 0
+      },
+      "name": "observed answers keep a day with a minimum as unverified",
+      "now_ms": 1762431600000,
+      "pending": [],
+      "server": {
+        "day_ends_at": 1762488000000,
+        "last_review_id": 1762344000000,
+        "streak": 2,
+        "streak_state": "unverified",
+        "today": {
+          "minutes": 0,
+          "observed": 1,
+          "reviews": 1,
+          "starts_at": 1762401600000,
+          "streak_minutes": 10,
+          "time_ms": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "label": "unverified",
+        "met": true,
+        "minutes": 0,
+        "observed": 1,
+        "reviews": 1,
+        "streak": 2,
+        "streak_minutes": 10,
+        "streak_state": "unverified",
+        "time_ms": 0,
+        "unsent": 1
+      },
+      "name": "unsent observed answers make today unverified",
+      "now_ms": 1762431600000,
+      "pending": [
+        {
+          "id": 1762430700000
+        }
+      ],
+      "server": {
+        "day_ends_at": 1762488000000,
+        "last_review_id": 1762344000000,
+        "streak": 1,
+        "streak_state": "pending",
+        "today": {
+          "minutes": 0,
+          "observed": 0,
+          "reviews": 0,
+          "starts_at": 1762401600000,
+          "streak_minutes": 10,
+          "time_ms": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "label": "studied",
+        "met": true,
+        "minutes": 10,
+        "observed": 1,
+        "reviews": 2,
+        "streak": 2,
+        "streak_minutes": 10,
+        "streak_state": "studied",
+        "time_ms": 600000,
+        "unsent": 1
+      },
+      "name": "exact minutes reaching the minimum turn an unverified day studied",
+      "now_ms": 1762431600000,
+      "pending": [
+        {
+          "id": 1762431000000,
+          "time_ms": 600000
+        }
+      ],
+      "server": {
+        "day_ends_at": 1762488000000,
+        "last_review_id": 1762344000000,
+        "streak": 2,
+        "streak_state": "unverified",
+        "today": {
+          "minutes": 0,
+          "observed": 1,
+          "reviews": 1,
+          "starts_at": 1762401600000,
+          "streak_minutes": 10,
+          "time_ms": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "label": "unverified",
+        "met": true,
+        "minutes": 2,
+        "observed": 1,
+        "reviews": 2,
+        "streak": 2,
+        "streak_minutes": 10,
+        "streak_state": "unverified",
+        "time_ms": 120000,
+        "unsent": 1
+      },
+      "name": "exact minutes short of the minimum with an observed answer are unverified",
+      "now_ms": 1762431600000,
+      "pending": [
+        {
+          "id": 1762430700000
+        }
+      ],
+      "server": {
+        "day_ends_at": 1762488000000,
+        "last_review_id": 1762430400000,
+        "streak": 1,
+        "streak_state": "pending",
+        "today": {
+          "minutes": 2,
+          "observed": 0,
+          "reviews": 1,
+          "starts_at": 1762401600000,
+          "streak_minutes": 10,
+          "time_ms": 120000
+        }
+      }
+    },
+    {
+      "expected": {
+        "label": "studied",
+        "met": true,
+        "minutes": 0,
+        "observed": 1,
+        "reviews": 1,
+        "streak": 2,
+        "streak_minutes": 0,
+        "streak_state": "studied",
+        "time_ms": 0,
+        "unsent": 1
+      },
+      "name": "with no minimum an observed answer counts as studied",
+      "now_ms": 1762431600000,
+      "pending": [
+        {
+          "id": 1762430700000
+        }
+      ],
+      "server": {
+        "day_ends_at": 1762488000000,
+        "last_review_id": 1762344000000,
+        "streak": 1,
+        "streak_state": "pending",
+        "today": {
+          "minutes": 0,
+          "observed": 0,
+          "reviews": 0,
+          "starts_at": 1762401600000,
+          "streak_minutes": 0,
+          "time_ms": 0
+        }
+      }
+    },
+    {
+      "expected": {
+        "label": "unverified",
+        "met": true,
+        "minutes": 0,
+        "observed": 1,
+        "reviews": 1,
+        "streak": 2,
+        "streak_minutes": 10,
+        "streak_state": "unverified",
+        "time_ms": 0,
+        "unsent": 0
+      },
+      "name": "an observed answer after a frozen yesterday is unverified, not protected",
+      "now_ms": 1762431600000,
+      "pending": [],
+      "server": {
+        "day_ends_at": 1762488000000,
+        "last_review_id": 1762257600000,
+        "streak": 2,
+        "streak_state": "unverified",
+        "today": {
+          "minutes": 0,
+          "observed": 1,
+          "reviews": 1,
+          "starts_at": 1762401600000,
+          "streak_minutes": 10,
+          "time_ms": 0
         }
       }
     }

@@ -6,13 +6,17 @@
 //! review time of its unsent reviews to `today.time_ms` and compares the sum with
 //! `today.streak_minutes`, exactly as the server will once they arrive. These cases are worked out by
 //! the server's own [`compute_with_rules`] and written to `tests/fixtures/day_verdicts.json`, which the
-//! clients test their copy of the rule against. Each case also names the words clients show for the
-//! day (`label`). Regenerate with `UPDATE_FIXTURES=1 cargo test day_verdicts`.
+//! clients test their copy of the rule against. The rule itself is `ankiquest_rules::today_verdict`
+//! (crates/rules), which the clients can call through its bindings. Each case also names the words
+//! clients show for the day (`label`). Observed answers (AnkiQuest Lite, see `game::observed`) have
+//! no review time: a day they keep counting short of the minimum is `unverified`. Regenerate with
+//! `UPDATE_FIXTURES=1 cargo test day_verdicts`.
 
 use crate::game::{
-    Clock, ClockHistory, DAY_MS, FreezePolicy, Review, StreakChange, StreakRule, Week,
-    compute_with_rules, date_string,
+    Clock, ClockHistory, DAY_MS, FreezePolicy, Observed, ObservedAnswer, Review, StreakChange,
+    StreakRule, Timing, Week, compute_with_rules, date_string,
 };
+use ankiquest_rules::{DayVerdict, PendingReview, ServerDay, today_verdict};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -33,6 +37,11 @@ struct Case {
     /// Reviews the client holds that are not uploaded, the same way. Ids at or before the
     /// last uploaded review are ones the client sends again; the server already has them.
     pending: &'static [(i64, i64)],
+    /// Answers the server has observed without the review log, as ms after today's noon UTC.
+    /// Their duration is not known.
+    observed: &'static [i64],
+    /// Observed answers the client (AnkiQuest Lite) holds that are not uploaded, the same way.
+    pending_observed: &'static [i64],
     /// Ms after today's noon UTC.
     now: i64,
 }
@@ -46,6 +55,8 @@ const CASES: &[Case] = &[
         granted: &[],
         uploaded: &[(-DAY_MS, 600_000), (0, 360_000)],
         pending: &[(MINUTE * 10, 300_000)],
+        observed: &[],
+        pending_observed: &[],
         now: MINUTE * 20,
     },
     Case {
@@ -56,6 +67,8 @@ const CASES: &[Case] = &[
         granted: &[],
         uploaded: &[(-DAY_MS, 600_000), (0, 360_000)],
         pending: &[(MINUTE * 10, 180_000)],
+        observed: &[],
+        pending_observed: &[],
         now: MINUTE * 20,
     },
     Case {
@@ -66,6 +79,8 @@ const CASES: &[Case] = &[
         granted: &[],
         uploaded: &[(0, 599_999)],
         pending: &[(MINUTE * 15, 1)],
+        observed: &[],
+        pending_observed: &[],
         now: MINUTE * 20,
     },
     Case {
@@ -76,6 +91,8 @@ const CASES: &[Case] = &[
         granted: &[],
         uploaded: &[(-DAY_MS, 600_000), (0, 599_999)],
         pending: &[],
+        observed: &[],
+        pending_observed: &[],
         now: MINUTE * 20,
     },
     Case {
@@ -86,6 +103,8 @@ const CASES: &[Case] = &[
         granted: &[],
         uploaded: &[(-DAY_MS, 600_000)],
         pending: &[(0, 300_000), (MINUTE, 300_000)],
+        observed: &[],
+        pending_observed: &[],
         now: MINUTE * 20,
     },
     Case {
@@ -96,6 +115,8 @@ const CASES: &[Case] = &[
         granted: &[],
         uploaded: &[(-DAY_MS, 600_000), (0, 660_000)],
         pending: &[(MINUTE * 15, 30_000)],
+        observed: &[],
+        pending_observed: &[],
         now: MINUTE * 20,
     },
     Case {
@@ -106,6 +127,8 @@ const CASES: &[Case] = &[
         granted: &[-1],
         uploaded: &[(-2 * DAY_MS, 600_000), (0, 120_000)],
         pending: &[(MINUTE * 5, 120_000)],
+        observed: &[],
+        pending_observed: &[],
         now: MINUTE * 20,
     },
     Case {
@@ -116,6 +139,8 @@ const CASES: &[Case] = &[
         granted: &[-1],
         uploaded: &[(-2 * DAY_MS, 600_000), (0, 120_000)],
         pending: &[(MINUTE * 5, 480_000)],
+        observed: &[],
+        pending_observed: &[],
         now: MINUTE * 20,
     },
     Case {
@@ -126,6 +151,8 @@ const CASES: &[Case] = &[
         granted: &[],
         uploaded: &[(-DAY_MS, 600_000)],
         pending: &[],
+        observed: &[],
+        pending_observed: &[],
         now: MINUTE * 20,
     },
     Case {
@@ -136,6 +163,8 @@ const CASES: &[Case] = &[
         granted: &[-1],
         uploaded: &[(-2 * DAY_MS, 600_000)],
         pending: &[],
+        observed: &[],
+        pending_observed: &[],
         now: MINUTE * 20,
     },
     Case {
@@ -146,6 +175,8 @@ const CASES: &[Case] = &[
         granted: &[-1],
         uploaded: &[(-2 * DAY_MS, 600_000), (0, 30_000)],
         pending: &[],
+        observed: &[],
+        pending_observed: &[],
         now: MINUTE * 20,
     },
     Case {
@@ -156,6 +187,8 @@ const CASES: &[Case] = &[
         granted: &[],
         uploaded: &[(-DAY_MS, 600_000), (0, 360_000)],
         pending: &[(0, 360_000), (MINUTE * 10, 180_000)],
+        observed: &[],
+        pending_observed: &[],
         now: MINUTE * 20,
     },
     Case {
@@ -167,6 +200,8 @@ const CASES: &[Case] = &[
         // 01:30 UTC is 03:30 in UTC+2, before the 04:00 rollover.
         uploaded: &[(-2 * DAY_MS, 600_000), (-DAY_MS - 3 * 3_600_000, 600_000)],
         pending: &[(-NOON + 90 * MINUTE, 600_000), (0, 120_000)],
+        observed: &[],
+        pending_observed: &[],
         now: MINUTE * 20,
     },
     Case {
@@ -181,6 +216,8 @@ const CASES: &[Case] = &[
             (-NOON + 7 * 3_600_000 + 30 * MINUTE, 120_000),
         ],
         pending: &[(-NOON + 7 * 3_600_000 + 40 * MINUTE, 180_000)],
+        observed: &[],
+        pending_observed: &[],
         now: 0,
     },
     Case {
@@ -191,6 +228,8 @@ const CASES: &[Case] = &[
         granted: &[],
         uploaded: &[(-DAY_MS, 5_000)],
         pending: &[(0, 4_000)],
+        observed: &[],
+        pending_observed: &[],
         now: MINUTE * 20,
     },
     Case {
@@ -201,6 +240,8 @@ const CASES: &[Case] = &[
         granted: &[],
         uploaded: &[(-3 * DAY_MS, 600_000)],
         pending: &[(0, 600_000)],
+        observed: &[],
+        pending_observed: &[],
         now: MINUTE * 20,
     },
     Case {
@@ -211,35 +252,94 @@ const CASES: &[Case] = &[
         granted: &[],
         uploaded: &[(-DAY_MS, 600_000)],
         pending: &[(0, 600_000)],
+        observed: &[],
+        pending_observed: &[],
         // The server's answer is from yesterday evening; now is today.
+        now: MINUTE * 20,
+    },
+    Case {
+        name: "observed answers keep a day with a minimum as unverified",
+        offset_west_min: 0,
+        rollover_hour: 4,
+        streak_minutes: 10,
+        granted: &[],
+        uploaded: &[(-DAY_MS, 600_000)],
+        pending: &[],
+        observed: &[0],
+        pending_observed: &[],
+        now: MINUTE * 20,
+    },
+    Case {
+        name: "unsent observed answers make today unverified",
+        offset_west_min: 0,
+        rollover_hour: 4,
+        streak_minutes: 10,
+        granted: &[],
+        uploaded: &[(-DAY_MS, 600_000)],
+        pending: &[],
+        observed: &[],
+        pending_observed: &[MINUTE * 5],
+        now: MINUTE * 20,
+    },
+    Case {
+        name: "exact minutes reaching the minimum turn an unverified day studied",
+        offset_west_min: 0,
+        rollover_hour: 4,
+        streak_minutes: 10,
+        granted: &[],
+        uploaded: &[(-DAY_MS, 600_000)],
+        pending: &[(MINUTE * 10, 600_000)],
+        observed: &[0],
+        pending_observed: &[],
+        now: MINUTE * 20,
+    },
+    Case {
+        name: "exact minutes short of the minimum with an observed answer are unverified",
+        offset_west_min: 0,
+        rollover_hour: 4,
+        streak_minutes: 10,
+        granted: &[],
+        uploaded: &[(-DAY_MS, 600_000), (0, 120_000)],
+        pending: &[],
+        observed: &[],
+        pending_observed: &[MINUTE * 5],
+        now: MINUTE * 20,
+    },
+    Case {
+        name: "with no minimum an observed answer counts as studied",
+        offset_west_min: 0,
+        rollover_hour: 4,
+        streak_minutes: 0,
+        granted: &[],
+        uploaded: &[(-DAY_MS, 5_000)],
+        pending: &[],
+        observed: &[],
+        pending_observed: &[MINUTE * 5],
+        now: MINUTE * 20,
+    },
+    Case {
+        name: "an observed answer after a frozen yesterday is unverified, not protected",
+        offset_west_min: 0,
+        rollover_hour: 4,
+        streak_minutes: 10,
+        granted: &[-1],
+        uploaded: &[(-2 * DAY_MS, 600_000)],
+        pending: &[],
+        observed: &[MINUTE * 5],
+        pending_observed: &[],
         now: MINUTE * 20,
     },
 ];
 
-/// The words a client shows for today.
-#[derive(Clone, Copy)]
-enum Label {
-    /// Today counts, or will once unsent reviews arrive.
-    Studied,
-    /// A freeze or grant kept yesterday and nothing has been studied today.
-    Protected,
-    /// Reviews today, short of the minimum.
-    Short,
-    /// No reviews today.
-    Pending,
-    /// An unsent review from an earlier day leaves today open.
-    Unknown,
-}
-
-impl Label {
-    fn name(self) -> &'static str {
-        match self {
-            Label::Studied => "studied",
-            Label::Protected => "protected",
-            Label::Short => "short",
-            Label::Pending => "pending",
-            Label::Unknown => "unknown",
-        }
+fn observed_answer(at: i64) -> ObservedAnswer {
+    let at = TODAY * DAY_MS + NOON + at;
+    ObservedAnswer {
+        cid: at,
+        at,
+        kind: 1,
+        last_ivl: 0,
+        ivl: Some(1),
+        timing: Timing::Known,
     }
 }
 
@@ -250,6 +350,7 @@ fn review(at: i64, time_ms: i64) -> Review {
         cid: id,
         last_ivl: 0,
         ivl: Some(1),
+        ease: None,
         time_ms,
         kind: 1,
     }
@@ -266,6 +367,7 @@ fn server_view(profile: &Value) -> Value {
         "today": {
             "starts_at": today["starts_at"],
             "reviews": today["reviews"],
+            "observed": today["observed"],
             "time_ms": today["time_ms"],
             "minutes": today["minutes"],
             "streak_minutes": today["streak_minutes"],
@@ -273,61 +375,18 @@ fn server_view(profile: &Value) -> Value {
     })
 }
 
-/// The rule a client follows, as `docs/mobile-api.md` states it. Null when the server's answer is
-/// from a day that has ended. A field the client cannot know is null: the streak, and while today
-/// is short its state, once an unsent review belongs to an earlier day.
+/// The rule a client follows, as `docs/mobile-api.md` states it, from crates/rules: the clients
+/// run the same code through its bindings. Null when the server's answer is from a day that has
+/// ended. A field the client cannot know is null: the streak, and while today is short its state,
+/// once an unsent review belongs to an earlier day. Pending entries without `time_ms` are observed
+/// answers (AnkiQuest Lite): they count, but their duration is not known.
 fn client(server: &Value, pending: &[Value], now: i64) -> Value {
-    let today = &server["today"];
-    let starts = today["starts_at"].as_i64().unwrap();
-    let ends = server["day_ends_at"].as_i64().unwrap();
-    if now >= ends {
-        return Value::Null;
+    let server: ServerDay = serde_json::from_value(server.clone()).unwrap();
+    let pending: Vec<PendingReview> = serde_json::from_value(json!(pending)).unwrap();
+    match today_verdict(server, pending, now) {
+        DayVerdict::Ended => Value::Null,
+        DayVerdict::Today { verdict } => serde_json::to_value(verdict).unwrap(),
     }
-    let last = server["last_review_id"].as_i64().unwrap();
-    let unsent: Vec<&Value> = pending
-        .iter()
-        .filter(|r| r["id"].as_i64().unwrap() > last)
-        .collect();
-    let counted: Vec<&&Value> = unsent
-        .iter()
-        .filter(|r| (starts..ends).contains(&r["id"].as_i64().unwrap()))
-        .collect();
-    let earlier = unsent.iter().any(|r| r["id"].as_i64().unwrap() < starts);
-    let reviews = today["reviews"].as_u64().unwrap() + counted.len() as u64;
-    let time_ms = today["time_ms"].as_i64().unwrap()
-        + counted
-            .iter()
-            .map(|r| r["time_ms"].as_i64().unwrap())
-            .sum::<i64>();
-    let needed = today["streak_minutes"].as_i64().unwrap();
-    let was = server["streak_state"].as_str().unwrap();
-    let met = was == "studied" || (reviews > 0 && time_ms >= needed * MINUTE);
-    let streak = server["streak"].as_u64().unwrap() + u64::from(met && was != "studied");
-
-    // The words for the day: reviews today outrank a protected streak, which only says that
-    // nothing has been studied yet.
-    let label = if met {
-        Label::Studied
-    } else if earlier {
-        Label::Unknown
-    } else if reviews > 0 {
-        Label::Short
-    } else if was == "protected" {
-        Label::Protected
-    } else {
-        Label::Pending
-    };
-    json!({
-        "met": met,
-        "streak_state": if met { json!("studied") } else if earlier { Value::Null } else { json!(was) },
-        "streak": if earlier { Value::Null } else { json!(streak) },
-        "reviews": reviews,
-        "time_ms": time_ms,
-        "minutes": time_ms.max(0) / MINUTE,
-        "streak_minutes": needed,
-        "unsent": counted.len(),
-        "label": label.name(),
-    })
 }
 
 fn fixture_path() -> PathBuf {
@@ -359,11 +418,12 @@ fn day_verdicts_match_the_server() {
                 .collect(),
             ..FreezePolicy::default()
         };
-        let profile = |reviews: &[Review], at: i64| {
+        let profile = |reviews: &[Review], observed: &Observed, at: i64| {
             serde_json::to_value(compute_with_rules(
                 "player",
                 "Player",
                 reviews,
+                observed,
                 &clock,
                 &Week::default(),
                 at,
@@ -374,30 +434,49 @@ fn day_verdicts_match_the_server() {
         };
         let uploaded: Vec<Review> = case.uploaded.iter().map(|(a, t)| review(*a, *t)).collect();
         let pending: Vec<Review> = case.pending.iter().map(|(a, t)| review(*a, *t)).collect();
+        let observed = Observed {
+            answers: case.observed.iter().map(|a| observed_answer(*a)).collect(),
+            ..Observed::default()
+        };
+        let pending_observed: Vec<ObservedAnswer> = case
+            .pending_observed
+            .iter()
+            .map(|a| observed_answer(*a))
+            .collect();
         let answered = if stale { now - NOON } else { now };
-        let server = server_view(&profile(&uploaded, answered));
-        let pending_json: Vec<Value> = pending
+        let server = server_view(&profile(&uploaded, &observed, answered));
+        let mut pending_json: Vec<Value> = pending
             .iter()
             .map(|r| json!({"id": r.id, "time_ms": r.time_ms}))
             .collect();
+        pending_json.extend(pending_observed.iter().map(|a| json!({"id": a.at})));
         let verdict = client(&server, &pending_json, now);
 
         // The client's rule must say what the server says once everything is uploaded.
         let mut all = uploaded.clone();
         all.extend(pending.iter().filter(|r| !uploaded.contains(r)).copied());
         all.sort_by_key(|r| r.id);
-        let full = profile(&all, now);
+        let mut all_observed = observed.clone();
+        all_observed.answers.extend(pending_observed);
+        all_observed.answers.sort_by_key(|a| a.at);
+        let full = profile(&all, &all_observed, now);
         if stale {
             assert!(verdict.is_null(), "{}", case.name);
         } else {
             let today = &full["today"];
             assert_eq!(
                 verdict["met"],
-                json!(full["streak_state"] == "studied"),
+                json!(full["streak_state"] == "studied" || full["streak_state"] == "unverified"),
                 "{}",
                 case.name
             );
-            for field in ["reviews", "time_ms", "minutes", "streak_minutes"] {
+            for field in [
+                "reviews",
+                "observed",
+                "time_ms",
+                "minutes",
+                "streak_minutes",
+            ] {
                 assert_eq!(verdict[field], today[field], "{}: {field}", case.name);
             }
             for field in ["streak", "streak_state"] {

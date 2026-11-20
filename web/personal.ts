@@ -1,5 +1,5 @@
 /* Private Today, study history, session recap and account settings. */
-import {day, escape as esc, hourOptions, nativeAccount, number} from "./common";
+import {type ClosingWeek, type NextWeek, day, escape as esc, hourOptions, nativeAccount, number, weekNotice} from "./common";
 import {failure, refused, request as call, send} from "./http";
 
 (() => {
@@ -12,9 +12,9 @@ import {failure, refused, request as call, send} from "./http";
   interface GoalProgress extends Goal { progress?: number | null; reached?: boolean; day?: number | null }
   interface Sharing { policies: Record<string, Policy>; daily_cap: number }
   interface Win { id: number; kind: string; created_at: number; title: string; body: string; policy: Policy; shared_with_friends: boolean; link: {url: string; image: string} | null }
-  interface Profile { user: string; display: string; level: number; streak: number; today: {reviews: number; xp: number; minutes?: number; streak_minutes?: number}; quests: Quest[]; day_ends_at?: number; goal?: GoalProgress | null; closing_week?: {xp: number; ends_at: number}; next_week?: {xp: number; starts_at: number} }
+  interface Profile { user: string; display: string; level: number; streak: number; today: {reviews: number; xp: number; minutes?: number; streak_minutes?: number}; quests: Quest[]; day_ends_at?: number; goal?: GoalProgress | null; closing_week?: ClosingWeek; next_week?: NextWeek }
   /** `state` and `streak_minutes` are the server's verdict on the day; older servers leave them out. */
-  interface StudyDay { date: string; reviews: number; time_ms: number; xp: number; new_cards: number; streak: number; frozen: boolean; streak_minutes?: number; state?: "met" | "short" | "frozen" | "skipped" | "none" }
+  interface StudyDay { date: string; reviews: number; time_ms: number; xp: number; new_cards: number; streak: number; frozen: boolean; streak_minutes?: number; state?: "met" | "unverified" | "short" | "frozen" | "skipped" | "none" }
   interface StudySession { started_at: number; ended_at: number; reviews: number; time_ms: number; new_cards: number }
   interface StudyHistory { year: number; years: number[]; days: StudyDay[]; last_review_at: number | null; last_received_at: number | null; latest_session: StudySession | null }
   interface Challenges { challenges: {id: number; title: string; status: string; members: {user: string; status: string}[]}[] }
@@ -44,11 +44,13 @@ import {failure, refused, request as call, send} from "./http";
   /** `GET /api/unlocks/{user}`: `progress` lists each locked companion that shows before it is earned. */
   interface UnlockProgress { kind: "level" | "study_hours"; value: number; goal: number }
   interface Unlocks { unlocks: string[]; progress?: Record<string, UnlockProgress> }
+  /** `/api/two-factor/{user}`; `secret`, `otpauth_uri` and `recovery_codes` come only from the action that made them. */
+  interface TwoFactor { available: boolean; state: "off" | "pending" | "on"; recovery_codes_left: number; secret?: string; otpauth_uri?: string; recovery_codes?: string[] }
   type SettingName = keyof Settings;
   interface State {
     session: OwnerSession | null; epoch: number; profile: Profile | null; study: StudyHistory | null; challenges: Challenges | null; activity: Activity | null;
     settings: Settings; errors: Record<string, string>; year: number | null; selected: string | null; native: boolean;
-    social: Social | null; invite: Invite | null; account: Account | null; signIn: SignIn | null; devices: Device[] | null; unlocks: Unlocks | null;
+    social: Social | null; invite: Invite | null; account: Account | null; signIn: SignIn | null; devices: Device[] | null; unlocks: Unlocks | null; twoFactor: TwoFactor | null;
     wins: Win[] | null; winsError: string; winsMore: boolean; winsLoading: boolean; winStatus: Record<number, {text: string; error: boolean}>;
   }
 
@@ -67,7 +69,7 @@ import {failure, refused, request as call, send} from "./http";
   const backlogPresets = [7, 14, 30, 60];
   const winPage = 10;
   const cards = new Map<number, Promise<string>>();
-  const state: State = {session:null, epoch:0, profile:null, study:null, challenges:null, activity:null, settings:{}, errors:{}, year:null, selected:null, native:false, social:null, invite:null, account:null, signIn:null, devices:null, unlocks:null, wins:null, winsError:"", winsMore:false, winsLoading:false, winStatus:{}};
+  const state: State = {session:null, epoch:0, profile:null, study:null, challenges:null, activity:null, settings:{}, errors:{}, year:null, selected:null, native:false, social:null, invite:null, account:null, signIn:null, devices:null, unlocks:null, twoFactor:null, wins:null, winsError:"", winsMore:false, winsLoading:false, winStatus:{}};
   document.querySelector<HTMLElement>("[data-site-header]")!.dataset.siteSection = page === "settings" ? "settings" : "today";
   // Text waits for translations; restore() does too, so reminders are set before any render.
   void AnkiQuestI18n.ready.then(() => {
@@ -190,9 +192,10 @@ import {failure, refused, request as call, send} from "./http";
       } else if (page === "settings") {
         const names: SettingName[] = ["companion","reminders","freezes","nudges","subscriptions","decks","sharing","goal"];
         const calls = [owner("/api/companion",undefined,session),owner("/api/community/reminders",undefined,session),owner("/api/streak-freezes",undefined,session),owner("/api/friend-nudges",undefined,session),owner("/api/deck-subscriptions",undefined,session),owner("/api/decks",undefined,session),owner("/api/sharing",undefined,session),owner("/api/goal",undefined,session)];
-        const [results, account, signIn, devices, unlocks] = await Promise.all([Promise.allSettled(calls), owner<Account>("/api/accounts",undefined,session).catch(() => null), owner<SignIn>("/api/sign-in",undefined,session).catch(() => null), owner<{devices: Device[]}>("/api/devices",undefined,session).catch(() => null), owner<Unlocks>("/api/unlocks",undefined,session).catch(() => null)]);
+        const [results, account, signIn, devices, unlocks, twoFactor] = await Promise.all([Promise.allSettled(calls), owner<Account>("/api/accounts",undefined,session).catch(() => null), owner<SignIn>("/api/sign-in",undefined,session).catch(() => null), owner<{devices: Device[]}>("/api/devices",undefined,session).catch(() => null), owner<Unlocks>("/api/unlocks",undefined,session).catch(() => null), owner<TwoFactor>("/api/two-factor",undefined,session).catch(() => null)]);
         if (state.session !== session || state.epoch !== epoch) return;
         state.account = account;
+        state.twoFactor = twoFactor;
         state.unlocks = unlocks;
         state.signIn = signIn;
         state.devices = devices?.devices ?? null;
@@ -267,21 +270,8 @@ import {failure, refused, request as call, send} from "./http";
     const reviewed = Number(today.reviews || 0), needed = Number(today.streak_minutes || 0);
     const streakNote = needed > 0 ? tr`${number(Math.min(Number(today.minutes || 0), needed))} of ${number(needed)} minutes today` : tr("Anki study days");
     const lead = reviewed ? tr("Every review moved you forward today.") : tr("A small start still counts. Your cards are waiting in Anki.");
-    $("personal-content").innerHTML = html`<section class="personal-lead"><div class="eyebrow">${tr("Your Anki day")}</div><h2>${profile ? tr`Hello, ${esc(profile.display)}.` : tr("A fresh page for today.")}</h2><p>${lead}</p><div class="personal-actions">${link("/community#challenges",tr("See friend goals"),true)}${link("/history",tr("View study history"))}<a class="button-link" href="https://ankiweb.net/decks" target="_blank" rel="noopener noreferrer">${tr("Study in AnkiWeb ↗")}</a></div>${freshness()}</section><div class="kpis">${site.kpi(tr("Reviews today"),number(today.reviews),tr("Synced from Anki"),"blue")}${site.kpi(tr("Today's XP"),number(today.xp),tr("Every card counts"),"gold")}${site.kpi(tr("Current streak"),number(profile?.streak || 0),streakNote,"green")}${site.kpi(tr("Level"),number(profile?.level || 1),tr("Keep moving forward"))}</div>${closingWeek()}${goalMeter()}<div class="grid"><article class="card"><div class="card-head"><div><h2>${tr("Today's quests")}</h2><p>${tr("Three small wins to aim for.")}</p></div></div>${quests.length ? html`<div class="stack">${quests.map(quest).join("")}</div>` : html`<p class="personal-empty">${tr("Upload some reviews to see your quests.")}</p>`}</article>${activeGoals()}</div><article class="card personal-wins" id="today-wins">${winsBody()}</article>${recap()}`;
+    $("personal-content").innerHTML = html`<section class="personal-lead"><div class="eyebrow">${tr("Your Anki day")}</div><h2>${profile ? tr`Hello, ${esc(profile.display)}.` : tr("A fresh page for today.")}</h2><p>${lead}</p><div class="personal-actions">${link("/community#challenges",tr("See friend goals"),true)}${link("/history",tr("View study history"))}<a class="button-link" href="https://ankiweb.net/decks" target="_blank" rel="noopener noreferrer">${tr("Study in AnkiWeb ↗")}</a></div>${freshness()}</section><div class="kpis">${site.kpi(tr("Reviews today"),number(today.reviews),tr("Synced from Anki"),"blue")}${site.kpi(tr("Today's XP"),number(today.xp),tr("Every card counts"),"gold")}${site.kpi(tr("Current streak"),number(profile?.streak || 0),streakNote,"green")}${site.kpi(tr("Level"),number(profile?.level || 1),tr("Keep moving forward"))}</div>${weekNotice(state.profile?.closing_week, state.profile?.next_week)}${goalMeter()}<div class="grid"><article class="card"><div class="card-head"><div><h2>${tr("Today's quests")}</h2><p>${tr("Three small wins to aim for.")}</p></div></div>${quests.length ? html`<div class="stack">${quests.map(quest).join("")}</div>` : html`<p class="personal-empty">${tr("Upload some reviews to see your quests.")}</p>`}</article>${activeGoals()}</div><article class="card personal-wins" id="today-wins">${winsBody()}</article>${recap()}`;
     loadCards();
-  }
-  /** The week the board shows but no longer counts today, or the one it has yet to reach but already does. */
-  function closingWeek() {
-    const clock = (at: number) => new Date(at).toLocaleTimeString(AnkiQuestI18n.language, {hour:"2-digit", minute:"2-digit"});
-    const closing = state.profile?.closing_week;
-    if (closing && Number(closing.ends_at) > Date.now()) {
-      return html`<p class="notice personal-closing" id="closing-week" role="status">${esc(tr`Last week still counting: ${number(closing.xp)} XP · closes at ${clock(Number(closing.ends_at))}`)}</p>`;
-    }
-    const next = state.profile?.next_week;
-    if (next && Number(next.starts_at) > Date.now()) {
-      return html`<p class="notice personal-closing" id="next-week" role="status">${esc(tr`Next week already counting: ${number(next.xp)} XP · the board switches at ${clock(Number(next.starts_at))}`)}</p>`;
-    }
-    return "";
   }
   function ankiToday(profile: Profile | null | undefined) {
     const offset = new Date().getTimezoneOffset() * 60000;
@@ -446,8 +436,8 @@ import {failure, refused, request as call, send} from "./http";
     for(let day=1;day<=count;day++) {
       const key = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
       const item = map.get(key), reviews = Number(item?.reviews||0), verdict = dayState(item);
-      // Only a day that met the streak minimum gets a study colour; the server says which did.
-      const level = reviews && verdict === "met" ? Math.min(4,1+Math.floor(reviews/Math.max(1,max)*3.99)) : 0;
+      // Only a day that counted toward the streak gets a study colour; the server says which did.
+      const level = reviews && (verdict === "met" || verdict === "unverified") ? Math.min(4,1+Math.floor(reviews/Math.max(1,max)*3.99)) : 0;
       const frozen = verdict === "frozen" || verdict === "skipped";
       const short = verdict === "short" ? ` · ${esc(shortOf(item!))}` : "";
       const future = new Date(key+"T12:00:00Z").getTime() > Date.now()+12*3600000;
@@ -466,7 +456,7 @@ import {failure, refused, request as call, send} from "./http";
   function dayDetail() {
     if (!state.selected) return html`<article class="card" id="day-detail"><h2>${tr("Choose a day")}</h2><p class="section-intro">${tr("Select a square to see what happened that day.")}</p></article>`;
     const day = state.study!.days.find(item => item.date === state.selected) || {date:state.selected,reviews:0,time_ms:0,xp:0,new_cards:0,streak:0,frozen:false};
-    return html`<article class="card" id="day-detail" tabindex="-1"><div class="card-head"><div><div class="eyebrow">${tr("Your Anki day")}</div><h2>${esc(date(day.date))}</h2></div>${day.frozen ? html`<span class="chip blue">${tr("Streak protected")}</span>` : dayState(day) === "short" ? html`<span class="chip">${esc(shortOf(day))}</span>` : ""}</div><div class="personal-summary"><div><strong>${number(day.reviews)}</strong><span>${tr("reviews")}</span></div><div><strong>${number(Math.floor(Number(day.time_ms)/60000))}</strong><span>${tr("minutes studied")}</span></div><div><strong>${number(day.xp)}</strong><span>${tr("XP earned")}</span></div><div><strong>${number(day.new_cards)}</strong><span>${tr("new cards")}</span></div><div><strong>${number(day.streak)}</strong><span>${tr("day streak")}</span></div></div><p class="settings-hint">${day.reviews ? tr("These totals reflect reviews uploaded to AnkiQuest.") : tr("No reviews recorded for this day.")}</p></article>`;
+    return html`<article class="card" id="day-detail" tabindex="-1"><div class="card-head"><div><div class="eyebrow">${tr("Your Anki day")}</div><h2>${esc(date(day.date))}</h2></div>${day.frozen ? html`<span class="chip blue">${tr("Streak protected")}</span>` : dayState(day) === "short" ? html`<span class="chip">${esc(shortOf(day))}</span>` : dayState(day) === "unverified" ? html`<span class="chip">${tr("Time not known")}</span>` : ""}</div><div class="personal-summary"><div><strong>${number(day.reviews)}</strong><span>${tr("reviews")}</span></div><div><strong>${number(Math.floor(Number(day.time_ms)/60000))}</strong><span>${tr("minutes studied")}</span></div><div><strong>${number(day.xp)}</strong><span>${tr("XP earned")}</span></div><div><strong>${number(day.new_cards)}</strong><span>${tr("new cards")}</span></div><div><strong>${number(day.streak)}</strong><span>${tr("day streak")}</span></div></div><p class="settings-hint">${day.reviews ? tr("These totals reflect reviews uploaded to AnkiQuest.") : tr("No reviews recorded for this day.")}</p></article>`;
   }
   function renderHistory() {
     const days = state.study!.days || [], year = state.study!.year, map = new Map(days.map(day=>[day.date,day]));
@@ -583,7 +573,7 @@ import {failure, refused, request as call, send} from "./http";
     const {senders, unsubscribed} = subscriptions ? alertSenders(subscriptions) : {senders: [], unsubscribed: new Set<string>()};
     const subscriptionCard = html`<article class="card" id="deck-alerts"><div class="card-head"><div><h2>${tr("Deck completion alerts I receive")}</h2><p>${tr("Choose the people whose completed decks reach you.")}</p></div></div>${subscriptions?html`<form id="subscriptions-form">${check("enabled",tr("Receive deck completion alerts"),subscriptions.enabled)}<fieldset><legend>${tr("Unsubscribe from specific people")}</legend>${senders.map(person=>check("",person.display,unsubscribed.has(person.user),"",`data-unsubscribe="${esc(person.user)}"`)).join("") || html`<p class="settings-hint">${tr("No one is sharing decks with you yet.")}</p>`}</fieldset><div class="setting-actions"><button class="primary" type="submit">${tr("Save alert preferences")}</button></div><p class="status" role="status"></p></form>`:settingError("subscriptions")}</article>`;
     const deckCard = html`<article class="card" id="deck-sharing"><div class="card-head"><div><h2>${tr("What I share")}</h2><p>${tr("Choose which finished decks friends can hear about.")}</p></div></div>${decks?html`<form id="decks-form"><details><summary>${tr("Manage deck sharing")}</summary>${decks.decks.length?decks.decks.map((deck,index)=>html`<fieldset data-deck-index="${index}"><legend>${esc(deck.name)}</legend>${check("",tr("Share completion"),deck.enabled,"",'data-deck-enabled')}<div class="stack">${decks.recipients.map(person=>check("",person.display,deck.recipients.includes(person.user),"",`data-deck-recipient="${esc(person.user)}"`)).join("") || html`<p class="settings-hint">${tr("No friends are available yet.")}</p>`}</div></fieldset>`).join(""):html`<p class="settings-hint">${tr("Upload reviews from Anki to see your decks here.")}</p>`}</details>${check("",tr("Celebrate milestones"),decks.celebrations!==false,"",'id="celebrations-toggle"')}<div class="setting-actions"><button class="primary" type="submit">${tr("Save deck sharing")}</button></div><p class="status" role="status"></p></form>`:settingError("decks")}</article>`;
-    const markup = html`<section class="personal-lead"><div class="eyebrow">${tr("Your account")}</div><h2>${esc(state.session!.user)}</h2><p>${tr("All changes here apply to your AnkiQuest account across devices.")}</p></section><div class="personal-settings">${companionCard}${reminderCard}${nudgeCard}${freezeCard}${goalCard(goal)}${sharingCard(sharing)}${subscriptionCard}${deckCard}<article class="card"><h2>${tr("Privacy and account")}</h2><p class="section-intro">${tr("Your member token controls personal changes. The shared website password only lets members view the community.")}</p><div class="setting-actions"><a class="button-link" href="${esc(site.href("/week","#"+encodeURIComponent(state.session!.user)))}">${tr("Edit profile picture")}</a><button type="button" id="personal-disconnect">${tr("Disconnect account")}</button></div><p class="status" role="status"></p></article>${signInCard()}${devicesCard()}${privacyCard()}</div>`;
+    const markup = html`<section class="personal-lead"><div class="eyebrow">${tr("Your account")}</div><h2>${esc(state.session!.user)}</h2><p>${tr("All changes here apply to your AnkiQuest account across devices.")}</p></section><div class="personal-settings">${companionCard}${reminderCard}${nudgeCard}${freezeCard}${goalCard(goal)}${sharingCard(sharing)}${subscriptionCard}${deckCard}<article class="card"><h2>${tr("Privacy and account")}</h2><p class="section-intro">${tr("Your member token controls personal changes. The shared website password only lets members view the community.")}</p><div class="setting-actions"><a class="button-link" href="${esc(site.href("/week","#"+encodeURIComponent(state.session!.user)))}">${tr("Edit profile picture")}</a><button type="button" id="personal-disconnect">${tr("Disconnect account")}</button></div><p class="status" role="status"></p></article>${signInCard()}${twoFactorCard()}${devicesCard()}${privacyCard()}</div>`;
     const selector = card && {companion:"#companion-form",reminders:"#reminders-form",nudges:"#nudge-status",freezes:"#freeze-toggle",subscriptions:"#subscriptions-form",decks:"#decks-form",sharing:"#sharing-form",goal:"#goal-form"}[card];
     const current = selector && $("personal-content").querySelector(selector)?.closest(".card");
     if (!current) {$("personal-content").innerHTML = markup;return;}
@@ -688,10 +678,70 @@ import {failure, refused, request as call, send} from "./http";
       if (state.session !== session) return;
       if (!response.ok && response.status === 403 && !field("current")) { state.account = state.account && {...state.account, confirmed_until: null}; renderSettings(); return; }
       if (!response.ok) throw Error(response.status === 403 ? tr("That password is not right.") : response.status === 429 ? tr("Too many attempts. Try again in one minute.") : response.status === 400 && body.password.length < 10 ? tr("Passwords need at least 10 characters.") : (await failure(response)).message);
-      state.signIn = await response.json();
-      if (others) state.devices = (await owner<{devices: Device[]}>("/api/devices",undefined,session).catch(() => null))?.devices ?? state.devices;
+      // Bodies and later calls can finish after the account changed; check again before showing them.
+      const signIn = await response.json() as SignIn;
+      const devices = others ? (await owner<{devices: Device[]}>("/api/devices",undefined,session).catch(() => null))?.devices : undefined;
+      if (state.session !== session) return;
+      state.signIn = signIn;
+      state.devices = devices ?? state.devices;
       renderSettings();
       $("password-form").querySelector(".status")!.textContent = others ? tr("Password changed. Your other devices were signed out.") : tr("Password changed.");
+    } catch (cause) {
+      if (state.session !== session) return;
+      controls.forEach(control => control.disabled = false);
+      status.className = "status error"; status.textContent = (cause as Error).message;
+    }
+  }
+  /** Two-factor authentication: set up with a QR code and a confirming code, then new recovery codes or off. */
+  function twoFactorCard() {
+    const factor = state.twoFactor;
+    if (!factor || !state.signIn?.account) return "";
+    const head = html`<h2>${tr("Two-factor authentication")}</h2><p class="section-intro">${tr("Ask for a code from an authenticator app when you sign in with your password. Signing in with Google, GitHub or GitLab relies on their own protection.")}</p>`;
+    const password = html`<label class="field"><span>${tr("Password")}</span><input name="password" type="password" required autocomplete="current-password" maxlength="256"></label>`;
+    let body: string;
+    if (!factor.available) {
+      body = html`<p class="settings-hint">${tr("Set a password first to turn on two-factor authentication.")}</p>`;
+    } else if (factor.recovery_codes) {
+      // Shown once, straight after they were made.
+      const codes = factor.recovery_codes.map(code => html`<li><code>${esc(code)}</code></li>`).join("");
+      body = html`<p class="settings-hint">${tr("Save these recovery codes somewhere safe. Each works once, if you lose your authenticator app. They are shown only now.")}</p><ol class="recovery-codes">${codes}</ol><div class="setting-actions"><button type="button" class="primary" id="two-factor-saved">${tr("I saved them")}</button></div>`;
+    } else if (factor.state === "on") {
+      body = html`<p>${esc(tr`Two-factor authentication is on. ${factor.recovery_codes_left} recovery codes left.`)}</p><form id="two-factor-form">${password}<label class="field"><span>${tr("Authenticator code or recovery code")}</span><input name="code" required autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="64"></label><div class="setting-actions"><button type="submit" value="recovery_codes">${tr("New recovery codes")}</button><button type="submit" class="danger" value="disable">${tr("Turn off two-factor authentication")}</button></div><p class="status" role="status"></p></form>`;
+    } else if (factor.state === "pending" && factor.secret && factor.otpauth_uri) {
+      body = html`<p class="settings-hint">${tr("Scan this QR code with your authenticator app, or enter the key by hand.")}</p><img id="two-factor-qr" class="two-factor-qr" width="200" height="200" alt="${tr("QR code for your authenticator app")}"><code class="device-token">${esc(factor.secret)}</code><div class="setting-actions"><a class="button-link" href="${esc(factor.otpauth_uri)}">${tr("Open in authenticator app")}</a></div><form id="two-factor-form">${password}<label class="field"><span>${tr("Code from your authenticator app")}</span><input name="code" required autocomplete="one-time-code" inputmode="numeric" maxlength="64"></label><div class="setting-actions"><button type="submit" class="primary" value="enable">${tr("Turn on")}</button></div><p class="status" role="status"></p></form>`;
+    } else {
+      body = html`<div class="setting-actions"><button type="button" id="two-factor-begin">${tr("Set up two-factor authentication")}</button></div>`;
+    }
+    return html`<article class="card" id="two-factor">${head}${body}<p id="two-factor-status" class="status" role="status"></p></article>`;
+  }
+  /** Draws the QR code; fetched rather than linked, so a session with a device token can load it too. */
+  async function showQr(session: OwnerSession) {
+    const image = document.getElementById("two-factor-qr") as HTMLImageElement | null;
+    if (!image) return;
+    const response = await send(`/api/two-factor/${encodeURIComponent(session.user)}/qr.svg`, {session}).catch(() => null);
+    const svg = response?.ok ? await response.blob() : null;
+    if (!svg || state.session !== session) return;
+    image.src = URL.createObjectURL(svg);
+  }
+  async function twoFactorChange(button: HTMLButtonElement, body: {action: string; password?: string; code?: string}, status: HTMLElement) {
+    const session = state.session;
+    if (!session) return;
+    const form = button.closest("form"), controls = form ? [...form.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,button")] : [button];
+    controls.forEach(control => control.disabled = true); status.className = "status"; status.textContent = tr("Saving…");
+    try {
+      const response = await send(`/api/two-factor/${encodeURIComponent(session.user)}`, {session, json:body});
+      if (state.session !== session) return;
+      if (!response.ok) {
+        const refusal = await failure(response);
+        throw Error(refusal.detail === "That code is not right." ? tr("That code is not right.") : response.status === 403 ? tr("That password is not right.") : response.status === 429 ? (refusal.detail.includes("15") ? tr("Too many wrong codes. Try again in 15 minutes.") : tr("Too many attempts. Try again in one minute.")) : refusal.message);
+      }
+      // The body can arrive after the account changed: a secret or recovery codes belong to `session` only.
+      const answer = await response.json() as TwoFactor;
+      if (state.session !== session) return;
+      state.twoFactor = answer;
+      renderSettings();
+      $("two-factor-status").textContent = body.action === "disable" ? tr("Two-factor authentication is off.") : body.action === "enable" ? tr("Two-factor authentication is on.") : "";
+      if (body.action === "begin") await showQr(session);
     } catch (cause) {
       if (state.session !== session) return;
       controls.forEach(control => control.disabled = false);
@@ -840,6 +890,13 @@ import {failure, refused, request as call, send} from "./http";
     if (!state.session || page!=="settings") return;
     if (form.id === "delete-account-form") { event.preventDefault(); deleteAccount(form); return; }
     if (form.id === "password-form") { event.preventDefault(); changePassword(form); return; }
+    if (form.id === "two-factor-form") {
+      event.preventDefault();
+      const button = ((event as SubmitEvent).submitter ?? form.querySelector("button[type=submit]")) as HTMLButtonElement;
+      const field = (name: string) => (form.elements.namedItem(name) as HTMLInputElement).value;
+      twoFactorChange(button, {action:button.value, password:field("password"), code:field("code").trim()}, form.querySelector<HTMLElement>(".status")!);
+      return;
+    }
     if (form.id === "companion-form") {
       event.preventDefault();submitForm(form,"/api/companion",{companion:(form.elements.namedItem("companion") as RadioNodeList).value},"companion",undefined,SHOWS_LOCKS);
     }
@@ -932,6 +989,8 @@ import {failure, refused, request as call, send} from "./http";
     const unlink=target.closest<HTMLButtonElement>("[data-unlink]");
     if(unlink && page==="settings") signInChange(unlink,{action:"unlink",provider:unlink.dataset.unlink});
     if(target.id==="new-device-token") signInChange(target as HTMLButtonElement,{action:"token"});
+    if(target.id==="two-factor-begin" && page==="settings") twoFactorChange(target as HTMLButtonElement,{action:"begin"},$("two-factor-status"));
+    if(target.id==="two-factor-saved" && page==="settings" && state.twoFactor) {state.twoFactor={...state.twoFactor,recovery_codes:undefined};renderSettings();}
     const signOut=target.closest<HTMLButtonElement>("[data-sign-out]");
     if(signOut && page==="settings") deviceChange(signOut,{action:"sign_out",id:signOut.dataset.signOut});
     if(target.id==="sign-out-others" && page==="settings") deviceChange(target as HTMLButtonElement,{action:"sign_out_others"});
