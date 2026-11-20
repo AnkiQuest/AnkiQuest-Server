@@ -46,9 +46,17 @@ jobs:
       - name: Read Android's public consumed-example catalog
         run: |
           git clone --depth 1 --filter=blob:none --sparse --branch main https://github.com/AnkiQuest/AnkiQuest-Android.git android-client
-          git -C android-client sparse-checkout set --no-cone '/AnkiDroid/src/test/resources/ankiquest-api/' '/AnkiDroid/src/test/resources/ankiquest-server.sha'
+          git -C android-client sparse-checkout set --no-cone \
+            '/AnkiDroid/src/test/resources/ankiquest-api/' '/AnkiDroid/src/test/resources/ankiquest-server.sha' \
+            '/ankiquest-core/src/test/resources/ankiquest-api/' '/ankiquest-core/src/test/resources/ankiquest-server.sha'
       - name: Preserve Android's consumed API shapes
-        run: cargo run -p ankiquest-xtask -- android-contract --android-resources android-client/AnkiDroid/src/test/resources
+        run: |
+          resources=android-client/AnkiDroid/src/test/resources
+          # Select by the committed module, so a missing catalog or pin still fails the guard.
+          if git -C android-client cat-file -e HEAD:ankiquest-core 2>/dev/null; then
+            resources=android-client/ankiquest-core/src/test/resources
+          fi
+          cargo run -p ankiquest-xtask -- android-contract --android-resources "$resources"
 
   art:
     runs-on: ${{ (github.event_name == 'merge_group' || (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) && fromJSON('["self-hosted","Linux","X64","ankiquest","build"]') || 'ubuntu-24.04' }}
