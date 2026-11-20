@@ -57,6 +57,8 @@ declare global {
 
   interface AnkiQuestAkiApi {
     image(pose?: string, extra?: string): string;
+    /** The picture's path for a pose of the chosen companion. */
+    source(pose: string): string;
     profile(value: CompanionProfile | null | undefined): string;
     decorate(root?: ParentNode & Partial<Pick<Element, "matches">>): void;
     setChoice(next: string): void;

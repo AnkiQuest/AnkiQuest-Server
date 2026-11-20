@@ -1337,6 +1337,8 @@
   "{0} cards today in {1} minute.": "{0} Karten heute in {1} Minute.",
   "{0} cards today in {1} minutes.": "{0} Karten heute in {1} Minuten.",
   "#{0} on this week's leaderboard": "Platz {0} in der Rangliste dieser Woche",
+  "#{0} on the weekly board": "Platz {0} in der Wochenrangliste",
+  "{0} XP over {1} study days last week.": "{0} XP an {1} Lerntagen letzte Woche.",
   "I earned {0} XP this week.": "Ich habe diese Woche {0} XP verdient.",
   "I finished my {0} studies for today.": "Ich habe heute mit {0} fertig gelernt.",
   "{0}: {1} Join me on AnkiQuest: {2}": "{0}: {1} Lern mit mir auf AnkiQuest: {2}",
@@ -1409,6 +1411,8 @@
   "Reach level {0}": "Erreiche Level {0}",
   "Level {0} of {1}": "Level {0} von {1}",
   "{0} of {1} hours": "{0} von {1} Stunden",
+  "Keep a {0}-day streak": "Eine Lernserie von {0} Tagen halten",
+  "{0} of {1} days": "{0} von {1} Tagen",
   "Authenticator code or recovery code": "Code aus der Authenticator-App oder Wiederherstellungscode",
   "Enter the code from your authenticator app.": "Gib den Code aus deiner Authenticator-App ein.",
   "That code is not right.": "Dieser Code ist nicht richtig.",
@@ -1428,5 +1432,9 @@
   "New recovery codes": "Neue Wiederherstellungscodes",
   "Turn off two-factor authentication": "Zwei-Faktor-Authentifizierung ausschalten",
   "Two-factor authentication is on.": "Die Zwei-Faktor-Authentifizierung ist eingeschaltet.",
-  "Two-factor authentication is off.": "Die Zwei-Faktor-Authentifizierung ist ausgeschaltet."
+  "Two-factor authentication is off.": "Die Zwei-Faktor-Authentifizierung ist ausgeschaltet.",
+  "Observed": "Beobachtet",
+  "Includes answers read from AnkiDroid without review times": "Enthält aus AnkiDroid gelesene Antworten ohne Lernzeiten",
+  "Studied today · time not known": "Heute studiert · Zeit unbekannt",
+  "Time not known": "Zeit unbekannt"
 }

@@ -20,6 +20,7 @@
     "user": "hill",
     "week_xp": 101,
     "xp": 101,
+    "xp_source": "exact",
     "xp_total": 101
   },
   {
@@ -43,6 +44,7 @@
     "user": "cerro",
     "week_xp": 31,
     "xp": 31,
+    "xp_source": "exact",
     "xp_total": 31
   }
 ]

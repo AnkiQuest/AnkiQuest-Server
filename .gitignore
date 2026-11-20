@@ -4,3 +4,6 @@
 /node_modules
 ankiquest.json
 node_modules
+/crates/rules/bindings/kotlin/build
+/crates/rules/bindings/kotlin/.gradle
+/crates/rules/bindings/kotlin/.kotlin

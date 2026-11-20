@@ -479,6 +479,7 @@ mod tests {
                 cid,
                 last_ivl,
                 ivl: Some(ivl),
+                ease: None,
                 time_ms: 8_000,
                 kind,
             })

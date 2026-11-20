@@ -18,7 +18,8 @@ macro_rules! png {
     };
 }
 
-/// A face icon build.rs exports from `face.png`, served at the same path.
+/// A picture build.rs exports into `OUT_DIR/art`, served at the same path: a face icon, or a
+/// pose of a companion whose masters `poses.json` lists.
 macro_rules! icon {
     ($path:literal) => {
         (
@@ -45,6 +46,12 @@ const ASSETS: &[(&str, &[u8])] = &[
     png!("ankilope/celebrate.png"),
     png!("ankilope/face.png"),
     icon!("ankilope/face-192.png"),
+    icon!("anki-tan/welcome.png"),
+    icon!("anki-tan/review.png"),
+    icon!("anki-tan/happy.png"),
+    icon!("anki-tan/streak.png"),
+    icon!("anki-tan/frozen.png"),
+    icon!("anki-tan/face-192.png"),
 ];
 
 pub(crate) fn public_asset(path: &str) -> bool {
@@ -70,6 +77,7 @@ pub(crate) fn routes() -> Router<Arc<App>> {
     Router::new()
         .route("/aki/{name}", get(asset))
         .route("/ankilope/{name}", get(asset))
+        .route("/anki-tan/{name}", get(asset))
 }
 
 #[cfg(test)]
@@ -114,6 +122,13 @@ mod tests {
             let response = get(&path).await;
             assert_eq!(response.status(), StatusCode::OK);
             assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
+        }
+        // #61: Anki-tan's pictures, exported from the files her poses.json lists.
+        for name in ["welcome", "review", "happy", "streak", "frozen", "face-192"] {
+            let path = format!("/anki-tan/{name}.png");
+            assert!(public_asset(&path), "{path}");
+            let response = get(&path).await;
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
         }
         assert!(!public_asset("/ankilope/config.json"));
         assert!(!public_asset("/ankilope/winner.png"));

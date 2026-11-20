@@ -526,17 +526,7 @@ fn challenge_win(
         .find(|player| player.user == member)
         .map_or_else(
             || serde_json::json!({}),
-            |player| {
-                crate::wins::stats(&crate::game::compute_with_history(
-                    &player.user,
-                    &player.display,
-                    &player.reviews,
-                    &player.clock_history,
-                    &crate::game::Week::BOARD,
-                    now,
-                    &player.freeze_policy,
-                ))
-            },
+            |player| crate::wins::stats(&player.profile(&crate::game::Week::BOARD, now)),
         );
     let day = crate::store::clock_in(conn, member)?.day(now);
     if let Some(win) = crate::wins::create(
@@ -778,13 +768,11 @@ pub fn list(
                     && status == MemberStatus::Accepted
                     && let (Some(player), Some(joined)) = (player, joined)
                 {
-                    for review in player.reviews.iter() {
-                        if review.id >= joined.max(start_at)
-                            && review.id < end_at
-                            && review.id <= now
-                        {
+                    // Observed answers count as reviews, and their days as study days.
+                    for at in player.answer_times() {
+                        if at >= joined.max(start_at) && at < end_at && at <= now {
                             count += 1;
-                            days.insert(player.clock_history.day(review.id));
+                            days.insert(player.clock_history.day(at));
                         }
                     }
                 }
@@ -1285,6 +1273,7 @@ mod tests {
         Participant {
             user: user.into(),
             display: user.into(),
+            observed: Default::default(),
             clock_history: ClockHistory::default(),
             freeze_policy: FreezePolicy::default(),
             reviews: times
@@ -1295,6 +1284,7 @@ mod tests {
                     cid: i as i64,
                     last_ivl: 1,
                     ivl: None,
+                    ease: None,
                     time_ms: 5000,
                     kind: 1,
                 })
@@ -1487,6 +1477,79 @@ mod tests {
             act(&mut store, "friend", id, "accept", start + 7 * DAY_MS),
             Err(Error::Invalid(_))
         ));
+    }
+
+    /// Observed study: answers as `(cid, at)` and day counts as `(day, cards)`.
+    fn observed(answers: &[(i64, i64)], days: &[(i64, u64)]) -> Arc<crate::game::Observed> {
+        let answers = answers
+            .iter()
+            .map(|&(cid, at)| crate::game::ObservedAnswer {
+                cid,
+                at,
+                kind: 1,
+                last_ivl: 1,
+                ivl: None,
+                timing: crate::game::Timing::Known,
+            })
+            .collect();
+        Arc::new(crate::game::Observed {
+            answers,
+            days: days.iter().copied().collect(),
+        })
+    }
+
+    #[test]
+    fn a_reviews_goal_counts_observed_answers_without_counting_twice() {
+        let (mut store, _) = crate::test_support::temporary_store();
+        initialize(&store.conn).unwrap();
+        let mut request = request();
+        request.target = 100;
+        let eligible = BTreeSet::from(["friend".into()]);
+        let start = DAY_MS + 12 * 3_600_000;
+        create(&mut store, "owner", &request, &eligible, start).unwrap();
+        let next_day = ClockHistory::default().day(start + DAY_MS);
+        let now = start + 2 * DAY_MS;
+
+        // Observed only: two answers today and a day count of three tomorrow.
+        let mut lite = player("owner", &[]);
+        lite.observed = observed(&[(1, start + 1000), (2, start + 2000)], &[(next_day, 3)]);
+        assert_eq!(list(&store, "owner", &[lite], now).unwrap()[0].progress, 5);
+
+        // Mixed: the review row for card 1 replaces its observed answer that day, and an
+        // observed answer from before the goal does not count.
+        let mut mixed = player("owner", &[start + 500]);
+        mixed.observed = observed(
+            &[(0, start + 1000), (2, start + 2000), (3, start - 1000)],
+            &[],
+        );
+        assert_eq!(list(&store, "owner", &[mixed], now).unwrap()[0].progress, 2);
+    }
+
+    #[test]
+    fn a_study_days_goal_counts_observed_days_once() {
+        let (mut store, _) = crate::test_support::temporary_store();
+        initialize(&store.conn).unwrap();
+        let mut request = request();
+        request.kind = Kind::StudyDays;
+        request.target = 5;
+        let eligible = BTreeSet::from(["friend".into()]);
+        let start = DAY_MS + 12 * 3_600_000;
+        create(&mut store, "owner", &request, &eligible, start).unwrap();
+        let clock = ClockHistory::default();
+        let now = start + 4 * DAY_MS;
+
+        // Observed only: answers on one day, a day count on another.
+        let mut lite = player("owner", &[]);
+        lite.observed = observed(
+            &[(1, start + 1000), (2, start + 2000)],
+            &[(clock.day(start + 2 * DAY_MS), 4)],
+        );
+        assert_eq!(list(&store, "owner", &[lite], now).unwrap()[0].progress, 2);
+
+        // Mixed: a day with both review rows and observed answers counts once.
+        let mut mixed = player("owner", &[start + 500, start + DAY_MS]);
+        mixed.observed = observed(&[(9, start + 1000), (8, start + 3 * DAY_MS)], &[]);
+        assert_eq!(list(&store, "owner", &[mixed], now).unwrap()[0].progress, 3);
     }
 
     #[test]

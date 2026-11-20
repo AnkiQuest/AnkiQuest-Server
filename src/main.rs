@@ -23,6 +23,7 @@ mod companions;
 mod competition;
 mod config;
 mod conquests;
+mod countdowns;
 mod crash_reports;
 mod crash_signature;
 #[cfg(test)]
@@ -41,6 +42,7 @@ mod messages;
 mod migrations;
 mod notifications;
 mod oauth;
+mod observations;
 mod privacy;
 mod reciprocity;
 mod reminders;
@@ -49,6 +51,8 @@ mod shares;
 mod social;
 mod store;
 mod study;
+#[cfg(test)]
+mod study_time;
 mod subscriptions;
 mod synced_settings;
 #[cfg(test)]
@@ -271,6 +275,7 @@ fn router(app: Arc<App>) -> Router {
         .merge(inbox::routes())
         .merge(messages::routes())
         .merge(study::routes())
+        .merge(observations::routes())
         .merge(boards::routes())
         .merge(cards::routes())
         .merge(capabilities::routes())

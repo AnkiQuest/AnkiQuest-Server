@@ -25,6 +25,8 @@ pub(crate) struct Standing {
     xp_total: u64,
     pub(crate) week_xp: u64,
     xp: u64,
+    /// Whether `xp` includes answers observed without the review log (AnkiQuest Lite).
+    xp_source: game::XpSource,
     period: String,
     periods: Periods,
     streak: u64,
@@ -115,6 +117,7 @@ struct Stranger {
     display: String,
     level: u64,
     xp: u64,
+    xp_source: game::XpSource,
     period: String,
     streak: u64,
 }
@@ -126,6 +129,7 @@ impl From<Standing> for Stranger {
             display: standing.display,
             level: standing.level,
             xp: standing.xp,
+            xp_source: standing.xp_source,
             period: standing.period,
             streak: standing.streak,
         }
@@ -355,6 +359,7 @@ pub(crate) fn standings(
             xp_total: p.xp_total,
             week_xp: p.week_xp,
             xp: p.periods.get(&period),
+            xp_source: p.xp_sources.get(&period),
             period: period.clone(),
             periods: p.periods.clone(),
             streak: p.streak,
@@ -637,6 +642,7 @@ mod tests {
             "cerro".into(),
             Player {
                 reviews: Default::default(),
+                observed: Default::default(),
                 clock: Clock::default(),
                 clock_history: ClockHistory::default(),
                 freeze_policy: game::FreezePolicy::default(),
@@ -669,6 +675,7 @@ mod tests {
                     cid: index + 1,
                     last_ivl: 30,
                     ivl: None,
+                    ease: None,
                     time_ms: 5_000,
                     kind: 1,
                 })
@@ -876,7 +883,7 @@ mod tests {
             ..plain_upload(reviews_at(first, count))
         };
 
-        crate::app::fix_now_ms(Some(at_berlin(20, 18, 0)));
+        let clock = FixedClock::at(at_berlin(20, 18, 0));
         upload_as(&app, "hill", study(in_berlin, at_berlin(20, 17, 0), 40)).await;
         upload_as(
             &app,
@@ -888,7 +895,7 @@ mod tests {
         assert_eq!(sunday.order, vec!["hill", "cerro"]);
         assert!(phone_rank(&app, "hill", &[]).await.change.is_none());
 
-        crate::app::fix_now_ms(Some(at_berlin(21, 9, 30)));
+        clock.set(at_berlin(21, 9, 30));
         assert!(app.week.start_of(now_ms()) > sunday.week);
         upload_as(
             &app,
@@ -896,10 +903,10 @@ mod tests {
             study(in_buenos_aires, at_berlin(21, 9, 10), 5),
         )
         .await;
-        crate::app::fix_now_ms(Some(at_berlin(21, 10, 30)));
+        clock.set(at_berlin(21, 10, 30));
         upload_as(&app, "hill", study(in_berlin, at_berlin(21, 10, 0), 2)).await;
 
-        crate::app::fix_now_ms(Some(at_berlin(21, 11, 0)));
+        clock.set(at_berlin(21, 11, 0));
         let monday = phone_rank(&app, "cerro", &["hill", "cerro"]).await;
         assert_eq!(monday.order, vec!["cerro", "hill"]);
         assert!(
@@ -915,7 +922,7 @@ mod tests {
             "nobody passed hill this week either"
         );
 
-        crate::app::fix_now_ms(Some(at_berlin(21, 12, 0)));
+        clock.set(at_berlin(21, 12, 0));
         upload_as(&app, "hill", study(in_berlin, at_berlin(21, 11, 30), 30)).await;
         let climbed = phone_rank(&app, "hill", &["cerro", "hill"]).await;
         assert_eq!(climbed.order, vec!["hill", "cerro"]);
@@ -928,7 +935,6 @@ mod tests {
                 .title,
             "👑 hill took the crown"
         );
-        crate::app::fix_now_ms(None);
         cleanup(app, path);
     }
 
@@ -1141,7 +1147,16 @@ mod tests {
                 .collect();
             assert_eq!(
                 fields,
-                BTreeSet::from(["display", "level", "period", "rank", "streak", "user", "xp"]),
+                BTreeSet::from([
+                    "display",
+                    "level",
+                    "period",
+                    "rank",
+                    "streak",
+                    "user",
+                    "xp",
+                    "xp_source"
+                ]),
                 "strangers see a standing without study details"
             );
         };

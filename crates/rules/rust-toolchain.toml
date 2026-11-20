@@ -1,0 +1,7 @@
+# The toolchain the binding libraries are built with, so a given commit always
+# builds the same bytes. Only builds run from crates/rules use it; the server
+# keeps the toolchain of whoever builds it.
+[toolchain]
+channel = "1.100.0"
+profile = "minimal"
+components = ["clippy", "rustfmt"]

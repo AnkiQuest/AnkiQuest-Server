@@ -172,7 +172,7 @@ the old server-wide `remind_hour` / NixOS `remindHour` setting has been removed 
 
 ## conquered cards
 
-a card that lapsed at least four times and then earns an interval of 21 days or more is *conquered*; from eight lapses, Anki's default leech threshold, it is a *tamed leech*. a lapse is a review answered into relearning: a negative new interval, or, from clients that do not send the new interval, a relearning step right after a review. without the new interval a card counts once a review finds it after a mature interval and no relearning step follows it within a day. lapses on decks without relearning steps cannot be told from a pass and go uncounted. only retained history counts, so a card's earlier lapses may be missing.
+a card that lapsed at least four times and then earns an interval of 21 days or more is *conquered*; from eight lapses, Anki's default leech threshold, it is a *tamed leech*. a lapse is a review answered Again (`ease` 1). rows without `ease`, from older clients and from reviews stored before the server kept it, fall back: a review with a negative new interval, or, without the new interval, a review followed by a relearning step. without the new interval a card counts once a review finds it after a mature interval and no relearning step follows it within a day. on those rows, lapses on decks without relearning steps cannot be told from a pass and go uncounted, and passes that Anki forks with intraday review intervals log with a negative interval count as lapses. only retained history counts, so a card's earlier lapses may be missing.
 
 conquests from the last two days are celebrated like achievements: upload feedback carries a `🏆` headline, and the player's inbox and push get a celebration. profiles list the latest twelve in `conquests` (`at`, `lapses`, `answers`, `since`, `leech`) and count them all in `lifetime.conquered`. `/conquered/<user>/<at>` shows one as a big companion card with a shareable picture and link, visible to whoever may see the player's profile. its owner can tell their friends once, which puts it in their friends' activity. for a day, and until a friend cheers or answers it, the owner can take that back (`DELETE` on the `tell` path): rows friends have not read yet leave their activity. `GET /api/conquests/<user>/<at>` returns the card's numbers; `POST /api/conquests/<user>/<at>/tell` needs the owner's token or session. no card id or content is shared unless the owner adds a label for it; the label then also appears on the conquest's shared win card and page (see `docs/sharing.md`).
 
@@ -239,13 +239,15 @@ both clients upload new review rows after each answer and show XP feedback while
 
 ```json
 {
-  "reviews": [{ "id": 0, "cid": 0, "last_ivl": 0, "ivl": 0, "time_ms": 0, "kind": 0 }],
+  "reviews": [{ "id": 0, "cid": 0, "last_ivl": 0, "ivl": 0, "time_ms": 0, "kind": 0, "ease": 3 }],
   "clock": { "offset_west_min": -120, "rollover_hour": 4 },
   "silent": false
 }
 ```
 
 stores the rows and returns the profile. `POST /api/preview/<user>` takes the same `reviews` without storing anything.
+
+each row is a revlog row: `id`, `cid`, `last_ivl` (`lastIvl`), `ivl`, `time_ms` (`time`), `kind` (`type`) and `ease`, the button pressed (1 Again, 2 Hard, 3 Good, 4 Easy). `ivl` and `ease` are optional, for clients that predate them; a resend of a stored row fills in either when it was missing and never changes a known value. the server reads `ease` to tell a lapse from a pass (see conquered cards).
 
 the `clock` is the one a player keeps now. each upload that reports a different `offset_west_min` or `rollover_hour` than the last records an entry in `clock_history`, dated from that upload, and every review is read against the clock that was in force when it happened.
 

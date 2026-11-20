@@ -1,5 +1,5 @@
 {
-  "_about": "First-person conquest picture content. Only label explicitly saved in the server response is public; local suggestions and note fields are ignored. Deck is the owner's chosen cleaned name. Pictures have no public URL. Text captions append the existing conquest page. These English sentences match Android's aq_conquest_share_mine/label_mine/deck resources without decorative symbols. Keep this additive fixture when moving the shared contract to AnkiQuest-Server.",
+  "_about": "First-person conquest picture content. Only label explicitly saved in the server response is public; local suggestions and note fields are ignored. Deck is the owner's chosen cleaned name. Pictures have no public URL. Text captions append the existing conquest page. These English sentences match Android's aq_conquest_share_mine/label_mine/deck resources without decorative symbols.",
   "cases": [
     {
       "name": "one lapse without a label or deck",

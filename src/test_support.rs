@@ -14,6 +14,59 @@ pub(crate) use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 pub(crate) use std::sync::{Arc, Mutex, RwLock};
 
+/// Wednesday 28 October 2026, 10:30 UTC: a time of day far from midnight, so a test's
+/// reviews from the last hours fall on one study day.
+pub(crate) const STUDY_TIME: i64 = 1_793_183_400_000;
+
+/// Pins [`now_ms`] on the calling thread until dropped, then restores the pin it replaced,
+/// so a nested clock leaves the outer one in place. Dropping also runs when a test panics,
+/// so a failed test never leaves the clock pinned for the next one on its thread. The pin
+/// is thread-local, so the guard is not `Send`: it cannot be dropped on another thread.
+pub(crate) struct FixedClock {
+    previous: Option<i64>,
+    thread: std::marker::PhantomData<*const ()>,
+}
+
+impl FixedClock {
+    pub(crate) fn at(now: i64) -> Self {
+        Self {
+            previous: crate::app::fix_now_ms(Some(now)),
+            thread: std::marker::PhantomData,
+        }
+    }
+
+    /// Moves the pinned clock to `now`.
+    pub(crate) fn set(&self, now: i64) {
+        crate::app::fix_now_ms(Some(now));
+    }
+}
+
+impl Drop for FixedClock {
+    fn drop(&mut self) {
+        crate::app::fix_now_ms(self.previous);
+    }
+}
+
+#[test]
+fn fixed_clock_resets_when_a_test_panics() {
+    let failed = std::panic::catch_unwind(|| {
+        let _clock = FixedClock::at(STUDY_TIME);
+        panic!("a failing test");
+    });
+    assert!(failed.is_err());
+    assert_ne!(now_ms(), STUDY_TIME);
+}
+
+#[test]
+fn a_nested_clock_restores_the_outer_one() {
+    let _outer = FixedClock::at(STUDY_TIME);
+    {
+        let _inner = FixedClock::at(STUDY_TIME + 1);
+        assert_eq!(now_ms(), STUDY_TIME + 1);
+    }
+    assert_eq!(now_ms(), STUDY_TIME);
+}
+
 /// A store in a new temporary directory; [`cleanup`] removes it.
 pub(crate) fn temporary_store() -> (Store, PathBuf) {
     static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -159,6 +212,7 @@ pub(crate) fn reviews_at(first: i64, count: i64) -> Vec<Review> {
             cid: 1_000 + index,
             last_ivl: 1,
             ivl: None,
+            ease: None,
             time_ms: 8_000,
             kind: 1,
         })
@@ -170,6 +224,7 @@ pub(crate) fn with_reviews(app: &App, user: &str, count: i64) {
         user.into(),
         Player {
             reviews: Arc::new(reviews_at(now_ms() - 600_000, count)),
+            observed: Default::default(),
             clock: Clock::default(),
             clock_history: ClockHistory::default(),
             freeze_policy: game::FreezePolicy::default(),

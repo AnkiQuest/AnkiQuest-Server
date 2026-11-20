@@ -3,7 +3,7 @@ name = "ankiquest-i18n"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
-license = "AGPL-3.0-only"
+license = "AGPL-3.0-or-later"
 description = "Translation catalogs and lookup shared by the AnkiQuest server and, as WASM, its web pages"
 
 [build-dependencies]
