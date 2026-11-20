@@ -1,14 +1,15 @@
 //! Keeps `docs/api/examples` equal to what the real handlers answer. Run with
 //! `UPDATE_API_EXAMPLES=1` to rewrite the files instead of comparing.
 //!
-//! The clock is pinned to [`NOW_MS`]. Random values are replaced before comparing, numbered in
-//! the order they appear: device tokens by `example-token-N`, win link tokens by
-//! `example-link-N`, device ids by `example-device-N`, group invite codes by `example-invite-N`
-//! app sign-in tickets by `example-ticket-N`, two-factor secrets by `example-secret-N` and
+//! The clock is pinned to [`STUDY_TIME`]. Random values are replaced before comparing,
+//! numbered in the order they appear: device tokens by `example-token-N`, win link tokens by
+//! `example-link-N`, device ids by `example-device-N`, group invite codes by
+//! `example-invite-N`, app sign-in tickets by `example-ticket-N`, two-factor secrets by `example-secret-N` and
 //! recovery codes by `example-recovery-N`.
 
 use crate::app::App;
 use crate::game::{Clock, Event};
+use crate::test_support::{FixedClock, STUDY_TIME};
 use axum::body::{Body, to_bytes};
 use axum::http::Request;
 use serde_json::{Value, json};
@@ -17,10 +18,8 @@ use std::sync::Arc;
 
 const PASSWORD: &str = "long enough pw";
 
-/// Wednesday 28 October 2026, 10:30 UTC.
-const NOW_MS: i64 = 1_793_183_400_000;
-
 struct Fixture {
+    clock: FixedClock,
     app: Arc<App>,
     path: PathBuf,
     secrets: Vec<(String, String)>,
@@ -44,11 +43,12 @@ impl Fixture {
             }
         }))
         .unwrap();
-        crate::app::fix_now_ms(Some(NOW_MS));
+        let clock = FixedClock::at(STUDY_TIME);
         let app = Arc::new(crate::test_support::app_from(store, config));
         // Players who have used the app, so the deck recipient picker offers them.
         crate::test_support::used_app(&app, &["cerro", "friend"]);
         Self {
+            clock,
             app,
             path,
             secrets: Vec::new(),
@@ -116,8 +116,8 @@ impl Fixture {
     }
 
     fn reviews(&self, count: i64) -> Value {
-        let day = Clock::default().day(NOW_MS);
-        let first = NOW_MS - 20 * 60_000;
+        let day = Clock::default().day(STUDY_TIME);
+        let first = STUDY_TIME - 20 * 60_000;
         let reviews: Vec<Value> = (0..count)
             .map(|index| {
                 json!({
@@ -152,8 +152,8 @@ impl Fixture {
                     title: title.into(),
                     body: body.into(),
                 }],
-                Clock::default().day(NOW_MS),
-                NOW_MS,
+                Clock::default().day(STUDY_TIME),
+                STUDY_TIME,
                 false,
                 true,
                 &json!({"streak": 1, "level": 2, "reviews_today": 5, "minutes_today": 1}),
@@ -166,7 +166,7 @@ impl Fixture {
             .store
             .lock()
             .unwrap()
-            .notifications(user, NOW_MS)
+            .notifications(user, STUDY_TIME)
             .unwrap()
             .into_iter()
             .find(|notice| notice.kind == kind)
@@ -299,9 +299,9 @@ async fn examples_match_the_handlers() {
             "/api/settings/hill",
             Some("hill-secret"),
             json!({"settings": {
-                "notify_rank": {"value": false, "updated_at": NOW_MS - 60_000},
-                "streak_warning_hours": {"value": 4, "updated_at": NOW_MS - 60_000},
-                "future_setting": {"value": true, "updated_at": NOW_MS - 60_000}
+                "notify_rank": {"value": false, "updated_at": STUDY_TIME - 60_000},
+                "streak_warning_hours": {"value": 4, "updated_at": STUDY_TIME - 60_000},
+                "future_setting": {"value": true, "updated_at": STUDY_TIME - 60_000}
             }}),
         )
         .await,
@@ -318,7 +318,7 @@ async fn examples_match_the_handlers() {
                 "countdowns": {"value": [
                     {"name": "Spanish exam", "date": "2026-11-09", "deck": "Spanish::A1"},
                     {"name": "Driving theory", "date": "2026-12-01", "deck": null}
-                ], "updated_at": NOW_MS - 60_000}
+                ], "updated_at": STUDY_TIME - 60_000}
             }}),
         )
         .await,
@@ -332,7 +332,7 @@ async fn examples_match_the_handlers() {
     )
     .await;
 
-    let goal_key = format!("goal:{}", Clock::default().day(NOW_MS));
+    let goal_key = format!("goal:{}", Clock::default().day(STUDY_TIME));
     let hill_win = f.celebrate(
         "hill",
         &goal_key,
@@ -445,7 +445,7 @@ async fn examples_match_the_handlers() {
     // Friend goals come last, so their invitations change no example above. They start an hour
     // ago, so the reviews uploaded above count: one goal in progress, one reached, one ended early
     // and one invitation waiting for hill.
-    crate::app::fix_now_ms(Some(NOW_MS - 60 * 60_000));
+    f.clock.set(STUDY_TIME - 60 * 60_000);
     let goal = |title: &str, kind: &str, cooperative: bool, target: u64, to: &[&str], key: &str| {
         json!({
             "title": title,
@@ -551,7 +551,7 @@ async fn examples_match_the_handlers() {
         )
         .await;
     let invited = ids(&invited).into_iter().max().unwrap();
-    crate::app::fix_now_ms(Some(NOW_MS));
+    f.clock.set(STUDY_TIME);
     examples.push((
         "challenges",
         f.call(
@@ -597,7 +597,7 @@ async fn examples_match_the_handlers() {
     // Keep the historical row in this fixture; saving a new deck win would shift later ids.
     {
         let mut store = f.app.store.lock().unwrap();
-        let day = store.clock("hill").unwrap().day(NOW_MS);
+        let day = store.clock("hill").unwrap().day(STUDY_TIME);
         store
             .send_once(
                 &crate::notifications::Outgoing {
@@ -609,7 +609,7 @@ async fn examples_match_the_handlers() {
                 },
                 &format!("deck-share:hill:1:{day}"),
                 day,
-                NOW_MS,
+                STUDY_TIME,
                 false,
             )
             .unwrap();
@@ -634,7 +634,7 @@ async fn examples_match_the_handlers() {
     let earlier: Vec<Value> = [(3, 4), (2, 6)]
         .iter()
         .flat_map(|&(days_ago, count)| {
-            let first = NOW_MS - days_ago * 86_400_000 - 60 * 60_000;
+            let first = STUDY_TIME - days_ago * 86_400_000 - 60 * 60_000;
             (0..count).map(move |index| {
                 json!({
                     "id": first + index * 1_000,
@@ -673,7 +673,7 @@ async fn examples_match_the_handlers() {
         .conn
         .execute(
             "insert into sign_in_links (provider, subject, user, created_at) values ('github', 'example-subject', 'ana', ?1)",
-            [NOW_MS],
+            [STUDY_TIME],
         )
         .unwrap();
     examples.push((
@@ -741,7 +741,7 @@ async fn examples_match_the_handlers() {
             "POST",
             "/api/two-factor/ana",
             Some(&ana),
-            json!({"action": "enable", "password": "an even longer pw", "code": crate::two_factor::code_at(&secret, NOW_MS)}),
+            json!({"action": "enable", "password": "an even longer pw", "code": crate::two_factor::code_at(&secret, STUDY_TIME)}),
         )
         .await;
     for code in enabled["recovery_codes"].as_array().unwrap() {
@@ -810,7 +810,7 @@ async fn examples_match_the_handlers() {
         .store
         .lock()
         .unwrap()
-        .add_unlock("hill", crate::companions::Unlock::Cow, NOW_MS)
+        .add_unlock("hill", crate::companions::Unlock::Cow, STUDY_TIME)
         .unwrap();
     examples.push((
         "unlocks_save",
@@ -844,7 +844,7 @@ async fn examples_match_the_handlers() {
         .chain((0..4).flat_map(|_| [(1, 3, -600, 1), (2, -600, 1, 3)]))
         .chain([(1, 1, 8, 3), (1, 8, 25, 3)])
         .collect();
-    let first = NOW_MS - answers.len() as i64 * 86_400_000;
+    let first = STUDY_TIME - answers.len() as i64 * 86_400_000;
     let card: Vec<Value> = answers
         .iter()
         .enumerate()
@@ -883,8 +883,8 @@ async fn examples_match_the_handlers() {
         &f.app.store.lock().unwrap().conn,
         "hill",
         &format!("conquered:{conquered}"),
-        Clock::default().day(NOW_MS),
-        NOW_MS,
+        Clock::default().day(STUDY_TIME),
+        STUDY_TIME,
         "Card conquered",
         "A card you forgot 4 times now stays with you for weeks.",
         &json!({}),
@@ -1091,7 +1091,7 @@ async fn examples_match_the_handlers() {
 
     // Undo after a second send, a minute later, takes back that send alone: Friend's row
     // goes, Ana's stays.
-    crate::app::fix_now_ms(Some(NOW_MS + 60_000));
+    f.clock.set(STUDY_TIME + 60_000);
     let to_friend = f
         .call(
             "POST",
@@ -1109,7 +1109,7 @@ async fn examples_match_the_handlers() {
         f.call("DELETE", &undo_send, Some("hill-secret"), Value::Null)
             .await,
     ));
-    crate::app::fix_now_ms(Some(NOW_MS));
+    f.clock.set(STUDY_TIME);
     f.remember_links();
 
     // Cerro passes 10 hours of study; the worker's moment for Bluma reaches the inbox.
@@ -1118,7 +1118,7 @@ async fn examples_match_the_handlers() {
         "/api/reviews/cerro",
         Some("cerro-secret"),
         json!({
-            "reviews": [{"id": NOW_MS - 60_000, "cid": 9_000, "last_ivl": 1, "ivl": 3, "time_ms": 36_000_000, "kind": 1, "ease": 3}],
+            "reviews": [{"id": STUDY_TIME - 60_000, "cid": 9_000, "last_ivl": 1, "ivl": 3, "time_ms": 36_000_000, "kind": 1, "ease": 3}],
             "clock": {"offset_west_min": 0, "rollover_hour": 4}
         }),
     )
@@ -1132,7 +1132,7 @@ async fn examples_match_the_handlers() {
                 "cerro",
                 &joined,
                 profile.day,
-                NOW_MS,
+                STUDY_TIME,
                 false,
                 true,
                 &crate::wins::stats(&profile),
@@ -1216,7 +1216,7 @@ async fn examples_match_the_handlers() {
         let (name, moment) = match kind {
             ExampleMoment::Notification => {
                 let store = extra.app.store.lock().unwrap();
-                let at = NOW_MS - 10 * crate::game::DAY_MS;
+                let at = STUDY_TIME - 10 * crate::game::DAY_MS;
                 let id = crate::notifications::insert_notification(
                     &store.conn,
                     &crate::notifications::Outgoing {
@@ -1363,14 +1363,14 @@ async fn examples_match_the_handlers() {
     let lite = Fixture::new();
     let secs = |ms: i64| ms / 1000;
     let clock = json!({"offset_west_min": 0, "rollover_hour": 4});
-    let today = Clock::default().day(NOW_MS);
+    let today = Clock::default().day(STUDY_TIME);
     lite.call(
         "POST",
         "/api/observations/cerro",
         Some("cerro-secret"),
-        json!({"clock": clock, "read_at_ms": NOW_MS - 900_000, "cards": [
+        json!({"clock": clock, "read_at_ms": STUDY_TIME - 900_000, "cards": [
             {"cid": 1_700_000_000_001i64, "reps": 4, "type": 2, "interval": 9,
-             "last_review_time_secs": secs(NOW_MS - 9 * 86_400_000)}
+             "last_review_time_secs": secs(STUDY_TIME - 9 * 86_400_000)}
         ]}),
     )
     .await;
@@ -1380,11 +1380,11 @@ async fn examples_match_the_handlers() {
             "POST",
             "/api/observations/cerro",
             Some("cerro-secret"),
-            json!({"clock": clock, "read_at_ms": NOW_MS - 60_000, "cards": [
+            json!({"clock": clock, "read_at_ms": STUDY_TIME - 60_000, "cards": [
                 {"cid": 1_700_000_000_001i64, "reps": 5, "type": 2, "interval": 21,
-                 "last_review_time_secs": secs(NOW_MS - 300_000)},
+                 "last_review_time_secs": secs(STUDY_TIME - 300_000)},
                 {"cid": 1_700_000_000_002i64, "reps": 2, "type": 1, "interval": 0,
-                 "last_review_time_secs": secs(NOW_MS - 240_000)}
+                 "last_review_time_secs": secs(STUDY_TIME - 240_000)}
             ], "days": [{"day": today, "cards": 3}]}),
         )
         .await,
@@ -1414,7 +1414,6 @@ async fn examples_match_the_handlers() {
             stale.push(format!("docs/api/examples/{name}.json"));
         }
     }
-    crate::app::fix_now_ms(None);
     drop(f.app);
     std::fs::remove_dir_all(&f.path).unwrap();
     assert!(

@@ -394,8 +394,7 @@ mod tests {
     #[test]
     fn progress_and_the_moment_follow_the_mode() {
         // Keep the fixture's last ten minutes within one study day.
-        let study_time = 1_793_183_400_000;
-        crate::app::fix_now_ms(Some(study_time));
+        let _clock = FixedClock::at(STUDY_TIME);
 
         let (store, path) = crate::test_support::temporary_store();
         let mut profile = game::compute_with_history(
@@ -443,7 +442,6 @@ mod tests {
             "a reported reach counts for its own day"
         );
         cleanup(store, path);
-        crate::app::fix_now_ms(None);
     }
 
     #[test]

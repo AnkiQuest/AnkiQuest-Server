@@ -111,7 +111,6 @@ pub(crate) async fn mark(State(app): State<Arc<App>>, request: Request, next: Ne
 
 #[cfg(test)]
 mod tests {
-    use crate::app::fix_now_ms;
     use crate::test_support::*;
     use axum::body::Body;
     use axum::http::Request;
@@ -331,7 +330,7 @@ mod tests {
         }
         // Reviews count toward a goal from its start, so the clock moves on after creating it.
         let start = now_ms();
-        fix_now_ms(Some(start));
+        let clock = FixedClock::at(start);
         let goal = json!({"title": "Together", "kind": "reviews", "cooperative": true,
             "target": 100, "duration_days": 7, "recipients": ["ana"]});
         let (_, status, answer) = ask(
@@ -348,7 +347,7 @@ mod tests {
         let path_accept = format!("/api/community/challenges/ana/{id}");
         let (_, status, answer) = ask(&app, "POST", &path_accept, Some(&ana), accept).await;
         assert_eq!(status, StatusCode::OK, "{answer}");
-        fix_now_ms(Some(start + 120_000));
+        clock.set(start + 120_000);
         study(&app, "alice", "alice-token", 5).await;
 
         let progress = |list: &Value| {
@@ -374,7 +373,6 @@ mod tests {
         assert!(list.get("locked").is_none());
         assert_eq!(progress(&list), (6, 5));
         cleanup(app, path);
-        fix_now_ms(None);
     }
 
     #[tokio::test]
