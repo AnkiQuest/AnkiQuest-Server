@@ -664,6 +664,7 @@ mod tests {
             cid: 1,
             last_ivl: 0,
             ivl: Some(1),
+            ease: None,
             time_ms: 1_000,
             kind: 0,
         }
@@ -674,6 +675,7 @@ mod tests {
             user.into(),
             crate::app::Player {
                 reviews: Arc::new(at.iter().copied().map(review).collect()),
+                observed: Default::default(),
                 clock: Clock::default(),
                 clock_history: ClockHistory::default(),
                 freeze_policy: FreezePolicy::default(),

@@ -30,7 +30,8 @@ import {escape} from "./common";
     if (endsAt > 0 && endsAt <= Date.now()) return "review";
     if (profile?.streak_state === "protected" && !((profile?.today?.reviews ?? 0) > 0)) return "freeze";
     if (profile?.quests?.length && profile.quests.every(q => q.done === true)) return "celebrate";
-    if (profile?.streak_state === "studied" && (profile?.today?.reviews ?? 0) > 0) return "streak";
+    const counted = profile?.streak_state === "studied" || profile?.streak_state === "unverified";
+    if (counted && (profile?.today?.reviews ?? 0) > 0) return "streak";
     return "review";
   }
   // While cards are due Aki shows only the pose, as on Android and Desktop.

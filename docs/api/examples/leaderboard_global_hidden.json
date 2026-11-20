@@ -6,7 +6,8 @@
     "rank": 1,
     "streak": 12,
     "user": "hill",
-    "xp": 246
+    "xp": 246,
+    "xp_source": "exact"
   },
   {
     "display": "Cerro",
@@ -15,7 +16,8 @@
     "rank": 2,
     "streak": 1,
     "user": "cerro",
-    "xp": 31
+    "xp": 31,
+    "xp_source": "exact"
   },
   {
     "day_ends_at": 1793246400000,
@@ -41,6 +43,7 @@
     "user": "ana",
     "week_xp": 20,
     "xp": 20,
+    "xp_source": "exact",
     "xp_total": 20
   }
 ]

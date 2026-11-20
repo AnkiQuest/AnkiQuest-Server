@@ -23,6 +23,7 @@
     "user": "hill",
     "week_xp": 246,
     "xp": 107,
+    "xp_source": "exact",
     "xp_total": 713
   },
   {
@@ -32,6 +33,7 @@
     "rank": 2,
     "streak": 1,
     "user": "ana",
-    "xp": 20
+    "xp": 20,
+    "xp_source": "exact"
   }
 ]

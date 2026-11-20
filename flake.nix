@@ -374,12 +374,7 @@
           };
         };
 
-        # The state directory belongs to the service's dynamic user, so writing a
-        # message by hand needs root: sudo ankiquest-message aldanita "well done".
         environment.systemPackages = [
-          (pkgs.writeShellScriptBin "ankiquest-message" ''
-            exec ${lib.getExe cfg.package} ${configFile} message "$@"
-          '')
           # The state belongs to the service's dynamic user, so run as it. Commands that
           # change players back the database up to /var/backups/ankiquest first: the
           # dynamic user may write there during the command, and root owns it afterwards.

@@ -10,6 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(crate) struct Player {
     pub(crate) reviews: Arc<Vec<Review>>,
+    /// Study a client observed without the review log; see [`game::Observed`].
+    pub(crate) observed: Arc<game::Observed>,
     pub(crate) clock: Clock,
     /// Every clock they have kept, so old reviews keep the days they fell in.
     pub(crate) clock_history: ClockHistory,
@@ -99,6 +101,28 @@ impl App {
         Ok(changed)
     }
 
+    /// Rereads `user`'s observed study into the cached player after an observation upload.
+    /// Returns whether it or the player's clock changed.
+    pub(crate) fn apply_observed(&self, store: &Store, user: &str) -> Result<bool, Error> {
+        let observed = crate::observations::load(&store.conn, user)?;
+        let clock = store.clock(user)?;
+        let clock_history = store.clock_history(user)?;
+        let mut players = self.players.write().unwrap();
+        let Some(player) = players.get_mut(user) else {
+            drop(players);
+            self.reload_player(store, user)?;
+            return Ok(true);
+        };
+        let changed = *player.observed != observed || clock_history != player.clock_history;
+        player.observed = Arc::new(observed);
+        player.clock = clock;
+        player.clock_history = clock_history;
+        if changed {
+            player.revision = next_revision();
+        }
+        Ok(changed)
+    }
+
     pub(crate) fn recipient(&self, user: String) -> decks::Recipient {
         decks::Recipient {
             display: self.display(&user),
@@ -162,10 +186,11 @@ impl App {
         fresh.sort_by_key(|r| r.id);
         fresh.dedup_by_key(|r| r.id);
         let merged = [player.reviews.as_slice(), &fresh].concat();
-        Some(game::compute_with_history(
+        Some(game::compute_observed(
             user,
             &self.display(user),
             &merged,
+            &player.observed,
             &player.clock_history,
             &self.week,
             now_ms(),
@@ -197,10 +222,11 @@ impl App {
             .reviews
             .last()
             .is_some_and(|r| r.id > now - 3_600_000);
-        let mut profile = game::compute_with_history(
+        let mut profile = game::compute_observed(
             user,
             &self.display(user),
             &player.reviews,
+            &player.observed,
             &player.clock_history,
             &self.week,
             now,
@@ -334,7 +360,7 @@ pub(crate) fn mark_events_seen(store: &Store, user: &str, profile: &Profile) -> 
 }
 
 /// `old` (sorted by id) with an upload applied as [`Store::upsert`] applies it: new reviews
-/// are added, a resent review only fills in a missing interval, and deleted ids go.
+/// are added, a resent review only fills in a missing interval and button, and deleted ids go.
 /// `None` when nothing changes.
 fn merge_upload(old: &[Review], new: &[Review], deleted: &[i64]) -> Option<Vec<Review>> {
     if new.is_empty() && deleted.is_empty() {
@@ -346,6 +372,7 @@ fn merge_upload(old: &[Review], new: &[Review], deleted: &[i64]) -> Option<Vec<R
         let same = later.id == first.id;
         if same {
             first.ivl = first.ivl.or(later.ivl);
+            first.ease = first.ease.or(later.ease);
         }
         same
     });
@@ -357,6 +384,7 @@ fn merge_upload(old: &[Review], new: &[Review], deleted: &[i64]) -> Option<Vec<R
             (Some(a), Some(b)) if a.id == b.id => {
                 let review = Review {
                     ivl: a.ivl.or(b.ivl),
+                    ease: a.ease.or(b.ease),
                     ..**a
                 };
                 kept.next();
@@ -378,6 +406,7 @@ fn merge_upload(old: &[Review], new: &[Review], deleted: &[i64]) -> Option<Vec<R
 pub(crate) fn load_player(store: &Store, user: &str) -> Result<Player, Error> {
     Ok(Player {
         reviews: Arc::new(store.reviews(user)?),
+        observed: Arc::new(crate::observations::load(&store.conn, user)?),
         clock: store.clock(user)?,
         clock_history: store.clock_history(user)?,
         freeze_policy: store.freeze_policy(user)?,
@@ -397,6 +426,7 @@ mod tests {
             cid: id,
             last_ivl: 1,
             ivl,
+            ease: None,
             time_ms: 4000,
             kind: 1,
         };
@@ -428,6 +458,41 @@ mod tests {
         ));
         assert!(upload(&[], &[3]));
         assert!(!upload(&[], &[9]));
+        cleanup(app, path);
+    }
+
+    #[test]
+    fn a_resend_fills_in_the_button_in_the_cached_player() {
+        let (app, path) = fixture();
+        let review = |id, ease| Review {
+            id,
+            cid: id,
+            last_ivl: 1,
+            ivl: Some(2),
+            ease,
+            time_ms: 4000,
+            kind: 1,
+        };
+        let upload = |reviews: &[Review]| {
+            let mut store = app.store.lock().unwrap();
+            store
+                .upsert("cerro", reviews, &[], Clock::default())
+                .unwrap();
+            app.apply_upload(&store, "cerro", reviews, &[]).unwrap();
+            let cached = app.players.read().unwrap()["cerro"].reviews.clone();
+            assert_eq!(*cached, store.reviews("cerro").unwrap());
+            cached
+        };
+
+        // An older client's rows have no button; a newer client's resend fills it in.
+        upload(&[review(1, None), review(2, Some(1))]);
+        let cached = upload(&[review(1, Some(3)), review(2, Some(3))]);
+        assert_eq!(cached[0].ease, Some(3), "a missing button is filled in");
+        assert_eq!(cached[1].ease, Some(1), "a known button is kept");
+
+        // The same row twice in one upload keeps the button either copy has.
+        let cached = upload(&[review(4, None), review(4, Some(2))]);
+        assert_eq!(cached[2].ease, Some(2));
         cleanup(app, path);
     }
 

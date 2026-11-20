@@ -30,11 +30,22 @@ const scaffold = html.match(/<body\b[^>]*>([\s\S]*?)<script>/)![1];
       assert(states[1]!.label.includes(locale==='es-ES'?'Aún no ha estudiado':'Not studied yet'));
       assert(states[2]!.label.includes(locale==='es-ES'?'Racha protegida':'Streak protected'));
       assert(states[2]!.label.includes(locale==='es-ES'?'Aún no ha estudiado':'Not studied yet'));
+      // A day kept by observed answers (AnkiQuest Lite) reads as studied, with the time unknown,
+      // and XP that includes them is marked.
+      await page.evaluate(() => {
+        const row = {user:'lite',display:'Lite',xp:30,level:1,streak:4,today_reviews:3,streak_state:'unverified',day_ends_at:Date.now()+3600000,streak_minutes:10,today_minutes:0};
+        app.innerHTML = board([{...row,xp_source:'observed'},{...row,user:'exact',streak_state:'studied',xp_source:'exact'}],'me');
+      });
+      const lite = await page.locator('.board .streak').evaluateAll((elements: HTMLElement[]) => elements.map(element => ({state:element.dataset.streakState,label:element.getAttribute('aria-label')!})));
+      assert.deepEqual(lite.map(item=>item.state), ['studied','studied']);
+      assert(lite[0]!.label.includes(locale==='es-ES'?'Estudió hoy · tiempo desconocido':'Studied today · time not known'));
+      assert.deepEqual(await page.locator('.board .observed-xp').allTextContents(), [locale==='es-ES'?'Observado':'Observed']);
+      checks++;
       // Right after the weekly reset, a player whose day began before it still adds to last week.
       await page.evaluate(() => {
         const row = {user:'west',display:'West',xp:0,level:1,streak:0,today_reviews:3,streak_state:'pending',day_ends_at:Date.now()+3600000};
         app.innerHTML = board([{...row,xp:5},{...row,user:'east',closing_xp:1234},{...row,user:'stale',closing_xp:9,day_ends_at:Date.now()-1000}],'me')
-          + closingWeek({xp:1234,ends_at:Date.now()+3600000}) + closingWeek({xp:5,ends_at:Date.now()-1000}) + closingWeek(undefined);
+          + weekNotice({xp:1234,ends_at:Date.now()+3600000},undefined) + weekNotice({xp:5,ends_at:Date.now()-1000},undefined) + weekNotice(undefined,undefined);
       });
       const closing = await page.locator('.board .closing-xp').allTextContents();
       assert.equal(closing.length,1);
@@ -47,7 +58,7 @@ const scaffold = html.match(/<body\b[^>]*>([\s\S]*?)<script>/)![1];
         const row = {user:'east',display:'East',xp:0,level:1,streak:0,today_reviews:3,streak_state:'pending',day_ends_at:Date.now()+3600000};
         weekEnds = Date.now()+3600000;
         app.innerHTML = board([{...row,next_xp:1234},{...row,user:'west',xp:5}],'me')
-          + nextWeek({xp:1234,starts_at:Date.now()+3600000}) + nextWeek({xp:5,starts_at:Date.now()-1000}) + nextWeek(undefined);
+          + weekNotice(undefined,{xp:1234,starts_at:Date.now()+3600000}) + weekNotice(undefined,{xp:5,starts_at:Date.now()-1000}) + weekNotice(undefined,undefined);
       });
       const next = await page.locator('.board .next-xp').allTextContents();
       assert.equal(next.length,1);
@@ -87,10 +98,11 @@ const scaffold = html.match(/<body\b[^>]*>([\s\S]*?)<script>/)![1];
       // The heatmap colours each day by the server's verdict, and an older server's cells as before.
       await page.evaluate(() => {
         const day = (date: string, extra: object) => ({date,reviews:12,xp:120,frozen:false,minutes:12,streak_minutes:10,...extra});
-        app.innerHTML = `<div class="heat">${heat([day('2026-11-02',{state:'met'}),day('2026-11-03',{state:'short',minutes:6}),day('2026-11-04',{state:'frozen',frozen:true}),day('2026-11-05',{state:'skipped',frozen:true}),day('2026-11-06',{state:'none',reviews:0,minutes:0}),{date:'2026-11-07',reviews:3,xp:30,frozen:false},{date:'2026-11-08',reviews:3,xp:30,frozen:true}])}</div>`;
+        app.innerHTML = `<div class="heat">${heat([day('2026-11-02',{state:'met'}),day('2026-11-03',{state:'short',minutes:6}),day('2026-11-04',{state:'frozen',frozen:true}),day('2026-11-05',{state:'skipped',frozen:true}),day('2026-11-06',{state:'none',reviews:0,minutes:0}),{date:'2026-11-07',reviews:3,xp:30,frozen:false},{date:'2026-11-08',reviews:3,xp:30,frozen:true},day('2026-11-09',{state:'unverified',minutes:0})])}</div>`;
       });
       const cells = await page.locator('.heat i:not(.pad)').evaluateAll((elements: HTMLElement[]) => elements.map(element => [element.className, element.title, getComputedStyle(element).boxShadow]));
-      assert.deepEqual(cells.map(cell => cell[0]), ['l4','short','frozen','frozen','l0','l1','frozen']);
+      assert.deepEqual(cells.map(cell => cell[0]), ['l4','short','frozen','frozen','l0','l1','frozen','l4']);
+      assert.match(cells[7]![1]!, locale==='es-ES' ? /Tiempo desconocido/ : /Time not known/);
       assert.match(cells[1]![1]!, locale==='es-ES' ? /6 de 10 minutos · Por debajo del mínimo para la racha/ : /6 of 10 minutes · Short of the streak minimum/);
       assert.notEqual(cells[1]![2], 'none');
       checks++;

@@ -8,7 +8,7 @@ these additions preserve bearer authentication and the existing notification arr
 `GET /api/capabilities` needs no sign-in, also on a private site, and may be cached for five minutes (`Cache-Control: max-age=300`). It answers what this server supports, so a client can turn a feature on when the server has it instead of waiting for a deploy:
 
 ```json
-{ "version": 1, "features": ["activity", "app_sign_in", "companion_art", "companion_milestones", "companion_unlocks", "cookie_session", "deck_share", "devices", "global_leaderboard_hide", "goal_backlog_days", "mute", "reactions", "review_offsets", "settings_sync", "share_cards", "share_moments", "share_undo_send", "upload_first", "wins"], "public_url": "https://anki.example.test" }
+{ "version": 1, "features": ["activity", "app_sign_in", "companion_art", "companion_milestones", "companion_unlocks", "cookie_session", "countdowns", "deck_share", "devices", "global_leaderboard_hide", "goal_backlog_days", "group_invites", "messages", "mute", "observed_reviews", "reactions", "review_ease", "review_offsets", "settings_sync", "share_cards", "share_moments", "share_undo_send", "upload_first", "wins"], "public_url": "https://anki.example.test" }
 ```
 
 `public_url` is the server's main address, without a trailing slash, and is present only when the server has `public_url` configured. A client that saved another address for the same server (an old address that proxies to it) may move to this one: it checks that its saved token works there with one signed-in request that needs it, such as `GET /api/devices/{user}` (the profile also answers without a token), and only then saves the new address and moves anything it keeps per address. Clients only move to an `https` address, keep the saved one when the check fails or they are offline, and ignore the field otherwise.
@@ -20,13 +20,18 @@ these additions preserve bearer authentication and the existing notification arr
 | `companion_art` | the inbox leaves out a companion's unlock moment unless the request names that companion in `X-AnkiQuest-Companion-Art` (below, study companion) |
 | `companion_milestones` | the server grants companions at milestones and answers `progress` in `GET /api/unlocks/{user}`; Ankilope is locked too (below, study companion) |
 | `companion_unlocks` | `/api/unlocks/{user}` and the companion `cow` (below, study companion) |
+| `countdowns` | the synced setting `countdowns`, a player's events and exams (below, synced settings). Older servers keep it as an unknown key only up to 1024 bytes |
 | `cookie_session` | the web dashboard works with the session cookie alone when the native app hands it only `{user}`, no token |
 | `deck_share` | telling chosen friends about a deck just finished, `POST /api/decks/{user}/share` (see [sharing.md](sharing.md)) |
 | `devices` | password change and the device list and sign-out (`/api/devices/{user}`, see `docs/server.md`) |
 | `global_leaderboard_hide` | private Global leaderboard hides and undo at `/api/leaderboard/hidden/{viewer}` (below) |
 | `goal_backlog_days` | the `backlog` goal clears the backlog in `value` days, with `since`, `chosen` and `restart` (see [sharing.md](sharing.md)) |
+| `group_invites` | a group's owner invites a player with `POST /api/social/{user}` `{"action": "invite", "group", "user"}`; the invitee answers with `accept_invite` or `decline_invite` (below, friends and groups for apps) |
+| `messages` | sending a friend a message, `POST /api/messages/{user}` (below, messages between friends) |
 | `mute` | muting a person, `POST /api/social/{user}` `{ "action": "mute" \| "unmute", "user" }`; `muted` in the social overview (see [community.md](community.md)) |
+| `observed_reviews` | observed study from AnkiQuest Lite, `POST /api/observations/{user}` (below, observed study); `unverified` verdicts, `observed` counts and `xp_source` on boards |
 | `reactions` | cheering a friend's share, `POST /api/react/{user}` |
+| `review_ease` | the server stores the button of each review row (`ease`) and fills it in on a resend of a row it has without one (see "review rows"). Clients resend their whole history once to a server that names it, so it can correct the reviews it stored without the button |
 | `review_offsets` | an uploaded review row may carry `offset_west_min`, the device's UTC offset when the review was made, and the server dates time-zone changes from it (see `docs/server.md`, "getting reviews in"). Older servers ignore the field, so sending it is harmless |
 | `settings_sync` | player preferences kept the same on every device, `/api/settings/{user}` (below) |
 | `share_cards` | server-drawn cards and public pages under `/w/` |
@@ -34,6 +39,7 @@ these additions preserve bearer authentication and the existing notification arr
 | `share_notification` | older owned celebrations and recaps without a saved win can use the moment recipient picker |
 | `share_deck_moment` | an explicitly shared deck completion can use the moment recipient picker and be saved as a win |
 | `share_undo_send` | `DELETE /api/share/{user}/{win}?until={undo_until}` takes back the one send that answered that `undo_until` (see [sharing.md](sharing.md)). Older servers ignore `until` and take back every send of that win from the last day |
+| `two_factor` | password sign-in may answer `"second_factor": true` and accepts `code`; `/api/two-factor/{user}` turns two-factor authentication on and off (below, two-factor authentication) |
 | `upload_first` | other players' study waits for the caller's first uploaded review; locked answers carry `X-Ankiquest-Locked` (below, seeing other players) |
 | `wins` | wins, sharing policies and `{ "win", "to" }` shares (see [sharing.md](sharing.md)) |
 
@@ -130,6 +136,33 @@ Clients keep, for each key they have, the time of the last local change (`0` for
 
 **Sync settings** (default on) is a device setting, never synced. While it is off a client neither sends nor applies synced settings; it still records the time of each local change, so turning it on again merges by the same rule. Clients only sync with a server that lists `settings_sync`.
 
+### countdowns
+
+The synced setting `countdowns` is the player's list of events and exams, sent and merged as one value: a change on one device replaces the whole list on the others, so two devices editing the list at the same time keep the later edit only. Each event is `{"name", "date", "deck"}`: a name (not blank, at most 60 code points), a date `YYYY-MM-DD`, and the full name of an Anki deck to finish by then (`Spanish::A1`, at most 200 code points) or `null`. A player keeps at most 20 events. The limits are the key's entry in [`tests/fixtures/synced_settings.json`](../tests/fixtures/synced_settings.json); a list that breaks them, has another field, or a date that does not exist is refused with `400`. Clients send `countdowns` only to a server that lists `countdowns`: an older server would refuse a list over 1024 bytes. Example: [settings_countdowns.json](api/examples/settings_countdowns.json).
+
+Countdowns are private: only the player's own token reads them, they never appear on profiles, boards or friends' pages, and they are part of the data download. The server does not interpret them. Both clients show the nearest event that is not over ("Spanish exam in 12 days") and, when a deck is linked, the cards a day needed to finish it ("~25 cards a day to finish Spanish › A1 by then"), by the cases in [`tests/fixtures/countdowns.json`](../tests/fixtures/countdowns.json): days counted from the Anki day (the collection's day start hour), the nearest event, the list order, the Anki search for the cards left and the cards a day.
+
+## two-factor authentication
+
+An account with a password can turn on two-factor authentication: a code from an authenticator app (TOTP, RFC 6238: SHA-1, 6 digits, 30-second steps, one step of drift either way) or one of ten single-use recovery codes. It is optional, and it guards password sign-in only: signing in with Google, GitHub or GitLab relies on that provider's own second factor. Device tokens issued before it was turned on keep working.
+
+**Sign-in.** `POST /api/accounts/tokens` and `POST /auth/session` `{"user", "password"}` answer as before for an account without it. For an account with it, a right password without a code answers `401` with `{"error": "Enter the code from your authenticator app.", "second_factor": true}` (`sign_in_second_factor.json`). The client then asks for the code and sends the same request again with `"code"`: six digits, or a recovery code (case, spaces and dashes do not matter). A wrong or reused code answers `401` with `"second_factor": true` and `"error": "That code is not right."`. Each code works once. After five wrong codes in 15 minutes the account answers `429` with `"second_factor": true` for the rest of that time, from any address; the per-address limit on wrong passwords applies as well. A wrong password never says `second_factor`.
+
+Send `code` only after the server asked for it: servers without `two_factor` refuse unknown fields with `400`. Clients that do not know `second_factor` show the `error` message.
+
+**Settings.** With the device token or a member session:
+
+| request | answers |
+|---|---|
+| `GET /api/two-factor/{user}` | `available` (an account with a password), `state` (`off`, `pending`, `on`), `recovery_codes_left` (`two_factor.json`) |
+| `POST /api/two-factor/{user}` `{"action": "begin"}` | the status with `secret` (base32) and `otpauth_uri`; replaces a secret not confirmed yet (`two_factor_begin.json`) |
+| `GET /api/two-factor/{user}/qr.svg` | the pending `otpauth_uri` as a QR code, `image/svg+xml`; `404` when nothing is pending |
+| `POST /api/two-factor/{user}` `{"action": "enable", "password", "code"}` | the status with `recovery_codes`, shown this once; `code` must come from the pending secret (`two_factor_enable.json`) |
+| `POST /api/two-factor/{user}` `{"action": "recovery_codes", "password", "code"}` | the status with ten new `recovery_codes`, replacing the old ones |
+| `POST /api/two-factor/{user}` `{"action": "disable", "password", "code"}` | the status; `code` may be a recovery code (`two_factor_disable.json`) |
+
+A wrong password answers `403` "That password is not right.", a wrong code `403` "That code is not right.", an account without a password `409`. The apps link to Settings on the website to set it up.
+
 ## browser identity
 
 `POST /auth/session` still returns `204` with the `ankiquest_session` cookie. a valid `Authorization: Bearer <member-token>` establishes that member's session. browser JSON `{ "password": "..." }` accepts either the shared site password or a member token and requires `X-Ankiquest-CSRF: 1`. a shared-password session can read shared pages but has no personal permissions. if a secret is both the shared password and a member token, password login remains read-only. a token configured for multiple members cannot implicitly select a browser owner; existing explicit bearer requests retain their previous per-user behavior.
@@ -188,7 +221,7 @@ both timestamp fields are Unix **seconds**; challenge `start_at` and `end_at` re
 
 Own moments wait until studying stops and survive an account switch without replaying dismissed keys. Clients check `kind` as well as `moment` and fold the session recap into the same card. Their topic priority is secured, streak, level, rank, achievement, record, leech, conquered, goal, quest, then session; newer moments come first within a priority. Quiet rows other than the daily secured cue only add to the badge.
 
-counts cover all items within the selected window, independently of pagination, push state, and any Android delivery cursor. `unread_count` counts rows with no read timestamp. `action_count` counts still-pending challenge invitations whose challenge is neither cancelled nor past its deadline. reading an invitation does not accept it. a 30-day view counts its own 30-day window; use the default 90-day view for the full retained inbox. follow `next_before` until null to load more.
+counts cover all items within the selected window, independently of pagination, push state, and any Android delivery cursor. `unread_count` counts rows with no read timestamp. `action_count` counts still-pending challenge invitations whose challenge is neither cancelled nor past its deadline, and unanswered group invitations. reading an invitation does not accept it. a 30-day view counts its own 30-day window; use the default 90-day view for the full retained inbox. follow `next_before` until null to load more.
 
 `attention` contains up to three still-pending invitations independently of the displayed page, so the all-activity view can show them first. `latest_id` is the newest retained inbox ID in the window, independent of filters and pagination; use it as the cutoff for marking everything currently known read. Neither field is a cursor for announcing historical reminders.
 
@@ -204,6 +237,24 @@ new event kinds are `challenge_invite`, `challenge_accepted`, and `challenge_com
 
 repeated successful accept, decline, leave, and creator cancel operations are idempotent. accept retries never reset `joined_at`. accepting or declining an invitation also marks that invitation read. acting as a nonmember is forbidden; all challenge endpoints still require the URL owner's credential. clients should reload challenge details before presenting available actions, since Activity can outlive an invitation, membership, or the challenge deadline.
 
+### the community page
+
+`/community` opens on **Friends**: invitations first, then current goals, with past goals folded away. a new goal opens in a dialog that suggests three study days per person over seven days. **Activity** lists the inbox above, **History** the overview, calendar, trophies, records and year review, and **Reminders** the reminder preferences. a personal target asks each accepted member to reach it alone; a shared total adds up the accepted members' study. only study after accepting counts, and streak freezes are not study days.
+
+apps can link straight to a view. every route also works with `?embed=1` before the hash:
+
+| destination | route |
+|---|---|
+| friends and invitations | `/community#challenges` |
+| one goal | `/community#challenge-<id>` |
+| activity | `/community#activity` |
+| reminder preferences | `/community#reminders` |
+| history overview | `/community#overview` |
+| calendar, trophies, records, year review | `/community#calendar`, `#trophies`, `#records`, `#year` |
+| player profile | `/week#<user>` |
+
+an unknown view opens Friends. a goal the player cannot see, or one that no longer exists, shows a message instead of another player's data. `tests/mobile_web.test.ts` (part of `npm run test:web`) checks these routes, the member session and the goal and Activity flows in a browser against a built server.
+
 ### friend goals for apps
 
 `GET /api/community/challenges/{user}` answers `{ "challenges", "recipients", "weekly_suggestion" }`, newest goal first. `challenges` holds every open goal the player is invited to or has joined, and the latest 100 that are over; a goal the player declined or left is not listed. each goal has `id`, `title`, `kind` (`study_days` or `reviews`), `cooperative`, `creator`, `start_at` and `end_at` (Unix milliseconds), `target`, `progress` (the members' sum), `status`, `weekly`, `started`, `start_when_ready`, and `members`, each with `user`, `display`, `status` (`invited`, `accepted`, `declined` or `left`) and `progress`. a goal's `status` is `active`, `upcoming`, `waiting` (not `started`: it starts once everyone accepts), `complete` (reached, still open until `end_at`), `ended`, `cancelled` (ended early by its creator) or `declined` (a goal waiting for everyone that an invitee declined). an invitation is a goal whose member entry for the player is `invited`. a cooperative goal counts `progress` against `target`, an individual one each accepted member's own. `recipients` are the people the player can invite, as `{ "user", "display" }`. `weekly_suggestion` is null or this week's suggested friend: `week_start`, `expires_at`, `friend`, `target`, `duration_days`, `dismissed` and `challenge_id`, the goal its invitation created.
@@ -212,7 +263,7 @@ repeated successful accept, decline, leave, and creator cancel operations are id
 
 ### friends and groups for apps
 
-`GET /api/social/{user}` answers `{ "friends", "incoming", "outgoing", "muted", "groups", "public" }`. `friends`, `incoming` (requests waiting for the player), `outgoing` (the player's requests waiting for an answer) and `muted` are people as `{ "user", "display" }`, by display name. each group has `id`, `name`, `owner` (whether the player owns it), `invite` (its invite code, only for the owner, otherwise null) and `members`. Anyone may open a public profile, which appears on the global board unless its player opts out. Profiles are public until the player sends `visibility` with `"public": false`. Players with private profiles can opt in to the global leaderboard. a conquest's `label` reaches viewers outside the player's friends and groups only when the player made the profile public themselves (or is a configured player who never chose), since labels written before profiles became public by default were meant for friends. a group's invite link is `/join/{invite}` on the server's site.
+`GET /api/social/{user}` answers `{ "friends", "incoming", "outgoing", "muted", "groups", "public" }`, and `invitations` when the player has any. `friends`, `incoming` (requests waiting for the player), `outgoing` (the player's requests waiting for an answer) and `muted` are people as `{ "user", "display" }`, by display name. each group has `id`, `name`, `owner` (whether the player owns it), `invite` (its invite code, only for the owner, otherwise null), `members` and, for the owner and only when there are some, `invited`: players invited who have not joined, including those who declined, until their invitation expires. `invitations` lists the groups the player is invited to, newest first, each as `{ "group", "name", "members" (the member count), "from" }` with `from` a person; invitations from people the player muted are left out. Anyone may open a public profile, which appears on the global board unless its player opts out. Profiles are public until the player sends `visibility` with `"public": false`. Players with private profiles can opt in to the global leaderboard. a conquest's `label` reaches viewers outside the player's friends and groups only when the player made the profile public themselves (or is a configured player who never chose), since labels written before profiles became public by default were meant for friends. a group's invite link is `/join/{invite}` on the server's site.
 
 `POST /api/social/{user}` takes one `{ "action", ... }` and answers the same object as the `GET`, so a client redraws from the answer:
 
@@ -224,12 +275,23 @@ repeated successful accept, decline, leave, and creator cancel operations are id
 | `create_group` | `name` | 1–40 characters; the player owns the new group |
 | `rename_group` | `group`, `name` | owner only |
 | `new_invite` | `group` | owner only; the old code stops working |
-| `join` | `invite` | the code from a `/join/{invite}` link; joining again is fine |
+| `join` | `invite` | the code from a `/join/{invite}` link; joining again is fine. Answers an invitation to that group too |
+| `invite` | `group`, `user` | owner only, since only the owner holds the invite link; the player must exist, not be a member and have a profile the owner can see. Inviting again while the invitation waits, or before a declined one expires, changes nothing |
+| `accept_invite` | `group` | joins a group the player is invited to, within the same limits as `join` |
+| `decline_invite` | `group` | the invitation leaves the player's `invitations` and stops needing an answer; declining again is fine. The owner is not told: it stays in their `invited` until it expires, and re-inviting does nothing until then |
 | `leave` | `group` | the longest-standing member inherits an owner's group; an empty group is deleted |
 | `remove` | `group`, `member` | owner only, not themselves |
 | `visibility` | `public` | |
 
-a refusal has `{ "error" }` to show: `400` for a group name, `403` for an owner action by someone else, `404` for an unknown player or invite, `409` when the player is in 20 groups, a group has 200 members, 50 requests wait or 500 people are muted. `GET /api/invites/{code}` needs no credential and answers `{ "name", "members" }` (the member count) to show before joining, or `404`. examples: `social.json`, `group_create.json`, `invite.json` and `social_change.json` in [api/examples](api/examples/README.md). friend requests and group joins send no notifications yet.
+a refusal has `{ "error" }` to show: `400` for a group name, `403` for an owner action by someone else, `404` for an unknown player or invite, `404` for an invitation that does not exist any more, `409` when the player is in 20 groups, a group has 200 members, 50 requests or 50 invitations to one group wait, 500 people are muted, or an invited player is already a member. `GET /api/invites/{code}` needs no credential and answers `{ "name", "members" }` (the member count) to show before joining, or `404`. examples: `social.json`, `group_create.json`, `invite.json`, `social_change.json`, `group_invite.json`, `social_invitation.json` and `group_invite_accept.json` in [api/examples](api/examples/README.md). friend requests and group joins send no notifications yet.
+
+An invitation puts a `group_invite` row in the invitee's activity, in the `messages` category, with `sender` (the owner) and `group` (the group's id). Its `action_required` is true, and it counts in `action_count` and `attention`, until the player accepts, declines or joins by link, which also marks it read, or until the group is deleted. Only the row of the current invitation can need an answer; rows of earlier invitations to the same group stay answered. An invitation lasts as long as its row (90 days) from when it was sent, declined or not; once it expires, the owner can invite the player again, which adds a new row. When the invitee muted the owner, the invitation is kept, so the owner sees no difference, but the invitee gets no row and it is not in their `invitations`. Apps without `group_invites` share the `/join/{invite}` link instead.
+
+### messages between friends
+
+`POST /api/messages/{user}` sends a friend a message: `{ "to": "<user>", "message": "<text>" }`, answered with `{ "sent_to": "<display name>" }`. The text is trimmed and is 1 to 200 bytes on one line, the same rule as replies. It reaches the friend's activity as a `message` row, in the `messages` category, with `sender` and the title `💬 <display name>`, is pushed like other rows, and shows in the sender's `GET /api/activity/{user}/sent`. Messages cannot be edited or taken back. Errors: `400` for the text, `401` for someone else's `{user}`, `403` when `to` is not a friend (an accepted friendship; group mates and strangers cannot be messaged), `404` for an unknown player or the player themselves, `429` after 30 messages in 24 hours from one sender. When the recipient muted the sender, the message is not delivered or pushed, but it is stored for the sender: it shows in their sent list (never read) and counts toward the 30, so the sender sees nothing different. Example: `message.json`; `activity_messages.json` shows a message and an invitation in the recipient's activity.
+
+The recipient answers any row with a `sender` with `POST /api/reply/{user}` `{ "notification": <id>, "message": "<text>" }`, answered with `{ "sent_to" }`, once per row: `404` once it is answered or when there is nobody to answer. The answer arrives as a `reply` row with `reply_to` (the row it answers) and can be answered in turn. A reply to a player who muted the replier is not delivered, but it shows in the replier's sent list like any other.
 
 ## sharing a win
 
@@ -288,7 +350,7 @@ Every answer of those paths, and of `POST /api/reviews/{user}`, carries the head
 
 the app's native leaderboard and player profiles read the same JSON as the website's `/`, `/hour` … `/all` and `/week#<user>` pages.
 
-`GET /api/leaderboard?period=hour|day|week|month|year|all` answers the players the viewer may see, ordered by `xp` in that period, then `xp_total`, then `user`. An unknown or missing `period` is `week`. Full rows have `user`, `display`, `level`, `xp` for the requested period, `period`, `periods` for every period, `xp_total`, `week_xp`, `streak`, `streak_state` and today's `today_reviews`, `today_minutes` and `streak_minutes`, valid until `day_ends_at` in milliseconds. A streak minimum of 0 means any review counts. While the player's Sunday is still running after the board switched weeks, `closing_xp` gives the XP still counting toward the week the board has just left; while their Monday has begun before the switch, `next_xp` gives the XP already counting toward the week the board switches to next. See `closing_week` and `next_week` below. Use `scope` to choose a board.
+`GET /api/leaderboard?period=hour|day|week|month|year|all` answers the players the viewer may see, ordered by `xp` in that period, then `xp_total`, then `user`. An unknown or missing `period` is `week`. Full rows have `user`, `display`, `level`, `xp` for the requested period, `xp_source` (`exact`, or `observed` when that XP includes answers observed without the review log, see observed study below), `period`, `periods` for every period, `xp_total`, `week_xp`, `streak`, `streak_state` and today's `today_reviews`, `today_minutes` and `streak_minutes`, valid until `day_ends_at` in milliseconds. A streak minimum of 0 means any review counts. While the player's Sunday is still running after the board switched weeks, `closing_xp` gives the XP still counting toward the week the board has just left; while their Monday has begun before the switch, `next_xp` gives the XP already counting toward the week the board switches to next. See `closing_week` and `next_week` below. Use `scope` to choose a board.
 
 - `friends` (or `circle`): the viewer, their friends and the members of their groups. Members get this board when they omit `scope`. Shared-password sessions get their full community standings without the global cap. Signed-out visitors get `[]` (see seeing other players, above).
 - `group` with `group=<id>` (or `group:<id>`, as on the website's board picker): the members of that group only. a group the viewer is not in, or that does not exist, is `403`; `scope=group` without a numeric `group` is `400`.
@@ -302,7 +364,7 @@ anything else is `400`. rows come only for players who have synced reviews.
 
 the viewer's own row is always there once they have synced reviews, listed or not. it carries `"me": true` and `shown`: whether other players see it on this board. with `"shown": false` the app can say "you, not shown to others". other rows have neither field.
 
-Rows for the viewer, their friends and their group mates match the circle board. For everyone outside that circle, the global board returns only `rank`, `user`, `display`, `level`, `xp` for the requested period, `period` and `streak`. Apps use `user` to fetch the profile picture at `GET /api/avatar/{user}` and to mute a player with `POST /api/social/{user}` and `{"action": "mute", "user": "<user>"}`. Muting takes that player off the viewer's global board. Public profiles remain readable at `GET /api/profile/{user}`, including their study counts, by players who have uploaded a review. A private player's opt-in applies to the global leaderboard. Strangers still get `404` from their profile, and the opt-in does not list them in records or `POST /api/rank`.
+Rows for the viewer, their friends and their group mates match the circle board. For everyone outside that circle, the global board returns only `rank`, `user`, `display`, `level`, `xp` for the requested period, `xp_source`, `period` and `streak`. Apps use `user` to fetch the profile picture at `GET /api/avatar/{user}` and to mute a player with `POST /api/social/{user}` and `{"action": "mute", "user": "<user>"}`. Muting takes that player off the viewer's global board. Public profiles remain readable at `GET /api/profile/{user}`, including their study counts, by players who have uploaded a review. A private player's opt-in applies to the global leaderboard. Strangers still get `404` from their profile, and the opt-in does not list them in records or `POST /api/rank`.
 
 On a server with `global_leaderboard_hide`, signed-in players can hide a stranger's row just for themselves. `GET /api/leaderboard/hidden/{viewer}` returns the viewer's hidden players as `{user, display}`. A player no longer visible on Global uses their username as the display label. `POST` to the same path with `{"action": "hide", "user": "<user>"}` or `{"action": "unhide", "user": "<user>"}` returns the updated list (see `leaderboard_hide.json`). Both requests must be signed in as `{viewer}`. Hiding an ineligible player returns `404`, hiding yourself returns `400`, and the limit of 500 hidden players returns `409`. Both actions are safe to repeat. The choice is private, leaves rank and XP intact, and applies only to Global, across all periods. Global records also omit the viewer's hidden and muted players, and continue to exclude private opt-ins. It doesn't mute anyone or change the Friends or Group boards.
 
@@ -312,33 +374,59 @@ the switch is `global_leaderboard` in the player's settings, beside `nudges` and
 
 The desktop Today board and native leaderboard request the selected scope and period from the server. They preserve its rank gaps after hiding, show the top five plus the player's own row on Today, and show all returned rows in the native window. Scope and period are kept per account and follow a verified server-address move. Older servers without `global_leaderboard` offer only Friends and joined groups. Avatars load in the background for visible rows, with initials while waiting; their authenticated PNG reads stay in memory and cannot redirect credentials. On servers with `global_leaderboard_hide`, a stranger's **Hide for me** action is private and reversible in **Hidden players**. Records use the same selected scope. See the [Today board](https://github.com/AnkiQuest/AnkiQuest-Desktop/blob/master/docs/screenshots/desktop-boards-light.png) and [native window](https://github.com/AnkiQuest/AnkiQuest-Desktop/blob/master/docs/screenshots/desktop-board-window.png).
 
-`GET /api/profile/{user}` answers the player's level, XP, `periods`, `records`, streak and `streak_state`, streak freezes (`stored_freezes`, `freezes_enabled`, `freeze_earned_today`), `today`, `lifetime`, daily `quests`, `achievements`, `heatmap` and `conquests`. Only the owner's own profile has `goal`. An Anki day counts toward the week of its own date on the player's clock, and `week_xp` is the XP of the week the board shows. `periods.month` and `periods.year` are the month and year of the player's current day. At most one of two fields says when the current day counts toward another week. `closing_week: { "xp", "ends_at" }` is there while the player's Sunday is still running after the board switched (UTC-12 with a 04:00 rollover, until Monday 16:00 UTC): `xp` is what counts toward the week the board has just left, today's included, and `ends_at` (ms) is when it closes for them, the start of their own Monday. Clients show it as "Last week still counting" and drop it once `ends_at` has passed. `next_week: { "xp", "starts_at" }` is there while the player's Monday has begun before the board switched (Berlin on Monday morning): `xp` is what already counts toward the next week, today's included, and `starts_at` (ms) is when the board switches to it. Clients show it as "Next week already counting" and drop it once `starts_at` has passed. A player the viewer may not see is `404`, the same as an unknown one. The owner's recent wins are `GET /api/wins/{user}` (see [sharing.md](sharing.md)).
+`GET /api/profile/{user}` answers the player's level, XP, `periods`, `xp_sources` (`exact` or `observed` for each period, as `xp_source` on boards), `records`, streak and `streak_state`, streak freezes (`stored_freezes`, `freezes_enabled`, `freeze_earned_today`), `today`, `lifetime`, daily `quests`, `achievements`, `heatmap` and `conquests`. Only the owner's own profile has `goal`. An Anki day counts toward the week of its own date on the player's clock, and `week_xp` is the XP of the week the board shows. `periods.month` and `periods.year` are the month and year of the player's current day. At most one of two fields says when the current day counts toward another week. `closing_week: { "xp", "ends_at" }` is there while the player's Sunday is still running after the board switched (UTC-12 with a 04:00 rollover, until Monday 16:00 UTC): `xp` is what counts toward the week the board has just left, today's included, and `ends_at` (ms) is when it closes for them, the start of their own Monday. Clients show it as "Last week still counting" and drop it once `ends_at` has passed. `next_week: { "xp", "starts_at" }` is there while the player's Monday has begun before the board switched (Berlin on Monday morning): `xp` is what already counts toward the next week, today's included, and `starts_at` (ms) is when the board switches to it. Clients show it as "Next week already counting" and drop it once `starts_at` has passed. A player the viewer may not see is `404`, the same as an unknown one. The owner's recent wins are `GET /api/wins/{user}` (see [sharing.md](sharing.md)).
 
 ### day verdicts
 
-The server is the only judge of a day. `streak_state` is today's verdict for the streak: `studied` (today already counts), `protected` (a freeze or grant kept yesterday and today has not counted yet) or `pending` (today has not counted yet). `today` has `starts_at` (when today began, ms), `reviews`, `time_ms` (exact review time; `minutes` rounds it down), `minutes` and `streak_minutes` (the minutes today needs; 0 when any review counts), all valid until `day_ends_at`. Each `heatmap` cell has `date`, `reviews`, `minutes`, `streak_minutes` (what that day needed), `xp`, `frozen` and `state`:
+The server is the only judge of a day. `streak_state` is today's verdict for the streak: `studied` (today already counts), `unverified` (today counts on observed answers whose review time is not known, short of the minimum; see observed study below), `protected` (a freeze or grant kept yesterday and today has not counted yet) or `pending` (today has not counted yet). `today` has `starts_at` (when today began, ms), `reviews`, `observed` (of `reviews`, those observed without the review log), `time_ms` (exact review time; `minutes` rounds it down), `minutes` and `streak_minutes` (the minutes today needs; 0 when any review counts), all valid until `day_ends_at`. Each `heatmap` cell has `date`, `reviews`, `observed`, `minutes`, `streak_minutes` (what that day needed), `xp`, `frozen` and `state`:
 
 | `state` | meaning |
 | --- | --- |
 | `met` | the day reached the streak minimum and counts toward the streak |
+| `unverified` | reviews short of the minimum, some of them observed without the review log, so their time is not known; the day counts toward the streak |
 | `short` | reviews short of the minimum; today stays `short` until it is met or ends |
 | `frozen` | a freeze or an admin's grant kept the streak through the day, reviewed or not |
 | `skipped` | moving the clock east stepped over the day; it keeps the streak like a frozen day |
 | `none` | no reviews, and nothing kept the streak |
 
-`frozen` is true for both `frozen` and `skipped`. Clients colour and word days by `state`; a day with reviews is not a study day for the streak unless it is `met`. The study history (`GET /api/study/{user}`) has the same `state` and `streak_minutes` on each day.
+`frozen` is true for both `frozen` and `skipped`. Clients colour and word days by `state`; a day with reviews is not a study day for the streak unless it is `met` or `unverified`. The study history (`GET /api/study/{user}`) has the same `state`, `observed` and `streak_minutes` on each day. Clients that predate `unverified` show such a day without a verdict; only players with observed study have them.
 
 A client may judge one thing itself: today, with reviews it holds but has not uploaded yet, so that it can show progress right after answering offline. It does so only the server's way, and shows the result as waiting for upload until the server confirms it:
 
 - a profile whose `day_ends_at` has passed says nothing about today: show today as unknown;
 - unsent reviews are those with an id after `last_review_id`; of them, only ids from `today.starts_at` up to `day_ends_at` count toward today, each with its revlog time, uncapped beyond what Anki records;
-- today is met when `streak_state` is `studied`, or when there is at least one review and `today.time_ms` plus the unsent reviews' time reaches `today.streak_minutes` minutes;
-- the streak is `streak` plus one when today becomes met and `streak_state` was not `studied`; otherwise `streak`, and while not met the state stays `streak_state`. An unsent review from an earlier day can change that day's verdict, so the streak and, while today is not met, its state are then unknown until the upload lands.
-- the day's words (`label` in the fixture) are `studied` when today is met; `unknown` when an unsent review from an earlier day leaves today open; `short` when today has reviews, even while `streak_state` is `protected`; `protected` when it is `protected` with no reviews today; otherwise `pending`. A protected streak with reviews today is short, not unstudied.
+- unsent observed answers (AnkiQuest Lite) have no time; they count toward today's reviews and `observed`, whatever their id;
+- today is met exactly when `streak_state` is `studied`, or when there is at least one review and `today.time_ms` plus the unsent reviews' time reaches `today.streak_minutes` minutes; today is met unverified when it is not met exactly but `streak_state` is `unverified` or `today.observed` plus the unsent observed answers is above 0. Either way today counts, and the state becomes `studied` or `unverified`;
+- the streak is `streak` plus one when today becomes met and `streak_state` was neither `studied` nor `unverified`; otherwise `streak`, and while not met the state stays `streak_state`. An unsent review from an earlier day can change that day's verdict, so the streak and, while today is not met, its state are then unknown until the upload lands.
+- the day's words (`label` in the fixture) are `studied` when today is met exactly; `unverified` when it is met unverified; `unknown` when an unsent review from an earlier day leaves today open; `short` when today has reviews, even while `streak_state` is `protected`; `protected` when it is `protected` with no reviews today; otherwise `pending`. A protected streak with reviews today is short, not unstudied.
 
 `tests/fixtures/day_verdicts.json` holds cases worked out by the server (`src/day_verdicts.rs`); clients test their copy of the rule against it.
 
 The desktop Today panel uses this same verdict for its streak pill, companion mood, warning and own leaderboard row. A locally met day says “Syncing” until the server confirms it; an expired day hides the old streak and daily XP. Session cards and the review heatmap name the server's historical states explicitly, including the difference between a frozen and a skipped day. A session without a known server day stays unknown instead of treating its review count as proof that the minimum was met.
+
+## observed study (AnkiQuest Lite)
+
+AnkiQuest Lite reads stock AnkiDroid through its content provider, which has no review log: it sees each card's state and Anki's `prop:rated` searches, never how long an answer took. On a server with `observed_reviews` it uploads what it read; without it the app only shows what the server has.
+
+`POST /api/observations/{user}`, signed in as `{user}`:
+
+```json
+{ "clock": { "offset_west_min": -60, "rollover_hour": 4 }, "read_at_ms": 1793182800000,
+  "cards": [{ "cid": 1700000000001, "reps": 5, "type": 2, "interval": 21, "last_review_time_secs": 1793183100 }],
+  "days": [{ "day": 20754, "cards": 3 }], "silent": false }
+```
+
+- `cards`: the state of cards answered recently (`rated:1`, or `rated:2` around the rollover), as the provider's `cards` URI gives it on AnkiDroid 2.24 and later: `reps`, `type` (0 new, 1 learning, 2 review, 3 relearning), `interval` and `last_review_time_secs` (null when the card has none). `read_at_ms` is when the client read them. At most 5000 cards.
+- `days`: for each Anki day the client counted, the distinct cards `prop:rated=-N` found (`cards:` search on 2.24+, `notes` otherwise). `day` is the study day number (`study_day` in `clients.json`). A later upload for the same day replaces the count. At most 400 days, none after tomorrow; send history once as backfill, then today.
+- `clock` and `silent` are as for `POST /api/reviews/{user}`.
+
+The server keeps the last state of each card and works out the answers since, by the rule in `tests/fixtures/observed_reviews.json` (`snapshots`): the first state of a card counts its last answer; more `reps` count that many answers (at most 50), the last at `last_review_time_secs`, the earlier ones only when the previous state was read on the same Anki day; fewer `reps` undo the newest answers; a card reset to new counts nothing; more `reps` without a later `last_review_time_secs` count nothing (the day's count covers them). Sending the same state again counts nothing, so a retry is safe. A day's count adds the cards on that day nothing else covers.
+
+Observed answers are stored apart from review rows. They earn the base XP of their kind (6 learning or relearning, 10 review, 5 more from a 21-day interval), without combo, and cards a day's count adds earn the learning rate. When review rows (fork app, desktop add-on, `sync_base`) arrive for a card on a day, they replace every observed answer to that card on that day (`merge` in the fixture), so nothing is counted twice. Observed answers have no duration: with a streak minimum above 0, a day with observed answers that the exact review time does not meet is `unverified`, and counts. They never change `last_review_id`.
+
+The answer is the same as an upload's (profile, `announced`, `feedback`), plus `observed`: `answered`, `undone`, `reset` and `undated`, counted over the upload's cards. `400` for a bad clock, a `read_at_ms` more than five minutes ahead of the server, a card answered after it was read or a day after tomorrow; `413` above the limits; `422` for an unknown card `type`. Examples: `observations.json` and `leaderboard_observed.json`.
+
+Friend goals, the monthly community competition and conquered cards count review rows only for now.
 
 ## records and study history
 
@@ -347,6 +435,10 @@ the app's native records and study history screens read the same JSON as the web
 `GET /api/records` answers seven boards, in this order: `hour`, `day`, `week`, `month` and `year` (the best rolling hour, 24 hours, 7, 30 and 365 days of XP anyone has had), then `streak` (longest streak) and `days` (days studied). Each is `{ "window", "unit", "holders" }`, `unit` being `xp` or `days`. `holders` are the top three players with anything at all, best first, each with `user`, `display`, `value`, `detail` (the reviews in that window; 0 for `streak` and `days`), `at` and `until` (ms). For a rolling window `at` is its first review and `until` its last; a streak's `at` is when it ended and `days`' when the player first studied, with `until` the same. Optional `scope` and who is included are as for `GET /api/leaderboard`. example: `records.json`.
 
 `GET /api/study/{user}?year=YYYY` is the owner's own study calendar, for the year asked or the player's current one: `{ "year", "years", "days", "last_review_at", "last_received_at", "latest_session" }`. `years` lists every year with history, newest first. `days` has one entry per Anki day from the player's first study day on (days without reviews included, with zeros), each with `date` (`YYYY-MM-DD`, following the player's cutoff), `at` (when that day began, ms), `reviews`, `time_ms`, `xp`, `new_cards`, `streak` (the streak on that day) and `frozen` (a streak freeze covered it), `streak_minutes` (what the day needed) and `state` (the server's verdict, as in the heatmap; see [day verdicts](#day-verdicts)). `last_review_at` is the newest uploaded review (ms) and `last_received_at` when reviews last arrived; either is null before the first upload. `latest_session` is null or `{ "started_at", "ended_at", "reviews", "time_ms", "new_cards" }`. Another player's history is `401` or `403`, a year outside the supported range `400`. example: `study.json`.
+
+## review rows
+
+Each row of `POST /api/reviews/{user}` and `POST /api/preview/{user}` is a revlog row answered with a button (`ease > 0`) and of type below 4: `id`, `cid`, `last_ivl` (`lastIvl`), `ivl`, `time_ms` (`time`), `kind` (`type`) and `ease`, the button pressed (1 Again, 2 Hard, 3 Good, 4 Easy). The server counts a review row as a lapse when `ease` is 1; rows without `ease` fall back to a negative `ivl` (see `docs/server.md`, "conquered cards"). `ease` is optional: older servers ignore it and older clients leave it out, so sending it needs no capability check. A resent row fills in a missing `ease` and never changes a known one. Rows stored before the server kept `ease` have none, so a client resends its whole review history once, in uploads of at most 5000 rows, to a server whose capabilities name `review_ease`, and then remembers that it did.
 
 ## community calendar, reminders and conquered cards
 

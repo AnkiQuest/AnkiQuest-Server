@@ -1,0 +1,1060 @@
+{
+  "_about": "How the server turns what AnkiQuest Lite observes in stock AnkiDroid into answers, and how exact review rows replace them. Read by src/game/observed.rs. `snapshots`: a card's state before (the last one the server kept, with when the client read it; null on first sight) and after, and the change it means; each answer's `xp` is its base rate, with no combo, since its spacing is not known. `merge`: exact rows, observed answers and days' `prop:rated` counts, the answers that count (`source` exact, observed or counted; a counted answer has no card) and each day's totals, review XP before the streak bonus and verdict under `streak_minutes`. Card `type`: 0 new, 1 learning, 2 review, 3 relearning. Answer `kind` as in the revlog: 0 learn, 1 review, 2 relearn.",
+  "snapshots": [
+    {
+      "name": "first sight of a review card counts its last answer",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "cid": 1001,
+      "before": null,
+      "after": {
+        "reps": 5,
+        "type": 2,
+        "interval": 12,
+        "last_review_time_secs": 1788955200
+      },
+      "expected": {
+        "change": "answered",
+        "answers": [
+          {
+            "cid": 1001,
+            "at": 1788955200000,
+            "kind": 1,
+            "last_ivl": 0,
+            "ivl": 12,
+            "timing": "known",
+            "xp": 10.0
+          }
+        ]
+      }
+    },
+    {
+      "name": "first sight of a learning card",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "cid": 1002,
+      "before": null,
+      "after": {
+        "reps": 1,
+        "type": 1,
+        "interval": 0,
+        "last_review_time_secs": 1788955200
+      },
+      "expected": {
+        "change": "answered",
+        "answers": [
+          {
+            "cid": 1002,
+            "at": 1788955200000,
+            "kind": 0,
+            "last_ivl": 0,
+            "ivl": null,
+            "timing": "known",
+            "xp": 6.0
+          }
+        ]
+      }
+    },
+    {
+      "name": "first sight of a relearning card",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "cid": 1003,
+      "before": null,
+      "after": {
+        "reps": 8,
+        "type": 3,
+        "interval": 2,
+        "last_review_time_secs": 1788955200
+      },
+      "expected": {
+        "change": "answered",
+        "answers": [
+          {
+            "cid": 1003,
+            "at": 1788955200000,
+            "kind": 2,
+            "last_ivl": 0,
+            "ivl": null,
+            "timing": "known",
+            "xp": 6.0
+          }
+        ]
+      }
+    },
+    {
+      "name": "a new card never answered counts nothing",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "cid": 1004,
+      "before": null,
+      "after": {
+        "reps": 0,
+        "type": 0,
+        "interval": 0,
+        "last_review_time_secs": null
+      },
+      "expected": {
+        "change": "unchanged"
+      }
+    },
+    {
+      "name": "one review answer since the last poll",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "cid": 1005,
+      "before": {
+        "reps": 5,
+        "type": 2,
+        "interval": 12,
+        "last_review_time_secs": 1787918400,
+        "read_at_ms": 1788954300000
+      },
+      "after": {
+        "reps": 6,
+        "type": 2,
+        "interval": 30,
+        "last_review_time_secs": 1788955200
+      },
+      "expected": {
+        "change": "answered",
+        "answers": [
+          {
+            "cid": 1005,
+            "at": 1788955200000,
+            "kind": 1,
+            "last_ivl": 12,
+            "ivl": 30,
+            "timing": "known",
+            "xp": 10.0
+          }
+        ]
+      }
+    },
+    {
+      "name": "a mature review earns the mature bonus",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "cid": 1006,
+      "before": {
+        "reps": 9,
+        "type": 2,
+        "interval": 25,
+        "last_review_time_secs": 1786795200,
+        "read_at_ms": 1788954300000
+      },
+      "after": {
+        "reps": 10,
+        "type": 2,
+        "interval": 60,
+        "last_review_time_secs": 1788955200
+      },
+      "expected": {
+        "change": "answered",
+        "answers": [
+          {
+            "cid": 1006,
+            "at": 1788955200000,
+            "kind": 1,
+            "last_ivl": 25,
+            "ivl": 60,
+            "timing": "known",
+            "xp": 15.0
+          }
+        ]
+      }
+    },
+    {
+      "name": "a lapse and its relearning step since the last poll",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "cid": 1007,
+      "before": {
+        "reps": 9,
+        "type": 2,
+        "interval": 25,
+        "last_review_time_secs": 1786795200,
+        "read_at_ms": 1788954300000
+      },
+      "after": {
+        "reps": 11,
+        "type": 2,
+        "interval": 3,
+        "last_review_time_secs": 1788955200
+      },
+      "expected": {
+        "change": "answered",
+        "answers": [
+          {
+            "cid": 1007,
+            "at": 1788955199999,
+            "kind": 1,
+            "last_ivl": 25,
+            "ivl": null,
+            "timing": "placed",
+            "xp": 15.0
+          },
+          {
+            "cid": 1007,
+            "at": 1788955200000,
+            "kind": 2,
+            "last_ivl": 0,
+            "ivl": 3,
+            "timing": "known",
+            "xp": 6.0
+          }
+        ]
+      }
+    },
+    {
+      "name": "a new card learned in three steps",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "cid": 1008,
+      "before": {
+        "reps": 0,
+        "type": 0,
+        "interval": 0,
+        "last_review_time_secs": null,
+        "read_at_ms": 1788954300000
+      },
+      "after": {
+        "reps": 3,
+        "type": 2,
+        "interval": 1,
+        "last_review_time_secs": 1788955200
+      },
+      "expected": {
+        "change": "answered",
+        "answers": [
+          {
+            "cid": 1008,
+            "at": 1788955199998,
+            "kind": 0,
+            "last_ivl": 0,
+            "ivl": null,
+            "timing": "placed",
+            "xp": 6.0
+          },
+          {
+            "cid": 1008,
+            "at": 1788955199999,
+            "kind": 0,
+            "last_ivl": 0,
+            "ivl": null,
+            "timing": "placed",
+            "xp": 6.0
+          },
+          {
+            "cid": 1008,
+            "at": 1788955200000,
+            "kind": 0,
+            "last_ivl": 0,
+            "ivl": 1,
+            "timing": "known",
+            "xp": 6.0
+          }
+        ]
+      }
+    },
+    {
+      "name": "the same state sent again counts nothing",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "cid": 1009,
+      "before": {
+        "reps": 6,
+        "type": 2,
+        "interval": 30,
+        "last_review_time_secs": 1788955200,
+        "read_at_ms": 1788955200000
+      },
+      "after": {
+        "reps": 6,
+        "type": 2,
+        "interval": 30,
+        "last_review_time_secs": 1788955200
+      },
+      "expected": {
+        "change": "unchanged"
+      }
+    },
+    {
+      "name": "fewer reps undo the newest answers",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "cid": 1010,
+      "before": {
+        "reps": 6,
+        "type": 2,
+        "interval": 30,
+        "last_review_time_secs": 1788955200,
+        "read_at_ms": 1788955200000
+      },
+      "after": {
+        "reps": 5,
+        "type": 2,
+        "interval": 12,
+        "last_review_time_secs": 1787918400
+      },
+      "expected": {
+        "change": "undone",
+        "count": 1
+      }
+    },
+    {
+      "name": "a card reset to new counts nothing and keeps its answers",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "cid": 1011,
+      "before": {
+        "reps": 6,
+        "type": 2,
+        "interval": 30,
+        "last_review_time_secs": 1788955200,
+        "read_at_ms": 1788955200000
+      },
+      "after": {
+        "reps": 0,
+        "type": 0,
+        "interval": 0,
+        "last_review_time_secs": 1788955200
+      },
+      "expected": {
+        "change": "reset"
+      }
+    },
+    {
+      "name": "more reps without a last review time are undated",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "cid": 1012,
+      "before": {
+        "reps": 5,
+        "type": 2,
+        "interval": 12,
+        "last_review_time_secs": null,
+        "read_at_ms": 1788954300000
+      },
+      "after": {
+        "reps": 6,
+        "type": 2,
+        "interval": 30,
+        "last_review_time_secs": null
+      },
+      "expected": {
+        "change": "undated"
+      }
+    },
+    {
+      "name": "more reps with a last review time no later than before are undated",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "cid": 1013,
+      "before": {
+        "reps": 5,
+        "type": 2,
+        "interval": 12,
+        "last_review_time_secs": 1788955200,
+        "read_at_ms": 1788954300000
+      },
+      "after": {
+        "reps": 6,
+        "type": 2,
+        "interval": 30,
+        "last_review_time_secs": 1788955200
+      },
+      "expected": {
+        "change": "undated"
+      }
+    },
+    {
+      "name": "only the last answer counts when the last poll was on an earlier day",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "cid": 1014,
+      "before": {
+        "reps": 4,
+        "type": 1,
+        "interval": 0,
+        "last_review_time_secs": 1788868800,
+        "read_at_ms": 1788868860000
+      },
+      "after": {
+        "reps": 7,
+        "type": 2,
+        "interval": 2,
+        "last_review_time_secs": 1788955200
+      },
+      "expected": {
+        "change": "answered",
+        "answers": [
+          {
+            "cid": 1014,
+            "at": 1788955200000,
+            "kind": 0,
+            "last_ivl": 0,
+            "ivl": 2,
+            "timing": "known",
+            "xp": 6.0
+          }
+        ]
+      }
+    }
+  ],
+  "merge": [
+    {
+      "name": "an exact row replaces the observed answer to the same card on the same day",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "now_ms": 1788958800000,
+      "streak_minutes": 0,
+      "exact": [
+        {
+          "id": 1788955170000,
+          "cid": 7,
+          "last_ivl": 3,
+          "ivl": 8,
+          "time_ms": 6000,
+          "kind": 1
+        }
+      ],
+      "observed": [
+        {
+          "cid": 7,
+          "at": 1788955200000,
+          "kind": 1,
+          "last_ivl": 3,
+          "ivl": 8,
+          "timing": "known"
+        }
+      ],
+      "days": [],
+      "expected": {
+        "answers": [
+          {
+            "at": 1788955170000,
+            "cid": 7,
+            "source": "exact"
+          }
+        ],
+        "days": [
+          {
+            "day": 20705,
+            "date": "2026-09-09",
+            "reviews": 1,
+            "observed": 0,
+            "time_ms": 6000,
+            "state": "met",
+            "review_xp": 10.05
+          }
+        ]
+      }
+    },
+    {
+      "name": "an exact row on another day leaves the observed answer",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "now_ms": 1788958800000,
+      "streak_minutes": 0,
+      "exact": [
+        {
+          "id": 1788868800000,
+          "cid": 7,
+          "last_ivl": 3,
+          "ivl": 8,
+          "time_ms": 6000,
+          "kind": 1
+        }
+      ],
+      "observed": [
+        {
+          "cid": 7,
+          "at": 1788955200000,
+          "kind": 1,
+          "last_ivl": 3,
+          "ivl": 8,
+          "timing": "known"
+        }
+      ],
+      "days": [],
+      "expected": {
+        "answers": [
+          {
+            "at": 1788868800000,
+            "cid": 7,
+            "source": "exact"
+          },
+          {
+            "at": 1788955200000,
+            "cid": 7,
+            "source": "observed"
+          }
+        ],
+        "days": [
+          {
+            "day": 20704,
+            "date": "2026-09-08",
+            "reviews": 1,
+            "observed": 0,
+            "time_ms": 6000,
+            "state": "met",
+            "review_xp": 10.05
+          },
+          {
+            "day": 20705,
+            "date": "2026-09-09",
+            "reviews": 1,
+            "observed": 1,
+            "time_ms": 0,
+            "state": "met",
+            "review_xp": 10.0
+          }
+        ]
+      }
+    },
+    {
+      "name": "an exact row for another card leaves the observed answer",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "now_ms": 1788958800000,
+      "streak_minutes": 0,
+      "exact": [
+        {
+          "id": 1788955170000,
+          "cid": 8,
+          "last_ivl": 3,
+          "ivl": 8,
+          "time_ms": 6000,
+          "kind": 1
+        }
+      ],
+      "observed": [
+        {
+          "cid": 7,
+          "at": 1788955200000,
+          "kind": 1,
+          "last_ivl": 3,
+          "ivl": 8,
+          "timing": "known"
+        }
+      ],
+      "days": [],
+      "expected": {
+        "answers": [
+          {
+            "at": 1788955170000,
+            "cid": 8,
+            "source": "exact"
+          },
+          {
+            "at": 1788955200000,
+            "cid": 7,
+            "source": "observed"
+          }
+        ],
+        "days": [
+          {
+            "day": 20705,
+            "date": "2026-09-09",
+            "reviews": 2,
+            "observed": 1,
+            "time_ms": 6000,
+            "state": "met",
+            "review_xp": 20.05
+          }
+        ]
+      }
+    },
+    {
+      "name": "placed and known answers to one card are replaced together",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "now_ms": 1788958800000,
+      "streak_minutes": 0,
+      "exact": [
+        {
+          "id": 1788955080000,
+          "cid": 7,
+          "last_ivl": 3,
+          "ivl": 8,
+          "time_ms": 6000,
+          "kind": 1
+        },
+        {
+          "id": 1788955140000,
+          "cid": 7,
+          "last_ivl": 3,
+          "ivl": 8,
+          "time_ms": 6000,
+          "kind": 1
+        }
+      ],
+      "observed": [
+        {
+          "cid": 7,
+          "at": 1788955199999,
+          "kind": 1,
+          "last_ivl": 25,
+          "ivl": null,
+          "timing": "placed"
+        },
+        {
+          "cid": 7,
+          "at": 1788955200000,
+          "kind": 2,
+          "last_ivl": 0,
+          "ivl": 3,
+          "timing": "known"
+        }
+      ],
+      "days": [],
+      "expected": {
+        "answers": [
+          {
+            "at": 1788955080000,
+            "cid": 7,
+            "source": "exact"
+          },
+          {
+            "at": 1788955140000,
+            "cid": 7,
+            "source": "exact"
+          }
+        ],
+        "days": [
+          {
+            "day": 20705,
+            "date": "2026-09-09",
+            "reviews": 2,
+            "observed": 0,
+            "time_ms": 12000,
+            "state": "met",
+            "review_xp": 20.15
+          }
+        ]
+      }
+    },
+    {
+      "name": "a day's count adds the cards nothing else covered",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "now_ms": 1788958800000,
+      "streak_minutes": 0,
+      "exact": [],
+      "observed": [
+        {
+          "cid": 7,
+          "at": 1788955200000,
+          "kind": 1,
+          "last_ivl": 3,
+          "ivl": 8,
+          "timing": "known"
+        }
+      ],
+      "days": [
+        {
+          "day": 20705,
+          "cards": 3
+        }
+      ],
+      "expected": {
+        "answers": [
+          {
+            "at": 1788926400000,
+            "cid": null,
+            "source": "counted"
+          },
+          {
+            "at": 1788926400000,
+            "cid": null,
+            "source": "counted"
+          },
+          {
+            "at": 1788955200000,
+            "cid": 7,
+            "source": "observed"
+          }
+        ],
+        "days": [
+          {
+            "day": 20705,
+            "date": "2026-09-09",
+            "reviews": 3,
+            "observed": 3,
+            "time_ms": 0,
+            "state": "met",
+            "review_xp": 22.0
+          }
+        ]
+      }
+    },
+    {
+      "name": "a day's count adds nothing for cards already covered",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "now_ms": 1788958800000,
+      "streak_minutes": 0,
+      "exact": [
+        {
+          "id": 1788955170000,
+          "cid": 8,
+          "last_ivl": 3,
+          "ivl": 8,
+          "time_ms": 6000,
+          "kind": 1
+        }
+      ],
+      "observed": [
+        {
+          "cid": 7,
+          "at": 1788955200000,
+          "kind": 1,
+          "last_ivl": 3,
+          "ivl": 8,
+          "timing": "known"
+        }
+      ],
+      "days": [
+        {
+          "day": 20705,
+          "cards": 2
+        }
+      ],
+      "expected": {
+        "answers": [
+          {
+            "at": 1788955170000,
+            "cid": 8,
+            "source": "exact"
+          },
+          {
+            "at": 1788955200000,
+            "cid": 7,
+            "source": "observed"
+          }
+        ],
+        "days": [
+          {
+            "day": 20705,
+            "date": "2026-09-09",
+            "reviews": 2,
+            "observed": 1,
+            "time_ms": 6000,
+            "state": "met",
+            "review_xp": 20.05
+          }
+        ]
+      }
+    },
+    {
+      "name": "a day's count alone fills a day before the app was installed",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "now_ms": 1788958800000,
+      "streak_minutes": 0,
+      "exact": [],
+      "observed": [],
+      "days": [
+        {
+          "day": 20703,
+          "cards": 4
+        }
+      ],
+      "expected": {
+        "answers": [
+          {
+            "at": 1788753600000,
+            "cid": null,
+            "source": "counted"
+          },
+          {
+            "at": 1788753600000,
+            "cid": null,
+            "source": "counted"
+          },
+          {
+            "at": 1788753600000,
+            "cid": null,
+            "source": "counted"
+          },
+          {
+            "at": 1788753600000,
+            "cid": null,
+            "source": "counted"
+          }
+        ],
+        "days": [
+          {
+            "day": 20703,
+            "date": "2026-09-07",
+            "reviews": 4,
+            "observed": 4,
+            "time_ms": 0,
+            "state": "met",
+            "review_xp": 24.0
+          }
+        ]
+      }
+    },
+    {
+      "name": "observed answers do not break an exact combo",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "now_ms": 1788958800000,
+      "streak_minutes": 0,
+      "exact": [
+        {
+          "id": 1788955080000,
+          "cid": 8,
+          "last_ivl": 3,
+          "ivl": 8,
+          "time_ms": 6000,
+          "kind": 1
+        },
+        {
+          "id": 1788955260000,
+          "cid": 9,
+          "last_ivl": 3,
+          "ivl": 8,
+          "time_ms": 6000,
+          "kind": 1
+        }
+      ],
+      "observed": [
+        {
+          "cid": 7,
+          "at": 1788955200000,
+          "kind": 1,
+          "last_ivl": 3,
+          "ivl": 8,
+          "timing": "known"
+        }
+      ],
+      "days": [],
+      "expected": {
+        "answers": [
+          {
+            "at": 1788955080000,
+            "cid": 8,
+            "source": "exact"
+          },
+          {
+            "at": 1788955200000,
+            "cid": 7,
+            "source": "observed"
+          },
+          {
+            "at": 1788955260000,
+            "cid": 9,
+            "source": "exact"
+          }
+        ],
+        "days": [
+          {
+            "day": 20705,
+            "date": "2026-09-09",
+            "reviews": 3,
+            "observed": 1,
+            "time_ms": 12000,
+            "state": "met",
+            "review_xp": 30.15
+          }
+        ]
+      }
+    },
+    {
+      "name": "observed answers keep a day short of the minimum unverified",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "now_ms": 1788958800000,
+      "streak_minutes": 10,
+      "exact": [
+        {
+          "id": 1788868800000,
+          "cid": 9,
+          "last_ivl": 3,
+          "ivl": 8,
+          "time_ms": 600000,
+          "kind": 1
+        },
+        {
+          "id": 1788955170000,
+          "cid": 8,
+          "last_ivl": 3,
+          "ivl": 8,
+          "time_ms": 120000,
+          "kind": 1
+        }
+      ],
+      "observed": [
+        {
+          "cid": 7,
+          "at": 1788955200000,
+          "kind": 1,
+          "last_ivl": 3,
+          "ivl": 8,
+          "timing": "known"
+        }
+      ],
+      "days": [],
+      "expected": {
+        "answers": [
+          {
+            "at": 1788868800000,
+            "cid": 9,
+            "source": "exact"
+          },
+          {
+            "at": 1788955170000,
+            "cid": 8,
+            "source": "exact"
+          },
+          {
+            "at": 1788955200000,
+            "cid": 7,
+            "source": "observed"
+          }
+        ],
+        "days": [
+          {
+            "day": 20704,
+            "date": "2026-09-08",
+            "reviews": 1,
+            "observed": 0,
+            "time_ms": 600000,
+            "state": "met",
+            "review_xp": 10.05
+          },
+          {
+            "day": 20705,
+            "date": "2026-09-09",
+            "reviews": 2,
+            "observed": 1,
+            "time_ms": 120000,
+            "state": "unverified",
+            "review_xp": 20.05
+          }
+        ]
+      }
+    },
+    {
+      "name": "exact rows replacing every observed answer bring back the exact verdict",
+      "clock": {
+        "offset_west_min": 0,
+        "rollover_hour": 4
+      },
+      "now_ms": 1788958800000,
+      "streak_minutes": 10,
+      "exact": [
+        {
+          "id": 1788868800000,
+          "cid": 9,
+          "last_ivl": 3,
+          "ivl": 8,
+          "time_ms": 600000,
+          "kind": 1
+        },
+        {
+          "id": 1788955170000,
+          "cid": 7,
+          "last_ivl": 3,
+          "ivl": 8,
+          "time_ms": 120000,
+          "kind": 1
+        }
+      ],
+      "observed": [
+        {
+          "cid": 7,
+          "at": 1788955200000,
+          "kind": 1,
+          "last_ivl": 3,
+          "ivl": 8,
+          "timing": "known"
+        }
+      ],
+      "days": [],
+      "expected": {
+        "answers": [
+          {
+            "at": 1788868800000,
+            "cid": 9,
+            "source": "exact"
+          },
+          {
+            "at": 1788955170000,
+            "cid": 7,
+            "source": "exact"
+          }
+        ],
+        "days": [
+          {
+            "day": 20704,
+            "date": "2026-09-08",
+            "reviews": 1,
+            "observed": 0,
+            "time_ms": 600000,
+            "state": "met",
+            "review_xp": 10.05
+          },
+          {
+            "day": 20705,
+            "date": "2026-09-09",
+            "reviews": 1,
+            "observed": 0,
+            "time_ms": 120000,
+            "state": "short",
+            "review_xp": 10.05
+          }
+        ]
+      }
+    }
+  ]
+}
