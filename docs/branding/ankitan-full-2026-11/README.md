@@ -55,11 +55,11 @@ disclosure, hashes and cleanup measurements. The new master was inspected
 at full size and 64 px on light and dark backgrounds. Canonical
 [Linux run 43904416492](https://github.com/AnkiQuest/AnkiQuest-Desktop/actions/runs/43904416492)
 generated its exports. The earlier desktop PNG is retained under the same
-licence in `static/anki-tan/archive/addon/` and registered as retired.
+licence in `static/anki-tan/archive/addon/` as old art.
 
 The asleep export is now `anki_tan_asleep`. Its PNG is the byte-identical
 Linux export formerly named `anki_tan_sleeping`, which is preserved under
-`static/anki-tan/archive/addon/` and remains recorded in the retired manifest.
+`static/anki-tan/archive/addon/` as old art.
 It is excluded from the app package. No existing artwork was overwritten.
 
 The inventory uses canonical paths, without an exporter-registration

@@ -2,9 +2,9 @@
 //! generated from a master and checked (AGENTS.md, Companion art).
 //!
 //! An image is companion art when its path names a companion, or when it
-//! looks like a master scaled to another size. It may only be a master in
-//! `static/<companion>/`, an export in the art manifest, or a retired copy
-//! the manifest keeps. Animations are not compared with masters.
+//! looks like a master scaled to another size. It may only sit in
+//! `static/<companion>/`, which keeps the masters and old art, or be an
+//! export in the art manifest. Animations are not compared with masters.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,9 +31,6 @@ const PRINT: u32 = 16;
 /// a master and a scaled copy of it. Copies measure up to 1.2 (a 32 px
 /// icon), the closest two different masters 1.9 (Ankilope's places 2 and 3).
 const SAME_PICTURE: f64 = 1.5;
-
-/// Folders whose files may refer to images at runtime or build time.
-const CODE: [&str; 5] = ["src", "web", "addon", "crates", "build.rs"];
 
 /// An image's path relative to the repository root, with `/` separators.
 fn relative(path: &Path) -> String {
@@ -183,17 +180,16 @@ fn misplaced(
     masters: &[(String, Print)],
     names: &[String],
 ) -> Option<String> {
-    // A master's scaled copy is a copy, even inside static/. Outside it, so
-    // is a copy at full size.
-    let outside = master_folder(image).is_none();
+    // static/<companion>/ keeps masters and old art, used or not.
+    if master_folder(image).is_some() {
+        return None;
+    }
+
+    // Outside it, a master's copy at any size is a copy.
     let copy_of = print.and_then(|print| {
         masters
             .iter()
-            .filter(|(master, other)| {
-                let smaller = other.size.0 > print.size.0;
-                let full = outside && other.size == print.size;
-                master != image && (smaller || full)
-            })
+            .filter(|(_, other)| other.size.0 >= print.size.0)
             .filter_map(|(master, other)| Some((master, distance(print, other)?)))
             .filter(|(_, distance)| *distance <= SAME_PICTURE)
             .min_by(|a, b| a.1.total_cmp(&b.1))
@@ -201,11 +197,8 @@ fn misplaced(
     if let Some((master, _)) = copy_of {
         return Some(format!("{image}: a copy of {master}"));
     }
-    if master_folder(image).is_some() {
-        return None;
-    }
 
-    // Outside static/, a path that names a companion is companion art.
+    // A path that names a companion is companion art.
     let path = letters(image);
     let named = names.iter().find(|name| path.contains(name.as_str()))?;
     Some(format!("{image}: names {named}"))
@@ -214,10 +207,7 @@ fn misplaced(
 /// Every image that breaks the rule, each with its reason.
 fn violations() -> Vec<String> {
     let manifest = exports::read().unwrap();
-    let listed = |image: &str| {
-        manifest.exports.iter().any(|export| export.file == image)
-            || manifest.retired.iter().any(|retired| retired.file == image)
-    };
+    let listed = |image: &str| manifest.exports.iter().any(|export| export.file == image);
     let images = images();
     let names = companions();
 
@@ -248,54 +238,23 @@ fn companion_art_lives_in_static_or_is_exported() {
     assert!(
         violations.is_empty(),
         "companion art outside static/<companion>/ must be exported from a master and \
-         listed in {MANIFEST}, or retired there: {violations:#?}"
+         listed in {MANIFEST}: {violations:#?}"
     );
 }
 
 #[test]
 fn listed_files_exist() {
-    // Companion art is never deleted, and exports are committed.
+    // Exports are committed, and so are their masters.
     let manifest = exports::read().unwrap();
-    let files = manifest.exports.iter().map(|e| &e.file);
-    for file in files.chain(manifest.retired.iter().map(|r| &r.file)) {
-        assert!(root().join(file).is_file(), "{file}");
-    }
     for export in &manifest.exports {
+        assert!(root().join(&export.file).is_file(), "{}", export.file);
         assert!(master_folder(&export.master).is_some(), "{}", export.master);
         assert!(root().join(&export.master).is_file(), "{}", export.master);
     }
 }
 
 #[test]
-fn nothing_reads_retired_files() {
-    let manifest = exports::read().unwrap();
-    let mut code = Vec::new();
-    for folder in CODE {
-        let path = root().join(folder);
-        if path.is_file() {
-            code.push(path);
-        } else {
-            files(&path, &mut code);
-        }
-    }
-    let manifest_path = root().join(MANIFEST);
-    for file in code.iter().filter(|file| **file != manifest_path) {
-        let Ok(text) = fs::read_to_string(file) else {
-            continue;
-        };
-        for retired in &manifest.retired {
-            assert!(
-                !text.contains(&retired.file),
-                "{} reads retired {}",
-                relative(file),
-                retired.file
-            );
-        }
-    }
-}
-
-#[test]
-fn a_scaled_copy_is_found_anywhere() {
+fn a_copy_outside_static_is_found() {
     let master = Print {
         size: (1254, 1254),
         pixels: RgbaImage::from_fn(PRINT, PRINT, |x, y| {
@@ -313,10 +272,11 @@ fn a_scaled_copy_is_found_anywhere() {
     let masters = [("static/aki/face.png".to_string(), master)];
     let names = ["aki".to_string(), "cow".to_string()];
 
-    // Copies of masters, anywhere; pictures named after a companion outside static/.
+    // Copies of masters and pictures named after a companion, outside
+    // static/<companion>/; anything inside it.
     for (image, print, expected) in [
         ("assets/cards/card.png", Some(&copy), true),
-        ("static/aki/face-64.png", Some(&copy), true),
+        ("static/aki/face-64.png", Some(&copy), false),
         ("assets/cow.png", Some(&other), true),
         ("static/aki/face.png", Some(&masters[0].1), false),
         ("static/aki/new_pose.png", Some(&other), false),
