@@ -4,10 +4,13 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-    # The dev shell: Rust as crates/rules/rust-toolchain.toml pins it, esbuild,
-    # wasm-ld, Node and the bindings' tools, pinned for every AnkiQuest
-    # repository in AnkiQuest-Dev.
-    ankiquest-dev.url = "github:AnkiQuest/AnkiQuest-Dev";
+    # The dev shells, formatter and pinned toolchains of every AnkiQuest
+    # repository. The server shell: Rust as crates/rules/rust-toolchain.toml
+    # pins it, esbuild, wasm-ld, Node and the bindings' tools.
+    ankiquest-dev = {
+      url = "github:AnkiQuest/AnkiQuest-Dev";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = {
@@ -43,7 +46,9 @@
         // webBuild pkgs);
     });
 
-    devShells = builtins.mapAttrs (_: shells: {default = shells.server;}) ankiquest-dev.devShells;
+    devShells = lib.genAttrs systems (system: {
+      default = ankiquest-dev.devShells.${system}.server;
+    });
 
     nixosModules.default = {
       config,
