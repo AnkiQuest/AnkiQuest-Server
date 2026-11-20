@@ -3,14 +3,21 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+    # The dev shell: Rust as crates/rules/rust-toolchain.toml pins it, esbuild,
+    # wasm-ld, Node and the bindings' tools, pinned for every AnkiQuest
+    # repository in AnkiQuest-Dev.
+    ankiquest-dev.url = "github:AnkiQuest/AnkiQuest-Dev";
   };
 
   outputs = {
     self,
     nixpkgs,
+    ankiquest-dev,
   }: let
     lib = nixpkgs.lib;
-    systems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"];
+    # nixpkgs no longer supports x86_64-darwin.
+    systems = ["x86_64-linux" "aarch64-linux" "aarch64-darwin"];
     forAllSystems = f: lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     # build.rs bundles web/ with esbuild and builds the translation module for
     # wasm32-unknown-unknown, which nixpkgs' rustc supports; wasm-ld links it.
@@ -18,7 +25,7 @@
       CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER = "${pkgs.buildPackages.lld}/bin/wasm-ld";
     };
   in {
-    formatter = forAllSystems (pkgs: pkgs.alejandra);
+    inherit (ankiquest-dev) formatter;
 
     packages = forAllSystems (pkgs: {
       default = pkgs.rustPlatform.buildRustPackage ({
@@ -36,12 +43,7 @@
         // webBuild pkgs);
     });
 
-    devShells = forAllSystems (pkgs: {
-      default = pkgs.mkShell {
-        packages = with pkgs; [cargo clippy rustc rustfmt esbuild nodejs_22];
-        inherit (webBuild pkgs) CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER;
-      };
-    });
+    devShells = builtins.mapAttrs (_: shells: {default = shells.server;}) ankiquest-dev.devShells;
 
     nixosModules.default = {
       config,
@@ -72,14 +74,13 @@
         devs = cfg.devs;
         configured_tokens = cfg.configuredTokens;
         privacy = lib.filterAttrs (_: value: value != null) cfg.privacy;
-        oauth =
-          lib.mapAttrs (name: c:
-            {
-              client_id = c.clientId;
-              client_secret_file = "/run/credentials/ankiquest.service/oauth-${name}";
-            }
-            // lib.optionalAttrs ((c.baseUrl or null) != null) {base_url = c.baseUrl;})
-          withOAuth;
+        oauth = lib.mapAttrs (name: c:
+          {
+            client_id = c.clientId;
+            client_secret_file = "/run/credentials/ankiquest.service/oauth-${name}";
+          }
+          // lib.optionalAttrs ((c.baseUrl or null) != null) {base_url = c.baseUrl;})
+        withOAuth;
         site_trust_proxy = cfg.domain != null;
         site_password_file =
           if cfg.sitePasswordFile == null
