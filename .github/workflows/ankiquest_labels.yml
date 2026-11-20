@@ -28,7 +28,7 @@ permissions:
 jobs:
   labels:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@master
+    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@main
     permissions:
       contents: read
       issues: write
@@ -38,21 +38,21 @@ jobs:
       contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event_name)
       || (github.event_name == 'pull_request_target'
         && contains(fromJSON('["opened", "reopened", "synchronize"]'), github.event.action))
-    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/conflict-scan.yml@master
+    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/conflict-scan.yml@main
     permissions:
       contents: read
       pull-requests: write
 
   pull-requests:
     if: github.event_name == 'pull_request_target' || github.event_name == 'pull_request_review'
-    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/pr-labels.yml@master
+    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/pr-labels.yml@main
     permissions:
       contents: read
       pull-requests: write
 
   issues:
     if: github.event_name == 'issues'
-    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/issue-labels.yml@master
+    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/issue-labels.yml@main
     permissions:
       contents: read
       issues: write
