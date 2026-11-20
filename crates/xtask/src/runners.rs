@@ -13,7 +13,8 @@
 //! Anything else fails, including forms this reader does not parse (a
 //! `runs-on` block, runner groups, variables, inputs). Reusable
 //! workflows must be local, so their jobs are checked here too, or
-//! AnkiQuest-Dev's shared ones, which its `runner-routing` check covers.
+//! AnkiQuest-Dev's shared ones on its default branch, `main`, which its
+//! `runner-routing` check covers there.
 
 use std::fs;
 use std::path::Path;
@@ -27,8 +28,10 @@ const SELF_HOSTED_EVENTS: &str = "(github.event_name == 'merge_group' || \
 (github.event_name == 'push' && github.ref == \
 format('refs/heads/{0}', github.event.repository.default_branch)))";
 
-/// AnkiQuest-Dev's shared reusable workflows.
+/// AnkiQuest-Dev's shared reusable workflows, and the only ref of them
+/// allowed: its default branch.
 const SHARED: &str = "AnkiQuest/AnkiQuest-Dev/.github/workflows/";
+const SHARED_REF: &str = "@main";
 
 /// Prefixes of GitHub-hosted runner labels.
 const HOSTED: [&str; 3] = ["ubuntu-", "macos-", "windows-"];
@@ -43,6 +46,24 @@ fn hosted(label: &str) -> bool {
                     .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
         })
     })
+}
+
+/// Whether `uses` names one of AnkiQuest-Dev's shared workflows on main.
+fn shared(uses: &str) -> bool {
+    let Some(file) = uses
+        .strip_prefix(SHARED)
+        .and_then(|rest| rest.strip_suffix(SHARED_REF))
+    else {
+        return false;
+    };
+    let name = file
+        .strip_suffix(".yml")
+        .or_else(|| file.strip_suffix(".yaml"))
+        .unwrap_or_default();
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
 }
 
 /// A line's value after `key:`, without a trailing comment.
@@ -135,7 +156,7 @@ fn problems(text: &str) -> Vec<String> {
         if let Some(uses) = value(line, "uses")
             && uses.contains(".github/workflows/")
             && !uses.starts_with("./")
-            && !uses.starts_with(SHARED)
+            && !shared(uses)
         {
             found.push(format!("{number}: reusable workflow `{uses}` is not local"));
         }
@@ -272,7 +293,7 @@ mod tests {
 
     #[test]
     fn remote_reusable_workflows_fail() {
-        let text = "jobs:\n  remote:\n    uses: AnkiQuest/AnkiQuest-Server/.github/workflows/ci.yml@master\n  local:\n    uses: ./.github/workflows/ci.yml\n  shared:\n    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@main\n";
-        assert_eq!(problems(text).len(), 1);
+        let text = "jobs:\n  remote:\n    uses: AnkiQuest/AnkiQuest-Server/.github/workflows/ci.yml@master\n  local:\n    uses: ./.github/workflows/ci.yml\n  shared:\n    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@main\n  branch:\n    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@feature\n";
+        assert_eq!(problems(text).len(), 2);
     }
 }
