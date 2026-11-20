@@ -298,6 +298,7 @@ impl App {
                 competition::Participant {
                     display: self.display(&user),
                     reviews: player.map_or_else(Default::default, |p| p.reviews.clone()),
+                    observed: player.map_or_else(Default::default, |p| p.observed.clone()),
                     clock_history: player
                         .map_or_else(ClockHistory::default, |p| p.clock_history.clone()),
                     freeze_policy: player

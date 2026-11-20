@@ -584,7 +584,7 @@ mod tests {
         // The smallest drawable keeps the test fast.
         let art = ART.iter().min_by_key(|art| art.size).unwrap();
         let android = tempfile::tempdir().unwrap();
-        export(android.path(), &[art]).unwrap();
+        assert_eq!(ExitCode::SUCCESS, export(android.path(), &[art]).unwrap());
         assert!(stale(android.path(), &[art]).unwrap().is_empty());
 
         // Same size, other bytes: an edited file must fail.

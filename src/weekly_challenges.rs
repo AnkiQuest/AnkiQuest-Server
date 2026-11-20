@@ -202,6 +202,7 @@ mod tests {
         Participant {
             user: user.into(),
             display: user.into(),
+            observed: Default::default(),
             clock_history: ClockHistory::default(),
             freeze_policy: FreezePolicy::default(),
             reviews: reviews
