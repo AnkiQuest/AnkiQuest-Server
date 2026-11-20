@@ -5,10 +5,8 @@ name: Conflict Scan
 # labels, never comments. Never checks out or runs pull request code.
 
 on:
-  # Default branches: main in AnkiQuest-Android, master elsewhere.
   push:
     branches:
-      - main
       - master
   pull_request_target:
     types: [opened, reopened, synchronize]
