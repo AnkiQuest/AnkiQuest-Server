@@ -1,131 +1,58 @@
-name: Label Sync
+name: Labels
 
-# Keeps this repository's labels equal to .github/labels.json, the label set
-# shared by AnkiQuest-Server, AnkiQuest-Desktop and AnkiQuest-Android.
-#
-# The labelling workflows are shared too: SHARED_FILES lists every file the
-# three repositories keep byte-equal. AnkiQuest-Server holds the source; the
-# `copy` job fails in the other repositories when one of their copies
-# differs from AnkiQuest-Server master. Area paths differ per repository and
-# live in .github/labeler.yml, which is not shared.
-#
-# `sync` creates or updates every label in the file: colour, description and
-# the exact spelling of the name. A label still under an old name listed in
-# `aliases` is renamed, so pull requests keep it. Labels not in the file are
-# never deleted.
+# The labelling AnkiQuest repositories share, from AnkiQuest-Dev's reusable
+# workflows: the label set (labels.json there), "Has Conflicts", "Needs
+# Review", "New contributor", area labels from .github/labeler.yml and
+# "Needs Triage" on issues. Nothing here checks out or runs pull request code.
 
 on:
-  # Default branches: main in AnkiQuest-Android, master elsewhere.
   push:
-    branches:
-      - main
-      - master
-    paths:
-      - .github/labels.json
-      - .github/workflows/ankiquest_conflicts.yml
-      - .github/workflows/ankiquest_issue_labels.yml
-      - .github/workflows/ankiquest_labels.yml
-      - .github/workflows/ankiquest_pr_labels.yml
-  pull_request:
-    paths:
-      - .github/labels.json
-      - .github/workflows/ankiquest_conflicts.yml
-      - .github/workflows/ankiquest_issue_labels.yml
-      - .github/workflows/ankiquest_labels.yml
-      - .github/workflows/ankiquest_pr_labels.yml
+    branches: [master]
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed]
+  pull_request_review:
+    types: [submitted, dismissed]
+  issues:
+    types: [opened, reopened, labeled, closed]
+  # A merge queue group has no pull request to label. Every job is skipped
+  # there, which counts as passing, so the queue never waits for them.
+  merge_group:
+    types: [checks_requested]
   schedule:
-    - cron: "41 5 * * 1"
+    - cron: "23 */6 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
-env:
-  SOURCE_URL: https://raw.githubusercontent.com/AnkiQuest/AnkiQuest-Server/master
-  SHARED_FILES: >-
-    .github/labels.json
-    .github/workflows/ankiquest_conflicts.yml
-    .github/workflows/ankiquest_issue_labels.yml
-    .github/workflows/ankiquest_labels.yml
-    .github/workflows/ankiquest_pr_labels.yml
-
 jobs:
-  copy:
-    if: github.repository != 'AnkiQuest/AnkiQuest-Server'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-          sparse-checkout: .github
-
-      - name: Compare with AnkiQuest-Server's copies
-        shell: bash
-        run: |
-          status=0
-          for file in $SHARED_FILES; do
-            if ! curl -fsSL --retry 3 "$SOURCE_URL/$file" -o source; then
-              echo "::error file=$file::Missing from AnkiQuest-Server master."
-              status=1
-              continue
-            fi
-
-            if ! cmp -s source "$file"; then
-              echo "::error file=$file::Differs from AnkiQuest-Server master; copy it from there."
-              diff -u source "$file" || true
-              status=1
-            fi
-          done
-          exit "$status"
-
-  sync:
-    needs: copy
-    if: >-
-      !cancelled() && needs.copy.result != 'failure'
-      && github.repository_owner == 'AnkiQuest'
-      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  labels:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@master
     permissions:
       contents: read
       issues: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-          sparse-checkout: .github/labels.json
-          sparse-checkout-cone-mode: false
 
-      - name: Create or update labels
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          labels="repos/$GITHUB_REPOSITORY/labels"
+  conflicts:
+    if: >-
+      contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event_name)
+      || (github.event_name == 'pull_request_target'
+        && contains(fromJSON('["opened", "reopened", "synchronize"]'), github.event.action))
+    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/conflict-scan.yml@master
+    permissions:
+      contents: read
+      pull-requests: write
 
-          # The labels API matches names case-insensitively, so the current
-          # name finds a label spelled differently; aliases find renamed ones.
-          jq -c '.[]' .github/labels.json | while read -r label; do
-            name=$(jq -r .name <<<"$label")
-            color=$(jq -r .color <<<"$label")
-            description=$(jq -r .description <<<"$label")
+  pull-requests:
+    if: github.event_name == 'pull_request_target' || github.event_name == 'pull_request_review'
+    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/pr-labels.yml@master
+    permissions:
+      contents: read
+      pull-requests: write
 
-            found=""
-            for path in $(jq -r '[.name] + .aliases | .[] | @uri' <<<"$label"); do
-              if gh api "$labels/$path" --silent 2>/dev/null; then
-                found="$path"
-                break
-              fi
-            done
-
-            if [[ -n "$found" ]]; then
-              echo "Updating $name"
-              gh api -X PATCH "$labels/$found" --silent \
-                -f new_name="$name" -f color="$color" -f description="$description"
-            else
-              echo "Creating $name"
-              gh api -X POST "$labels" --silent \
-                -f name="$name" -f color="$color" -f description="$description"
-            fi
-          done
+  issues:
+    if: github.event_name == 'issues'
+    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/issue-labels.yml@master
+    permissions:
+      contents: read
+      issues: write
