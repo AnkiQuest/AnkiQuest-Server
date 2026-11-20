@@ -1,5 +1,10 @@
 {
   "progress": {
+    "anki_tan": {
+      "goal": 66,
+      "kind": "streak",
+      "value": 1
+    },
     "ankilope": {
       "goal": 30,
       "kind": "level",

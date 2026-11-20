@@ -1474,6 +1474,8 @@ mod tests {
             "/ankilope/welcome.png",
             "/ankilope/study.png",
             "/ankilope/celebrate.png",
+            "/anki-tan/happy.png",
+            "/anki-tan/face-192.png",
         ] {
             assert_eq!(
                 request(&app, "GET", endpoint, &[], "").await.status(),

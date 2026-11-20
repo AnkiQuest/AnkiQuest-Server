@@ -1411,6 +1411,8 @@
   "Reach level {0}": "Alcanza el nivel {0}",
   "Level {0} of {1}": "Nivel {0} de {1}",
   "{0} of {1} hours": "{0} de {1} horas",
+  "Keep a {0}-day streak": "Mantén una racha de {0} días",
+  "{0} of {1} days": "{0} de {1} días",
   "Authenticator code or recovery code": "Código del autenticador o código de recuperación",
   "Enter the code from your authenticator app.": "Introduce el código de tu aplicación de autenticación.",
   "That code is not right.": "Ese código no es correcto.",
