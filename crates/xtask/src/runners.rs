@@ -291,6 +291,28 @@ mod tests {
         assert_eq!(problems(text).len(), 1);
     }
 
+    // Quoted keys and flow mappings are the same YAML as plain block
+    // keys, so they must be checked the same way.
+    #[test]
+    fn quoted_runs_on_fails() {
+        let text =
+            "jobs:\n  build:\n    \"runs-on\": [self-hosted, Linux, X64, ankiquest, build]\n";
+        assert_eq!(problems(text).len(), 1);
+    }
+
+    #[test]
+    fn flow_mapping_runs_on_fails() {
+        let text = "on: push\njobs: {build: {runs-on: [self-hosted]}}\n";
+        assert_eq!(problems(text).len(), 1);
+    }
+
+    #[test]
+    fn quoted_remote_uses_fails() {
+        let text =
+            "jobs:\n  build:\n    \"uses\": other/project/.github/workflows/build.yml@main\n";
+        assert_eq!(problems(text).len(), 1);
+    }
+
     #[test]
     fn remote_reusable_workflows_fail() {
         let text = "jobs:\n  remote:\n    uses: AnkiQuest/AnkiQuest-Server/.github/workflows/ci.yml@master\n  local:\n    uses: ./.github/workflows/ci.yml\n  shared:\n    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@main\n  branch:\n    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@feature\n";
