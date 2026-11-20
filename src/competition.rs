@@ -28,8 +28,71 @@ pub struct Participant {
     pub user: String,
     pub display: String,
     pub reviews: std::sync::Arc<Vec<game::Review>>,
+    /// Study a client observed without the review log (AnkiQuest Lite).
+    pub observed: std::sync::Arc<game::Observed>,
     pub clock_history: ClockHistory,
     pub freeze_policy: FreezePolicy,
+}
+
+impl Participant {
+    /// When each answer the game counts was given, oldest first: review rows and the observed
+    /// study they do not cover ([`game::merge`]).
+    pub fn answer_times(&self) -> Box<dyn Iterator<Item = i64> + '_> {
+        // Players without observed study keep their rows as they are, without a copy.
+        if self.observed.is_empty() {
+            return Box::new(self.reviews.iter().map(|review| review.id));
+        }
+        let merged = game::merge(&self.reviews, &self.observed, &self.clock_history);
+        Box::new(merged.into_iter().map(|answer| answer.review.id))
+    }
+
+    /// The player's profile at `now_ms`, observed study included.
+    pub fn profile(&self, week: &Week, now_ms: i64) -> game::Profile {
+        game::compute_observed(
+            &self.user,
+            &self.display,
+            &self.reviews,
+            &self.observed,
+            &self.clock_history,
+            week,
+            now_ms,
+            &self.freeze_policy,
+        )
+    }
+
+    /// The player as of `now_ms`: study dated later is left out.
+    fn until(&self, now_ms: i64) -> Self {
+        let reviews = self
+            .reviews
+            .iter()
+            .filter(|review| review.id <= now_ms)
+            .copied()
+            .collect::<Vec<_>>();
+        let observed = game::Observed {
+            answers: self
+                .observed
+                .answers
+                .iter()
+                .filter(|answer| answer.at <= now_ms)
+                .copied()
+                .collect(),
+            days: self
+                .observed
+                .days
+                .iter()
+                .filter(|(day, _)| self.clock_history.day_start_ms(**day) <= now_ms)
+                .map(|(day, cards)| (*day, *cards))
+                .collect(),
+        };
+        Self {
+            user: self.user.clone(),
+            display: self.display.clone(),
+            reviews: Arc::new(reviews),
+            observed: Arc::new(observed),
+            clock_history: self.clock_history.clone(),
+            freeze_policy: self.freeze_policy.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -314,22 +377,8 @@ pub fn refresh(
     let mut joined = HashMap::new();
     let mut earliest = None;
     for player in players {
-        // Exclude future-dated revlog rows from the archive.
-        let reviews: Vec<_> = player
-            .reviews
-            .iter()
-            .filter(|r| r.id <= now_ms)
-            .copied()
-            .collect();
-        let profile = game::compute_with_history(
-            &player.user,
-            &player.display,
-            &reviews,
-            &player.clock_history,
-            &archive_week,
-            now_ms,
-            &player.freeze_policy,
-        );
+        // Exclude future-dated study from the archive. Observed study counts as on profiles.
+        let profile = player.until(now_ms).profile(&archive_week, now_ms);
         let first_day = profile.history.iter().find(|day| day.reviews > 0);
         joined.insert(
             player.user.clone(),
@@ -1231,6 +1280,7 @@ mod tests {
             user: user.into(),
             display: user.to_uppercase(),
             reviews: reviews.into(),
+            observed: Default::default(),
             clock_history: ClockHistory::default(),
             freeze_policy: FreezePolicy::default(),
         }
@@ -1595,6 +1645,54 @@ mod tests {
         assert_eq!(dashboard["players"][0]["shared_wins"], 1);
         assert_eq!(dashboard["head_to_head"][0]["days_tied"], 1);
         assert_eq!(dashboard["meta"]["start_source"], "available_history");
+    }
+
+    #[test]
+    fn observed_study_counts_in_the_competition_once() {
+        let mut db = Database::new();
+        let week = Week::default();
+        let day = "2026-09-20";
+        let answer = |cid, at| game::ObservedAnswer {
+            cid,
+            at,
+            kind: 1,
+            last_ivl: 10,
+            ivl: None,
+            timing: game::Timing::Known,
+        };
+
+        // Observed only: two answers, and a day count that finds one card more.
+        let mut lite = player("lite", Vec::new());
+        lite.observed = Arc::new(game::Observed {
+            answers: vec![answer(1, at(day, 12)), answer(2, at(day, 13))],
+            days: BTreeMap::from([(ClockHistory::default().day(at(day, 12)), 3)]),
+        });
+
+        // Mixed: a review row replaces the observed answer to its card that day, and an
+        // answer dated after now does not count yet.
+        let exact = reviews(day, 2);
+        let mut mixed = player("mixed", exact.clone());
+        mixed.observed = Arc::new(game::Observed {
+            answers: vec![
+                answer(exact[0].cid, at(day, 14)),
+                answer(99, at(day, 15)),
+                answer(98, at("2026-09-21", 12)),
+            ],
+            days: BTreeMap::new(),
+        });
+
+        refresh(db.get(), &[lite, mixed], &week, at("2026-09-21", 5), None).unwrap();
+        let standings = period(db.get(), "day", day).standings;
+        let reviews_of = |user: &str| {
+            standings
+                .iter()
+                .find(|s| s.user == user)
+                .map_or(0, |s| s.reviews)
+        };
+        assert_eq!(reviews_of("lite"), 3);
+        assert_eq!(reviews_of("mixed"), 3);
+        let month = period(db.get(), "month", "2026-09").standings;
+        assert_eq!(month.iter().find(|s| s.user == "mixed").unwrap().reviews, 3);
     }
 
     #[test]

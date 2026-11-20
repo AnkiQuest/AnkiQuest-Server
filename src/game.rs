@@ -13,10 +13,11 @@ mod streak;
 mod week;
 mod xp;
 
+use observed::Source;
 pub use observed::{
-    Baseline, CardState, Change, Observed, ObservedAnswer, Timing, XpSource, XpSources, observe,
+    Baseline, CardState, Change, Observed, ObservedAnswer, Timing, XpSource, XpSources, merge,
+    observe,
 };
-use observed::{Source, merge};
 use streak::streak_milestone;
 pub use streak::{
     DayState, FreezePolicy, FreezePreference, MAX_FREEZES, PlayerStreakChange, StreakChange,
@@ -1240,7 +1241,7 @@ pub fn compute(
 }
 
 /// A profile read against one clock held for all of time. Production reads a
-/// player's [`ClockHistory`] through [`compute_with_history`]; this is the
+/// player's [`ClockHistory`] through [`compute_observed`]; this is the
 /// single-clock shorthand the tests are written against.
 #[cfg(test)]
 pub fn compute_with_freezes(
@@ -1263,6 +1264,8 @@ pub fn compute_with_freezes(
     )
 }
 
+/// [`compute_observed`] without observed study: the review rows only, for tests.
+#[cfg(test)]
 pub fn compute_with_history(
     user: &str,
     display: &str,
@@ -1284,7 +1287,8 @@ pub fn compute_with_history(
     )
 }
 
-/// [`compute_with_history`] with the study a client observed without the review log.
+/// A player's profile from their review rows and the study a client observed without the
+/// review log.
 #[allow(clippy::too_many_arguments)]
 pub fn compute_observed(
     user: &str,
@@ -1309,7 +1313,7 @@ pub fn compute_observed(
     )
 }
 
-/// [`compute_with_history`] with an explicit streak rule instead of the server's.
+/// [`compute_observed`] with an explicit streak rule instead of the server's.
 #[allow(clippy::too_many_arguments)]
 pub fn compute_with_rules(
     user: &str,
@@ -2002,6 +2006,56 @@ mod tests {
             conquests(&three, i64::MAX / 2).is_empty(),
             "three lapses are not hard enough"
         );
+    }
+
+    #[test]
+    fn observed_answers_never_conquer_a_card() {
+        let mut answers = vec![(0, 0, Some(1))];
+        for _ in 0..4 {
+            answers.extend(lapse(3, Some(1)));
+        }
+        answers.push((1, 1, Some(8)));
+        let exact = card(7, &answers);
+        let at = exact.last().unwrap().id + DAY_MS;
+        let mature = ObservedAnswer {
+            cid: 7,
+            at,
+            kind: 1,
+            last_ivl: 8,
+            ivl: Some(25),
+            timing: Timing::Known,
+        };
+
+        // As a review row, the answer conquers the card.
+        let mut logged = exact.clone();
+        logged.push(Review {
+            id: at,
+            cid: 7,
+            last_ivl: 8,
+            ivl: Some(25),
+            time_ms: 5000,
+            kind: 1,
+            ease: None,
+        });
+        assert_eq!(conquests(&logged, at + DAY_MS).len(), 1);
+
+        // Observed, it counts as study but has no ease, so the card stays unconquered.
+        let observed = Observed {
+            answers: vec![mature],
+            days: BTreeMap::new(),
+        };
+        let profile = compute_observed(
+            "p",
+            "p",
+            &exact,
+            &observed,
+            &ClockHistory::default(),
+            &Week::BOARD,
+            at + DAY_MS,
+            &FreezePolicy::default(),
+        );
+        assert!(profile.conquests.is_empty(), "{:?}", profile.conquests);
+        assert_eq!(profile.lifetime.reviews, exact.len() as u64 + 1);
     }
 
     #[test]
