@@ -2,9 +2,10 @@
 //! generated from a master and checked (AGENTS.md, Companion art).
 //!
 //! An image is companion art when its path names a companion, or when it
-//! looks like a master scaled to another size. It may only sit in
-//! `static/<companion>/` (masters) or `static/retired/<companion>/`
-//! (masters nothing uses any more), or be an export in the art manifest. Animations are not compared with masters.
+//! looks like a master scaled to another size. It may only be a master in
+//! `static/<companion>/` (a scaled copy there fails too), anything in
+//! `static/retired/<companion>/` (masters nothing uses any more), or an
+//! export in the art manifest. Animations are not compared with masters.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -105,11 +106,20 @@ fn companions() -> Vec<String> {
     names
 }
 
-/// The companion folder in `static/` that holds `image`, if any.
+/// The live companion folder in `static/` that holds `image`, if any;
+/// `static/retired/` is not one.
 fn master_folder(image: &str) -> Option<&str> {
     let rest = image.strip_prefix("static/")?;
     let (folder, _) = rest.split_once('/')?;
-    Some(folder)
+    (folder != RETIRED).then_some(folder)
+}
+
+/// Whether `image` is a master nothing uses any more, in `static/retired/`.
+fn is_retired(image: &str) -> bool {
+    image
+        .strip_prefix("static/")
+        .and_then(|rest| rest.strip_prefix(RETIRED))
+        .is_some_and(|rest| rest.starts_with('/'))
 }
 
 /// A small picture of an image over grey, and its pixel size; `None` when
@@ -183,16 +193,22 @@ fn misplaced(
     masters: &[(String, Print)],
     names: &[String],
 ) -> Option<String> {
-    // static/<companion>/ keeps masters, static/retired/ unused ones.
-    if master_folder(image).is_some() {
+    // static/retired/ keeps masters nothing uses any more, as they were.
+    if is_retired(image) {
         return None;
     }
 
-    // Outside it, a master's copy at any size is a copy.
+    // A master's scaled copy is a copy, even in a live static/<companion>/
+    // folder. Outside static/, so is a copy at full size.
+    let outside = master_folder(image).is_none();
     let copy_of = print.and_then(|print| {
         masters
             .iter()
-            .filter(|(_, other)| other.size.0 >= print.size.0)
+            .filter(|(master, other)| {
+                let smaller = other.size.0 > print.size.0;
+                let full = outside && other.size == print.size;
+                master != image && (smaller || full)
+            })
             .filter_map(|(master, other)| Some((master, distance(print, other)?)))
             .filter(|(_, distance)| *distance <= SAME_PICTURE)
             .min_by(|a, b| a.1.total_cmp(&b.1))
@@ -200,8 +216,11 @@ fn misplaced(
     if let Some((master, _)) = copy_of {
         return Some(format!("{image}: a copy of {master}"));
     }
+    if master_folder(image).is_some() {
+        return None;
+    }
 
-    // A path that names a companion is companion art.
+    // Outside static/, a path that names a companion is companion art.
     let path = letters(image);
     let named = names.iter().find(|name| path.contains(name.as_str()))?;
     Some(format!("{image}: names {named}"))
@@ -285,7 +304,7 @@ fn nothing_reads_retired_masters() {
 }
 
 #[test]
-fn a_copy_outside_static_is_found() {
+fn a_scaled_copy_is_found_anywhere() {
     let master = Print {
         size: (1254, 1254),
         pixels: RgbaImage::from_fn(PRINT, PRINT, |x, y| {
@@ -303,11 +322,12 @@ fn a_copy_outside_static_is_found() {
     let masters = [("static/aki/face.png".to_string(), master)];
     let names = ["aki".to_string(), "cow".to_string()];
 
-    // Copies of masters and pictures named after a companion, outside
-    // static/<companion>/; anything inside it.
+    // Copies of masters anywhere but static/retired/; pictures named
+    // after a companion outside static/.
     for (image, print, expected) in [
         ("assets/cards/card.png", Some(&copy), true),
-        ("static/aki/face-64.png", Some(&copy), false),
+        ("static/aki/face-64.png", Some(&copy), true),
+        ("static/retired/aki/face-64.png", Some(&copy), false),
         ("assets/cow.png", Some(&other), true),
         ("static/aki/face.png", Some(&masters[0].1), false),
         ("static/aki/new_pose.png", Some(&other), false),

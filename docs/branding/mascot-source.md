@@ -89,8 +89,9 @@ or is no longer used is deleted with its references, never kept in a
 repository. An image is companion art when its path names a companion (Aki,
 the companions in `tests/fixtures/companion_unlock.json`, or a folder in
 `static/`), or when its 16 px fingerprint matches a master at another size.
-It fails unless such an image sits in `static/<companion>/` or
-`static/retired/<companion>/`, or is an export in the manifest. Animated PNGs get no fingerprint:
+It fails unless such an image is a master in `static/<companion>/` (a
+scaled copy there fails too), anything in `static/retired/<companion>/`,
+or an export in the manifest. Animated PNGs get no fingerprint:
 their frames are not a scaled copy of one still.
 
 Anki-tan's folder holds Shigeyuki's asset pack as published
