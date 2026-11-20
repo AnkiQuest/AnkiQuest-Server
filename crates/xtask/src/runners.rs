@@ -1,23 +1,27 @@
 //! Keeps pull request code off AnkiQuest's self-hosted runners. Their
 //! runner group admits every workflow and ref (float3/nixos
 //! `nixos/runner-policy.nix`), so only a job's `runs-on` decides where
-//! it runs. Every `runs-on` in `.github/workflows/` must be one of:
+//! it runs. Each workflow in `.github/workflows/` is parsed as YAML, and
+//! every job's `runs-on` must be one of:
 //!
 //! - a GitHub-hosted label (`ubuntu-*`, `macos-*`, `windows-*`);
-//! - `${{ matrix.<key> }}`, with every value of `<key>` in the file a
-//!   GitHub-hosted label;
+//! - `${{ matrix.<key> }}`, with every value of `<key>` in the job's
+//!   matrix, `include` entries too, a GitHub-hosted label;
 //! - the routing expression: self-hosted labels for merge groups and
 //!   pushes to the default branch, a GitHub-hosted label for every other
 //!   event, `pull_request` and `pull_request_target` included.
 //!
-//! Anything else fails, including forms this reader does not parse (a
-//! `runs-on` block, runner groups, variables, inputs). Reusable
-//! workflows must be local, so their jobs are checked here too, or
-//! AnkiQuest-Dev's shared ones on its default branch, `main`, which its
-//! `runner-routing` check covers there.
+//! Anything else fails, including forms this check does not accept (a
+//! list or mapping, runner groups, variables, inputs, merge keys,
+//! invalid YAML). A job without `runs-on` must call a reusable
+//! workflow that is local, so its jobs are checked here too, or one of
+//! AnkiQuest-Dev's shared ones on its default branch, `master`, which
+//! its `runner-routing` check covers there.
 
 use std::fs;
 use std::path::Path;
+
+use yaml_rust2::{Yaml, YamlLoader};
 
 /// The workflow directory, relative to the repository root.
 const WORKFLOWS: &str = ".github/workflows";
@@ -28,10 +32,16 @@ const SELF_HOSTED_EVENTS: &str = "(github.event_name == 'merge_group' || \
 (github.event_name == 'push' && github.ref == \
 format('refs/heads/{0}', github.event.repository.default_branch)))";
 
+/// Local reusable workflows, checked with the rest of the directory.
+const LOCAL: &str = "./.github/workflows/";
+
 /// AnkiQuest-Dev's shared reusable workflows, and the only ref of them
 /// allowed: its default branch.
 const SHARED: &str = "AnkiQuest/AnkiQuest-Dev/.github/workflows/";
-const SHARED_REF: &str = "@main";
+const SHARED_REF: &str = "@master";
+
+/// The YAML merge key, which would hide a job's keys from this check.
+const MERGE_KEY: &str = "<<";
 
 /// Prefixes of GitHub-hosted runner labels.
 const HOSTED: [&str; 3] = ["ubuntu-", "macos-", "windows-"];
@@ -48,7 +58,7 @@ fn hosted(label: &str) -> bool {
     })
 }
 
-/// Whether `uses` names one of AnkiQuest-Dev's shared workflows on main.
+/// Whether `uses` names one of AnkiQuest-Dev's shared workflows on master.
 fn shared(uses: &str) -> bool {
     let Some(file) = uses
         .strip_prefix(SHARED)
@@ -64,15 +74,6 @@ fn shared(uses: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
-}
-
-/// A line's value after `key:`, without a trailing comment.
-fn value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
-    let line = line.trim_start();
-    let line = line.strip_prefix("- ").unwrap_or(line).trim_start();
-    let rest = line.strip_prefix(key)?.strip_prefix(':')?;
-    let rest = rest.split(" #").next().unwrap_or(rest);
-    Some(rest.trim())
 }
 
 /// The fallback label of the routing expression, if `runs_on` is it.
@@ -98,22 +99,54 @@ fn matrix_key(runs_on: &str) -> Option<&str> {
     valid.then_some(key)
 }
 
-/// Whether every value of the matrix key `key` in `text` is hosted.
-fn hosted_matrix(text: &str, key: &str) -> bool {
-    let values: Vec<&str> = text
-        .lines()
-        .filter_map(|line| value(line, key))
-        .flat_map(|value| {
-            let list = value.strip_prefix('[').and_then(|v| v.strip_suffix(']'));
-            list.map_or(vec![value], |list| list.split(',').collect())
-        })
-        .map(|label| label.trim().trim_matches(['\'', '"']))
-        .collect();
-    !values.is_empty() && values.iter().all(|label| hosted(label))
+/// The labels `value` gives a matrix key: none when it is absent, `None`
+/// when it is not a string or a list of strings.
+fn labels(value: &Yaml) -> Option<Vec<&str>> {
+    match value {
+        Yaml::BadValue => Some(Vec::new()),
+        Yaml::String(label) => Some(vec![label]),
+        Yaml::Array(items) => items.iter().map(Yaml::as_str).collect(),
+        _ => None,
+    }
+}
+
+/// Whether every value of the matrix key `key` in `job` is hosted.
+fn hosted_matrix(job: &Yaml, key: &str) -> bool {
+    let matrix = &job["strategy"]["matrix"];
+    if matrix.as_hash().is_none() {
+        return false;
+    }
+
+    // The key's own values.
+    let Some(mut found) = labels(&matrix[key]) else {
+        return false;
+    };
+
+    // Values `include` entries add.
+    let include = &matrix["include"];
+    let entries: &[Yaml] = match include {
+        Yaml::BadValue => &[],
+        Yaml::Array(entries) => entries,
+        _ => return false,
+    };
+    for entry in entries {
+        if entry.as_hash().is_none() {
+            return false;
+        }
+        let Some(more) = labels(&entry[key]) else {
+            return false;
+        };
+        found.extend(more);
+    }
+
+    !found.is_empty() && found.iter().all(|label| hosted(label))
 }
 
 /// The problem with one `runs-on` value, if any.
-fn runs_on_problem(text: &str, runs_on: &str) -> Option<String> {
+fn runs_on_problem(job: &Yaml, runs_on: &Yaml) -> Option<String> {
+    let Some(runs_on) = runs_on.as_str() else {
+        return Some("runs-on must be one label or expression".to_string());
+    };
     if hosted(runs_on) {
         return None;
     }
@@ -124,47 +157,97 @@ fn runs_on_problem(text: &str, runs_on: &str) -> Option<String> {
         return Some(format!("fallback `{fallback}` is not GitHub-hosted"));
     }
     if let Some(key) = matrix_key(runs_on) {
-        if hosted_matrix(text, key) {
+        if hosted_matrix(job, key) {
             return None;
         }
         return Some(format!(
             "matrix.{key} has values that are not GitHub-hosted labels"
         ));
     }
-    if runs_on.is_empty() {
-        return Some("runs-on must be one line".to_string());
-    }
     Some(format!(
         "`{runs_on}` is not a GitHub-hosted label or the routing expression"
     ))
 }
 
-/// The problems in one workflow, as `line: problem`.
-fn problems(text: &str) -> Vec<String> {
+/// The problem with a job's reusable workflow `uses`, if any.
+fn uses_problem(uses: &Yaml) -> Option<String> {
+    let Some(uses) = uses.as_str() else {
+        return Some("uses must be a workflow path".to_string());
+    };
+    if uses.starts_with(LOCAL) || shared(uses) {
+        return None;
+    }
+    Some(format!("reusable workflow `{uses}` is not local"))
+}
+
+/// The problems with one job.
+fn job_problems(job: &Yaml) -> Vec<String> {
+    if job.as_hash().is_none() {
+        return vec!["is not a mapping".to_string()];
+    }
+
+    // A job runs on runs-on or calls a reusable workflow; GitHub rejects
+    // one with both, so check each that is there.
+    let runs_on = &job["runs-on"];
+    let uses = &job["uses"];
+    if runs_on.is_badvalue() && uses.is_badvalue() {
+        return vec!["has neither runs-on nor uses".to_string()];
+    }
     let mut found = Vec::new();
-    for (index, line) in text.lines().enumerate() {
-        let number = index + 1;
-
-        // Where the job runs.
-        if let Some(runs_on) = value(line, "runs-on")
-            && let Some(problem) = runs_on_problem(text, runs_on)
-        {
-            found.push(format!("{number}: {problem}"));
-        }
-
-        // A reusable workflow from elsewhere is not checked here.
-        if let Some(uses) = value(line, "uses")
-            && uses.contains(".github/workflows/")
-            && !uses.starts_with("./")
-            && !shared(uses)
-        {
-            found.push(format!("{number}: reusable workflow `{uses}` is not local"));
-        }
+    if !runs_on.is_badvalue() {
+        found.extend(runs_on_problem(job, runs_on));
+    }
+    if !uses.is_badvalue() {
+        found.extend(uses_problem(uses));
     }
     found
 }
 
-/// The problems in every workflow under `root`, as `file:line: problem`.
+/// Whether `value` holds a merge key anywhere.
+fn merges(value: &Yaml) -> bool {
+    match value {
+        Yaml::Hash(hash) => hash
+            .iter()
+            .any(|(key, value)| key.as_str() == Some(MERGE_KEY) || merges(value)),
+        Yaml::Array(items) => items.iter().any(merges),
+        _ => false,
+    }
+}
+
+/// The problems in one workflow.
+fn problems(text: &str) -> Vec<String> {
+    let documents = match YamlLoader::load_from_str(text) {
+        Ok(documents) => documents,
+        Err(error) => return vec![format!("not valid YAML: {error}")],
+    };
+    let [workflow] = documents.as_slice() else {
+        return vec!["must be one YAML document".to_string()];
+    };
+
+    // GitHub may expand merge keys this check does not.
+    if merges(workflow) {
+        return vec![format!("merge keys (`{MERGE_KEY}`) are not supported")];
+    }
+
+    let Some(jobs) = workflow["jobs"].as_hash() else {
+        return vec!["jobs must be a mapping".to_string()];
+    };
+    let mut found = Vec::new();
+    for (id, job) in jobs {
+        let Some(id) = id.as_str() else {
+            found.push(format!("job id `{id:?}` is not a string"));
+            continue;
+        };
+        found.extend(
+            job_problems(job)
+                .into_iter()
+                .map(|problem| format!("job `{id}`: {problem}")),
+        );
+    }
+    found
+}
+
+/// The problems in every workflow under `root`, as `file: problem`.
 fn check(root: &Path) -> Vec<String> {
     let mut files: Vec<_> = fs::read_dir(root.join(WORKFLOWS))
         .expect("the workflow directory is readable")
@@ -188,7 +271,7 @@ fn check(root: &Path) -> Vec<String> {
                 .into_owned();
             problems(&text)
                 .into_iter()
-                .map(move |problem| format!("{name}:{problem}"))
+                .map(move |problem| format!("{name}: {problem}"))
         })
         .collect()
 }
@@ -315,7 +398,47 @@ mod tests {
 
     #[test]
     fn remote_reusable_workflows_fail() {
-        let text = "jobs:\n  remote:\n    uses: AnkiQuest/AnkiQuest-Server/.github/workflows/ci.yml@master\n  local:\n    uses: ./.github/workflows/ci.yml\n  shared:\n    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@main\n  branch:\n    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@feature\n";
-        assert_eq!(problems(text).len(), 2);
+        let text = "jobs:\n  remote:\n    uses: AnkiQuest/AnkiQuest-Server/.github/workflows/ci.yml@master\n  local:\n    uses: ./.github/workflows/ci.yml\n  shared:\n    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@master\n  main:\n    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@main\n  branch:\n    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@feature\n";
+        assert_eq!(problems(text).len(), 3);
+    }
+
+    #[test]
+    fn aliases_are_resolved() {
+        let text = "x: &label self-hosted\njobs:\n  test:\n    runs-on: *label\n";
+        assert_eq!(problems(text).len(), 1);
+        let text = "x: &label ubuntu-24.04\njobs:\n  test:\n    runs-on: *label\n";
+        assert_eq!(problems(text), Vec::<String>::new());
+    }
+
+    #[test]
+    fn merge_keys_fail() {
+        let text =
+            "x: &base {runs-on: self-hosted}\njobs:\n  test:\n    <<: *base\n    steps: []\n";
+        assert_eq!(problems(text).len(), 1);
+    }
+
+    #[test]
+    fn unreadable_workflows_fail() {
+        for text in [
+            "jobs:\n  test:\n    runs-on: ubuntu-24.04\n    runs-on: self-hosted\n",
+            "jobs: [test]\n",
+            "jobs:\n  test: ubuntu-24.04\n",
+            "jobs:\n  test:\n    steps: []\n",
+            "jobs: {}\n---\njobs: {}\n",
+        ] {
+            assert_eq!(problems(text).len(), 1, "{text}");
+        }
+    }
+
+    #[test]
+    fn matrix_of_other_job_fails() {
+        let text = "jobs:\n  a:\n    strategy:\n      matrix:\n        os: [ubuntu-24.04]\n    runs-on: ubuntu-24.04\n  b:\n    runs-on: ${{ matrix.os }}\n";
+        assert_eq!(problems(text).len(), 1);
+    }
+
+    #[test]
+    fn matrix_include_expression_fails() {
+        let text = "jobs:\n  test:\n    strategy:\n      matrix:\n        os: [ubuntu-24.04]\n        include: ${{ fromJSON(vars.EXTRA) }}\n    runs-on: ${{ matrix.os }}\n";
+        assert_eq!(problems(text).len(), 1);
     }
 }

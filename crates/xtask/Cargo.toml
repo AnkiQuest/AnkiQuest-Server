@@ -23,3 +23,4 @@ webp = { version = "0.3", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"
+yaml-rust2 = { version = "0.13", default-features = false }
