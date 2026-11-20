@@ -565,7 +565,7 @@ pub fn routes() -> Router<Arc<App>> {
 mod tests {
     use super::*;
     use crate::game::{Clock, ClockHistory, FreezePolicy};
-    use crate::test_support::{cleanup, json_response, route_from};
+    use crate::test_support::{FixedClock, cleanup, json_response, route_from};
     use axum::body::Body;
 
     use axum::http::Request;
@@ -729,6 +729,7 @@ mod tests {
         const NOW_MS: i64 = 1_794_819_600_000;
         const A: &str = "java.lang.A: first 1\n\tat a.B.c(B.kt:1)";
         const B: &str = "java.lang.B: second\n\tat b.C.d(C.kt:2)";
+        let clock = FixedClock::at(NOW_MS);
         let (app, path) = fixture();
 
         // A crashes three times across two versions, B once in between.
@@ -739,7 +740,7 @@ mod tests {
             (A, 2, "2.22.0"),
         ];
         for (index, (trace, code, name)) in sent.into_iter().enumerate() {
-            crate::app::fix_now_ms(Some(NOW_MS + index as i64 * 1_000));
+            clock.set(NOW_MS + index as i64 * 1_000);
             let report = serde_json::json!({
                 "APP_VERSION_CODE": code,
                 "APP_VERSION_NAME": name,
@@ -796,7 +797,6 @@ mod tests {
                 .0,
             StatusCode::NOT_FOUND
         );
-        crate::app::fix_now_ms(None);
         cleanup(app, path);
     }
 
