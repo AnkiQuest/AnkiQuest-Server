@@ -331,7 +331,7 @@ mod tests {
         let desktop = checkout();
         let desktop = desktop.path();
         assert_eq!(vec![format!("missing: {WINNER}")], stale(desktop).unwrap());
-        export(desktop).unwrap();
+        assert_eq!(ExitCode::SUCCESS, export(desktop).unwrap());
         assert!(stale(desktop).unwrap().is_empty());
 
         // An edited pose fails the check.
@@ -345,7 +345,7 @@ mod tests {
         );
 
         // Export replaces it and keeps the edited file as retired.
-        export(desktop).unwrap();
+        assert_eq!(ExitCode::SUCCESS, export(desktop).unwrap());
         assert!(stale(desktop).unwrap().is_empty());
         let manifest = exports::read_at(&desktop.join(DESKTOP_MANIFEST)).unwrap();
         let retired = retired_path(WINNER, &exports::sha256(&edited));
@@ -364,7 +364,7 @@ mod tests {
     fn retiring_the_same_picture_twice_lists_it_once() {
         let desktop = checkout();
         let desktop = desktop.path();
-        export(desktop).unwrap();
+        assert_eq!(ExitCode::SUCCESS, export(desktop).unwrap());
         let path = desktop.join(WINNER);
         let blue = RgbaImage::from_pixel(SIZE, SIZE, image::Rgba([0, 0, 255, 255]));
         let edited = encode(&blue).unwrap();
@@ -372,7 +372,7 @@ mod tests {
         // Edit, export, edit back to the same bytes, export again.
         for _ in 0..2 {
             fs::write(&path, &edited).unwrap();
-            export(desktop).unwrap();
+            assert_eq!(ExitCode::SUCCESS, export(desktop).unwrap());
         }
         let manifest = exports::read_at(&desktop.join(DESKTOP_MANIFEST)).unwrap();
         assert_eq!(1, manifest.retired.len());
