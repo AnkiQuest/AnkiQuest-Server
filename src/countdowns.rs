@@ -77,6 +77,7 @@ mod tests {
         order: Vec<OrderCase>,
         search: Vec<SearchCase>,
         pace: Vec<PaceCase>,
+        import: Vec<ImportCase>,
     }
 
     #[derive(Deserialize)]
@@ -103,10 +104,11 @@ mod tests {
         Past,
     }
 
-    #[derive(Deserialize)]
+    #[derive(Clone, Debug, Deserialize, PartialEq)]
     struct Event {
         name: String,
         date: String,
+        deck: Option<String>,
     }
 
     #[derive(Deserialize)]
@@ -146,6 +148,20 @@ mod tests {
         PerDay { cards: i64 },
         Done,
         None,
+    }
+
+    #[derive(Deserialize)]
+    struct ImportCase {
+        name: String,
+        account: Vec<Event>,
+        device: Vec<Event>,
+        expected: Imported,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Imported {
+        account: Vec<Event>,
+        left: Vec<Event>,
     }
 
     fn fixture() -> Fixture {
@@ -197,6 +213,43 @@ mod tests {
         Pace::PerDay {
             cards: (remaining + days - 1) / days,
         }
+    }
+
+    /// The account's list with the device's events added, and the device events that did not
+    /// fit. An event with the same name and date as one already in the list is not added.
+    fn import(account: &[Event], device: &[Event], max_events: usize) -> Imported {
+        let mut merged = account.to_vec();
+        let mut left = Vec::new();
+        for event in device {
+            let known = merged
+                .iter()
+                .any(|kept| kept.name == event.name && kept.date == event.date);
+            if known {
+                continue;
+            }
+            if merged.len() >= max_events {
+                left.push(event.clone());
+                continue;
+            }
+            merged.push(event.clone());
+        }
+        Imported {
+            account: merged,
+            left,
+        }
+    }
+
+    /// The countdown limits in `tests/fixtures/synced_settings.json`.
+    fn limits() -> Limits {
+        let settings: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/synced_settings.json")).unwrap();
+        let key = settings["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|key| key["key"] == "countdowns")
+            .unwrap();
+        serde_json::from_value(key.clone()).unwrap()
     }
 
     #[test]
@@ -262,20 +315,38 @@ mod tests {
     }
 
     #[test]
+    fn imports_follow_the_shared_cases() {
+        let max_events = limits().max_events;
+        for case in fixture().import {
+            assert_eq!(
+                import(&case.account, &case.device, max_events),
+                case.expected,
+                "{}",
+                case.name
+            );
+        }
+    }
+
+    #[test]
     fn every_example_event_is_a_valid_countdown() {
-        let settings: Value =
-            serde_json::from_str(include_str!("../tests/fixtures/synced_settings.json")).unwrap();
-        let key = settings["keys"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|key| key["key"] == "countdowns")
-            .unwrap();
-        let limits: Limits = serde_json::from_value(key.clone()).unwrap();
+        let limits = limits();
         let fixture: Value = serde_json::from_str(FIXTURE).unwrap();
         for section in ["nearest", "order"] {
             for case in fixture[section].as_array().unwrap() {
                 assert!(limits.accepts(&case["events"]), "{}", case["name"]);
+            }
+        }
+
+        // Every list in the import cases, before and after, is one the server stores.
+        for case in fixture["import"].as_array().unwrap() {
+            let lists = [
+                &case["account"],
+                &case["device"],
+                &case["expected"]["account"],
+                &case["expected"]["left"],
+            ];
+            for list in lists {
+                assert!(limits.accepts(list), "{}", case["name"]);
             }
         }
     }

@@ -1,5 +1,5 @@
 {
-  "_about": "Countdowns to a player's events and exams. The list is the synced setting `countdowns` (synced_settings.json holds its limits); the server only checks that it is well formed. Both clients compute what they show from the cases here. `days`: an Anki day starts at the collection's day start hour (Anki's \"next day starts at\"), so today is the local date of `now` minus `day_start_hour` hours; `days` is the event's date minus today, and `state` names it. `nearest`: the event Home and Today show, the one with the fewest days that is not past; on a tie the first in the list. `order`: the list in settings, by date and on a tie in stored order, past ones included until the player removes them. `search`: the Anki search for the cards a linked deck still has before the event (subdecks included, suspended cards left out): new, learning, and review cards due before the event day. `pace`: cards a day from today up to the day before the event, rounded up; `remaining` null means no deck is linked or the collection has no such deck. `wording`: the English text; each client translates it. `pace_one` and `pace_other` are the plural forms of one message.",
+  "_about": "Countdowns to a player's events and exams. The list is the synced setting `countdowns` (synced_settings.json holds its limits); the server only checks that it is well formed. Both clients compute what they show from the cases here. `days`: an Anki day starts at the collection's day start hour (Anki's \"next day starts at\"), so today is the local date of `now` minus `day_start_hour` hours; `days` is the event's date minus today, and `state` names it. `nearest`: the event Home and Today show, the one with the fewest days that is not past; on a tie the first in the list. `order`: the list in settings, by date and on a tie in stored order, past ones included until the player removes them. `search`: the Anki search for the cards a linked deck still has before the event (subdecks included, suspended cards left out): new, learning, and review cards due before the event day. `pace`: cards a day from today up to the day before the event, rounded up; `remaining` null means no deck is linked or the collection has no such deck. `wording`: the English text; each client translates it. `pace_one` and `pace_other` are the plural forms of one message. `import`: countdowns made while signed out stay on the device, apart from every account's list; on sign-in the client offers to add them to the account (`import_*` wording), once that account's list has synced, and only when at least one would be added. `device` is the signed-out list, `account` the account's; `expected.account` is the account's list after adding: its own events first, unchanged, then each device event in device order, unless the list already has an event with the same name and date (compared exactly; the account's deck wins) or is full. `expected.left` are the device events that did not fit; they stay on the device. Declining keeps the whole device list on the device, shown while signed out. `import_one`/`import_other` and `left_one`/`left_other` are plural forms.",
   "wording": {
     "section": "Countdowns",
     "empty": "Add an exam or event to count down to it.",
@@ -21,7 +21,13 @@
     "past": "{name} is over",
     "pace_one": "~{cards} card a day to finish {deck} by then",
     "pace_other": "~{cards} cards a day to finish {deck} by then",
-    "done": "Nothing left in {deck} before then"
+    "done": "Nothing left in {deck} before then",
+    "import_one": "Add the countdown you made while signed out to {user}?",
+    "import_other": "Add the {count} countdowns you made while signed out to {user}?",
+    "import_add": "Add to account",
+    "import_keep": "Keep on this device",
+    "left_one": "{count} countdown did not fit and stays on this device.",
+    "left_other": "{count} countdowns did not fit and stay on this device."
   },
   "days": [
     {
@@ -223,5 +229,177 @@
     {"name": "no study day left on the day itself", "days": 0, "remaining": 50, "expected": {"state": "none"}},
     {"name": "an event that is over", "days": -2, "remaining": 50, "expected": {"state": "none"}},
     {"name": "no deck linked or the deck is gone", "days": 12, "remaining": null, "expected": {"state": "none"}}
+  ],
+  "import": [
+    {
+      "name": "an empty account takes every event",
+      "account": [],
+      "device": [
+        {"name": "Driving theory", "date": "2026-12-01", "deck": null},
+        {"name": "Spanish exam", "date": "2026-11-25", "deck": "Spanish::A1"}
+      ],
+      "expected": {
+        "account": [
+          {"name": "Driving theory", "date": "2026-12-01", "deck": null},
+          {"name": "Spanish exam", "date": "2026-11-25", "deck": "Spanish::A1"}
+        ],
+        "left": []
+      }
+    },
+    {
+      "name": "the account's events stay first, new ones follow in device order",
+      "account": [
+        {"name": "Biology test", "date": "2026-11-20", "deck": "Biology"}
+      ],
+      "device": [
+        {"name": "Spanish exam", "date": "2026-11-25", "deck": "Spanish::A1"},
+        {"name": "Driving theory", "date": "2026-12-01", "deck": null}
+      ],
+      "expected": {
+        "account": [
+          {"name": "Biology test", "date": "2026-11-20", "deck": "Biology"},
+          {"name": "Spanish exam", "date": "2026-11-25", "deck": "Spanish::A1"},
+          {"name": "Driving theory", "date": "2026-12-01", "deck": null}
+        ],
+        "left": []
+      }
+    },
+    {
+      "name": "the same name and date is one event and the account's deck wins",
+      "account": [
+        {"name": "Spanish exam", "date": "2026-11-25", "deck": null}
+      ],
+      "device": [
+        {"name": "Spanish exam", "date": "2026-11-25", "deck": "Spanish::A1"},
+        {"name": "Driving theory", "date": "2026-12-01", "deck": null}
+      ],
+      "expected": {
+        "account": [
+          {"name": "Spanish exam", "date": "2026-11-25", "deck": null},
+          {"name": "Driving theory", "date": "2026-12-01", "deck": null}
+        ],
+        "left": []
+      }
+    },
+    {
+      "name": "the same name on another date is another event",
+      "account": [
+        {"name": "Spanish exam", "date": "2026-11-25", "deck": "Spanish::A1"}
+      ],
+      "device": [
+        {"name": "Spanish exam", "date": "2026-12-10", "deck": null}
+      ],
+      "expected": {
+        "account": [
+          {"name": "Spanish exam", "date": "2026-11-25", "deck": "Spanish::A1"},
+          {"name": "Spanish exam", "date": "2026-12-10", "deck": null}
+        ],
+        "left": []
+      }
+    },
+    {
+      "name": "names compare exactly",
+      "account": [
+        {"name": "Spanish exam", "date": "2026-11-25", "deck": "Spanish::A1"}
+      ],
+      "device": [
+        {"name": "spanish exam", "date": "2026-11-25", "deck": null}
+      ],
+      "expected": {
+        "account": [
+          {"name": "Spanish exam", "date": "2026-11-25", "deck": "Spanish::A1"},
+          {"name": "spanish exam", "date": "2026-11-25", "deck": null}
+        ],
+        "left": []
+      }
+    },
+    {
+      "name": "a repeat on the device is added once",
+      "account": [],
+      "device": [
+        {"name": "Driving theory", "date": "2026-12-01", "deck": null},
+        {"name": "Driving theory", "date": "2026-12-01", "deck": null}
+      ],
+      "expected": {
+        "account": [
+          {"name": "Driving theory", "date": "2026-12-01", "deck": null}
+        ],
+        "left": []
+      }
+    },
+    {
+      "name": "nothing is added when every event is already there",
+      "account": [
+        {"name": "Spanish exam", "date": "2026-11-25", "deck": "Spanish::A1"},
+        {"name": "Driving theory", "date": "2026-12-01", "deck": null}
+      ],
+      "device": [
+        {"name": "Driving theory", "date": "2026-12-01", "deck": null}
+      ],
+      "expected": {
+        "account": [
+          {"name": "Spanish exam", "date": "2026-11-25", "deck": "Spanish::A1"},
+          {"name": "Driving theory", "date": "2026-12-01", "deck": null}
+        ],
+        "left": []
+      }
+    },
+    {
+      "name": "what does not fit stays on the device",
+      "account": [
+        {"name": "Quiz 1", "date": "2026-12-01", "deck": null},
+        {"name": "Quiz 2", "date": "2026-12-02", "deck": null},
+        {"name": "Quiz 3", "date": "2026-12-03", "deck": null},
+        {"name": "Quiz 4", "date": "2026-12-04", "deck": null},
+        {"name": "Quiz 5", "date": "2026-12-05", "deck": null},
+        {"name": "Quiz 6", "date": "2026-12-06", "deck": null},
+        {"name": "Quiz 7", "date": "2026-12-07", "deck": null},
+        {"name": "Quiz 8", "date": "2026-12-08", "deck": null},
+        {"name": "Quiz 9", "date": "2026-12-09", "deck": null},
+        {"name": "Quiz 10", "date": "2026-12-10", "deck": null},
+        {"name": "Quiz 11", "date": "2026-12-11", "deck": null},
+        {"name": "Quiz 12", "date": "2026-12-12", "deck": null},
+        {"name": "Quiz 13", "date": "2026-12-13", "deck": null},
+        {"name": "Quiz 14", "date": "2026-12-14", "deck": null},
+        {"name": "Quiz 15", "date": "2026-12-15", "deck": null},
+        {"name": "Quiz 16", "date": "2026-12-16", "deck": null},
+        {"name": "Quiz 17", "date": "2026-12-17", "deck": null},
+        {"name": "Quiz 18", "date": "2026-12-18", "deck": null},
+        {"name": "Quiz 19", "date": "2026-12-19", "deck": null}
+      ],
+      "device": [
+        {"name": "Driving theory", "date": "2026-12-01", "deck": null},
+        {"name": "Spanish exam", "date": "2026-11-25", "deck": "Spanish::A1"},
+        {"name": "Biology test", "date": "2026-11-20", "deck": "Biology"}
+      ],
+      "expected": {
+        "account": [
+          {"name": "Quiz 1", "date": "2026-12-01", "deck": null},
+          {"name": "Quiz 2", "date": "2026-12-02", "deck": null},
+          {"name": "Quiz 3", "date": "2026-12-03", "deck": null},
+          {"name": "Quiz 4", "date": "2026-12-04", "deck": null},
+          {"name": "Quiz 5", "date": "2026-12-05", "deck": null},
+          {"name": "Quiz 6", "date": "2026-12-06", "deck": null},
+          {"name": "Quiz 7", "date": "2026-12-07", "deck": null},
+          {"name": "Quiz 8", "date": "2026-12-08", "deck": null},
+          {"name": "Quiz 9", "date": "2026-12-09", "deck": null},
+          {"name": "Quiz 10", "date": "2026-12-10", "deck": null},
+          {"name": "Quiz 11", "date": "2026-12-11", "deck": null},
+          {"name": "Quiz 12", "date": "2026-12-12", "deck": null},
+          {"name": "Quiz 13", "date": "2026-12-13", "deck": null},
+          {"name": "Quiz 14", "date": "2026-12-14", "deck": null},
+          {"name": "Quiz 15", "date": "2026-12-15", "deck": null},
+          {"name": "Quiz 16", "date": "2026-12-16", "deck": null},
+          {"name": "Quiz 17", "date": "2026-12-17", "deck": null},
+          {"name": "Quiz 18", "date": "2026-12-18", "deck": null},
+          {"name": "Quiz 19", "date": "2026-12-19", "deck": null},
+          {"name": "Driving theory", "date": "2026-12-01", "deck": null}
+        ],
+        "left": [
+          {"name": "Spanish exam", "date": "2026-11-25", "deck": "Spanish::A1"},
+          {"name": "Biology test", "date": "2026-11-20", "deck": "Biology"}
+        ]
+      }
+    }
   ]
 }
