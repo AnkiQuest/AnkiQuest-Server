@@ -315,10 +315,11 @@ thread_local! {
     static FIXED_NOW_MS: std::cell::Cell<Option<i64>> = const { std::cell::Cell::new(None) };
 }
 
-/// Pins [`now_ms`] on the calling thread, so a test answers the same on any day.
+/// Pins [`now_ms`] on the calling thread, so a test answers the same on any day, and
+/// returns the pin it replaces.
 #[cfg(test)]
-pub(crate) fn fix_now_ms(ms: Option<i64>) {
-    FIXED_NOW_MS.set(ms);
+pub(crate) fn fix_now_ms(ms: Option<i64>) -> Option<i64> {
+    FIXED_NOW_MS.replace(ms)
 }
 
 /// [`tokio::task::spawn_blocking`], keeping a test's pinned [`now_ms`] on the blocking thread.
@@ -500,8 +501,7 @@ mod tests {
     #[test]
     fn standings_are_cached_until_the_player_changes_and_stay_small() {
         // Keep the fixture's last ten minutes within one study day.
-        let study_time = 1_793_183_400_000;
-        fix_now_ms(Some(study_time));
+        let _clock = FixedClock::at(STUDY_TIME);
 
         let (app, path) = fixture();
         with_reviews(&app, "cerro", 5);
@@ -523,6 +523,5 @@ mod tests {
         );
         assert!(second.today.reviews > first.today.reviews);
         cleanup(app, path);
-        fix_now_ms(None);
     }
 }

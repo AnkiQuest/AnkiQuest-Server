@@ -744,7 +744,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_report_is_stored_without_account_or_device_identifiers() {
-        fix_now(NOW_MS);
+        let _clock = FixedClock::at(NOW_MS);
         let (app, path) = fixture();
         assert_eq!(
             send(&app, "192.0.2.7:4000", report().to_string()).await,
@@ -863,7 +863,7 @@ mod tests {
     /// `UPDATE_API_EXAMPLES=1`.
     #[tokio::test]
     async fn the_example_report_is_accepted_and_stored_as_documented() {
-        fix_now(NOW_MS);
+        let _clock = FixedClock::at(NOW_MS);
         let (app, path) = fixture();
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/api/examples");
         let sent = std::fs::read_to_string(dir.join("crash_report.json")).unwrap();
@@ -887,7 +887,7 @@ mod tests {
 
     #[tokio::test]
     async fn bodies_over_the_limit_and_bodies_that_are_not_json_are_refused() {
-        fix_now(NOW_MS);
+        let _clock = FixedClock::at(NOW_MS);
         let (app, path) = fixture();
 
         // A report of exactly the maximum is taken; one byte more is 413.
@@ -920,7 +920,7 @@ mod tests {
 
     #[tokio::test]
     async fn each_client_sends_ten_reports_an_hour() {
-        fix_now(NOW_MS);
+        let clock = FixedClock::at(NOW_MS);
         let (app, path) = fixture();
         let body = || report().to_string();
         for _ in 0..REPORTS_PER_HOUR {
@@ -951,7 +951,7 @@ mod tests {
         );
 
         // An hour later the first address may send again.
-        fix_now(NOW_MS + HOUR_MS);
+        clock.set(NOW_MS + HOUR_MS);
         assert_eq!(
             send(&app, "192.0.2.10:4000", body()).await,
             StatusCode::NO_CONTENT
@@ -999,13 +999,13 @@ mod tests {
 
     #[tokio::test]
     async fn the_tick_forgets_quiet_addresses() {
-        fix_now(NOW_MS);
+        let clock = FixedClock::at(NOW_MS);
         let (app, path) = fixture();
         assert!(
             app.crash_reports
                 .admit("192.0.2.12".parse().unwrap(), NOW_MS)
         );
-        fix_now(NOW_MS + HOUR_MS);
+        clock.set(NOW_MS + HOUR_MS);
         crate::worker::tick(&app).unwrap();
         assert!(app.crash_reports.0.lock().unwrap().is_empty());
         cleanup(app, path);
@@ -1084,7 +1084,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_tick_deletes_old_reports() {
-        fix_now(NOW_MS);
+        let _clock = FixedClock::at(NOW_MS);
         let (app, path) = fixture();
         insert(
             &app.store.lock().unwrap().conn,
@@ -1169,14 +1169,14 @@ mod tests {
 
     #[tokio::test]
     async fn the_same_signature_is_stored_twice_and_then_counted() {
-        fix_now(NOW_MS);
+        let clock = FixedClock::at(NOW_MS);
         let (app, path) = fixture();
         let trace = report()["STACK_TRACE"].as_str().unwrap().to_string();
         let mine = crate::crash_signature::of_trace(&trace);
 
         // Three reports with one signature: the first two are kept, the third only counted.
         for (minute, version) in [(0, "2.21.0"), (1, "2.21.0"), (2, "2.22.0")] {
-            fix_now(NOW_MS + minute * MINUTE_MS);
+            clock.set(NOW_MS + minute * MINUTE_MS);
             let sent = signed(&mine, version).to_string();
             assert_eq!(
                 send(&app, "192.0.2.20:4000", sent).await,
@@ -1203,7 +1203,7 @@ mod tests {
         assert_eq!(saved["CUSTOM_DATA"][SIGNATURE_FIELD], mine);
 
         // Another signature is stored on its own; one in capitals is the same signature.
-        fix_now(NOW_MS + 3 * MINUTE_MS);
+        clock.set(NOW_MS + 3 * MINUTE_MS);
         let mut other = signed(OTHER, "2.22.0");
         other["STACK_TRACE"] = "java.lang.IllegalStateException: other".into();
         other["CUSTOM_DATA"][SIGNATURE_FIELD] =
@@ -1226,13 +1226,13 @@ mod tests {
 
     #[tokio::test]
     async fn without_a_signature_the_server_computes_it() {
-        fix_now(NOW_MS);
+        let clock = FixedClock::at(NOW_MS);
         let (app, path) = fixture();
 
         // Every shared case groups under the signature the fixture gives for its stack trace.
         for (index, (name, trace, expected)) in shared_cases().into_iter().enumerate() {
             let at = NOW_MS + index as i64;
-            fix_now(at);
+            clock.set(at);
             let mut sent = report();
             sent["STACK_TRACE"] = trace.into();
             let peer = format!("192.0.2.{}:4000", 30 + index);
@@ -1245,7 +1245,7 @@ mod tests {
 
         // A report without a stack trace has the signature of an empty one.
         let at = NOW_MS + MINUTE_MS;
-        fix_now(at);
+        clock.set(at);
         let mut sent = report();
         sent.as_object_mut().unwrap().remove("STACK_TRACE");
         assert_eq!(
@@ -1259,7 +1259,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_malformed_signature_is_ignored_and_computed_instead() {
-        fix_now(NOW_MS);
+        let clock = FixedClock::at(NOW_MS);
         let (app, path) = fixture();
         let (_, trace, expected) = shared_cases().remove(0);
         let long = format!("{SIGNATURE}0");
@@ -1275,7 +1275,7 @@ mod tests {
         // Each malformed value is ignored and scrubbed like any other field.
         for (index, value) in malformed.into_iter().enumerate() {
             let at = NOW_MS + index as i64;
-            fix_now(at);
+            clock.set(at);
             let mut sent = report();
             sent["STACK_TRACE"] = trace.clone().into();
             sent["CUSTOM_DATA"][SIGNATURE_FIELD] = value;
@@ -1292,7 +1292,7 @@ mod tests {
 
         // A well-formed signature at the top level of the report is used too.
         let (app, path) = fixture();
-        fix_now(NOW_MS);
+        clock.set(NOW_MS);
         let mut sent = report();
         let mine = crate::crash_signature::of_trace(sent["STACK_TRACE"].as_str().unwrap());
         sent[SIGNATURE_FIELD] = mine.to_ascii_uppercase().into();
@@ -1507,7 +1507,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_sent_signature_counts_only_when_it_matches_the_trace() {
-        fix_now(NOW_MS);
+        let clock = FixedClock::at(NOW_MS);
         let (app, path) = fixture();
         let trace = report()["STACK_TRACE"].as_str().unwrap().to_string();
         let computed = crate::crash_signature::of_trace(&trace);
@@ -1518,7 +1518,7 @@ mod tests {
             StatusCode::NO_CONTENT
         );
         assert_eq!(seen_at(&app, NOW_MS), computed);
-        fix_now(NOW_MS + 1);
+        clock.set(NOW_MS + 1);
         let mut top = report();
         top[SIGNATURE_FIELD] = OTHER.into();
         assert_eq!(
@@ -1532,7 +1532,7 @@ mod tests {
         assert_eq!(stored(&app)[0].3["CUSTOM_DATA"][SIGNATURE_FIELD], OTHER);
 
         // The trace's own signature, in capitals too, is the same crash.
-        fix_now(NOW_MS + 2);
+        clock.set(NOW_MS + 2);
         let upper = signed(&computed.to_ascii_uppercase(), "2.21.0").to_string();
         assert_eq!(
             send(&app, "192.0.2.92:4000", upper).await,
@@ -1543,9 +1543,5 @@ mod tests {
             3
         );
         cleanup(app, path);
-    }
-
-    fn fix_now(ms: i64) {
-        crate::app::fix_now_ms(Some(ms));
     }
 }
