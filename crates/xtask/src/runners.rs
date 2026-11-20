@@ -38,7 +38,8 @@ const LOCAL: &str = "./.github/workflows/";
 /// AnkiQuest-Dev's shared reusable workflows, and the only ref of them
 /// allowed: its default branch.
 const SHARED: &str = "AnkiQuest/AnkiQuest-Dev/.github/workflows/";
-const SHARED_REF: &str = "@master";
+// Until the default branch is renamed to master (then this and the callers move).
+const SHARED_REF: &str = "@main";
 
 /// The YAML merge key, which would hide a job's keys from this check.
 const MERGE_KEY: &str = "<<";
@@ -398,7 +399,7 @@ mod tests {
 
     #[test]
     fn remote_reusable_workflows_fail() {
-        let text = "jobs:\n  remote:\n    uses: AnkiQuest/AnkiQuest-Server/.github/workflows/ci.yml@master\n  local:\n    uses: ./.github/workflows/ci.yml\n  shared:\n    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@master\n  main:\n    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@main\n  branch:\n    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@feature\n";
+        let text = "jobs:\n  remote:\n    uses: AnkiQuest/AnkiQuest-Server/.github/workflows/ci.yml@master\n  local:\n    uses: ./.github/workflows/ci.yml\n  shared:\n    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@main\n  other_branch:\n    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@master\n  branch:\n    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@feature\n";
         assert_eq!(problems(text).len(), 3);
     }
 
