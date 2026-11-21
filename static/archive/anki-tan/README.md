@@ -2,10 +2,10 @@
 
 Earlier approved generated poses and superseded desktop exports.
 These files are retained byte for byte; active masters use the core pose names
-in the parent directory. The archived export is outside the add-on package.
+in static/anki-tan/. The archived export is outside the add-on package.
 
 Anki-tan by Shigeyuki (https://www.patreon.com/Shigeyuki).
-These derivatives remain CC BY-SA 4.0 under [LICENSE](../LICENSE).
+These derivatives remain CC BY-SA 4.0 under [LICENSE](../../anki-tan/LICENSE).
 Generated with OpenAI image_gen; its model identifier was not exposed.
 
 | File | Original path | SHA-256 |

@@ -72,16 +72,18 @@ The README banner and social preview are drawn by `xtask banner` and
 checked by its own tests against a fresh render. Android's WebPs live in
 the Android repository, which checks them against the pinned server commit.
 
-## Retired art
+## Archive
 
 Nothing that cannot be regenerated is deleted (hill, 2026-11-21). A master
-nothing uses any more, and any old picture that is not an export of a
-current master (hand-made copies, review sheets, add-on copies from before
-the exporter), moves to `static/retired/<companion>/` and becomes a master
-there; each folder's README lists the files with their original paths and
-SHA-256. Anki-tan's archive stays in `static/anki-tan/archive/`, next to
-her licence, and counts as retired too. No exporter, page or server route
-reads a retired folder, and `build.rs` skips `static/retired/`.
+that was replaced, redrawn or retired, and any old picture that is not an
+export of a current master (hand-made copies, review sheets, add-on copies
+from before the exporter), moves to `static/archive/<companion>/`; each
+folder's README lists the files with their original paths and SHA-256. No
+exporter, page or server route reads the archive, and `build.rs` skips
+`static/archive/`.
+
+Smaller sizes a build generates from a master (`face-192`, `face-32`) are
+neither committed nor archived.
 
 Exported copies are generated: the exporters overwrite them, and a copy
 that was renamed, retired or is no longer used is deleted with its
@@ -94,8 +96,8 @@ repository. An image is companion art when its path names a companion (Aki,
 the companions in `tests/fixtures/companion_unlock.json`, or a folder in
 `static/`), or when its 16 px fingerprint matches a master at another size.
 It fails unless such an image is a master in `static/<companion>/` (a
-scaled copy there fails too), anything in `static/retired/<companion>/` or
-`static/anki-tan/archive/`, or an export in the manifest. Animated PNGs
+scaled copy there fails too), anything in `static/archive/`, or an export
+in the manifest. Animated PNGs
 get no fingerprint: their frames are not a scaled copy of one still.
 
 Anki-tan's folder holds Shigeyuki's asset pack as published

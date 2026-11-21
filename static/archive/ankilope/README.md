@@ -1,14 +1,13 @@
-# Retired Ankilope files
+# Archived Ankilope files
 
 Pictures nothing uses any more, kept byte for byte as masters (hill,
 2026-11-21). They cannot be regenerated from a current master: hand-made
-icons and share cards, review sheets, and add-on copies from before
+share cards, review sheets, and add-on copies from before
 `export-addon-art` wrote them. No exporter, page or server route reads
 this folder.
 
 | File | Original path | SHA-256 |
 |---|---|---|
-| face-192.png | static/ankilope/face-192.png | 555b6f8cc440e7d7f6af7f36faa2380d6e4435c66c55f68f07af9fa538c679cd |
 | addon/ankilope_celebrate-fc3ddf49.png | addon/art/ankilope_celebrate.png (AnkiQuest-Desktop) | fc3ddf49d828f8a5a4d4cc2d482dee87aea2ded3e692d59bb139ebfd43d41c02 |
 | addon/ankilope_face-9d4dbb66.png | addon/ankilope_face.png (AnkiQuest-Desktop) | 9d4dbb6658aeabcc8441a7c4ccfb073caf80493eafd1b745159a016b3444d08d |
 | addon/ankilope_study-277abb2e.png | addon/art/ankilope_study.png (AnkiQuest-Desktop) | 277abb2e255e7660ca3287a3117bd0db8328e680c97a6372cf9a67d0293e603d |

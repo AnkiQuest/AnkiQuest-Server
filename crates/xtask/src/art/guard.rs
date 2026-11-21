@@ -3,8 +3,8 @@
 //!
 //! An image is companion art when its path names a companion, or when it
 //! looks like a master scaled to another size. It may only be a master in
-//! `static/<companion>/` (a scaled copy there fails too), anything in a
-//! retired folder ([`RETIRED_FOLDERS`], masters nothing uses any more), or
+//! `static/<companion>/` (a scaled copy there fails too), anything in the
+//! archive ([`ARCHIVE_FOLDER`], pictures that are not current masters), or
 //! an export in the art manifest. Animations are not compared with masters.
 
 use std::fs;
@@ -25,12 +25,11 @@ const SKIPPED: [&str; 3] = ["target", "node_modules", ".git"];
 /// The fixture that names every companion but Aki.
 const UNLOCKS: &str = "tests/fixtures/companion_unlock.json";
 
-/// The folder in `static/` that keeps masters nothing uses any more.
-const RETIRED: &str = "retired";
+/// The folder in `static/` that keeps pictures that are not current masters.
+const ARCHIVE: &str = "archive";
 
-/// Folders of masters nothing uses any more: `static/retired/`, and
-/// Anki-tan's archive, which stays next to her licence.
-const RETIRED_FOLDERS: [&str; 2] = ["static/retired/", "static/anki-tan/archive/"];
+/// The archive's path: replaced, redrawn and retired masters, never exported.
+const ARCHIVE_FOLDER: &str = "static/archive/";
 
 /// Fingerprint edge: images are compared at this size.
 const PRINT: u32 = 16;
@@ -100,7 +99,7 @@ fn companions() -> Vec<String> {
         names.push(companion["companion"].as_str().unwrap().to_string());
     }
     for folder in fs::read_dir(root().join("static")).unwrap().flatten() {
-        if folder.path().is_dir() && folder.file_name() != RETIRED {
+        if folder.path().is_dir() && folder.file_name() != ARCHIVE {
             names.push(folder.file_name().to_string_lossy().into_owned());
         }
     }
@@ -110,10 +109,10 @@ fn companions() -> Vec<String> {
     names
 }
 
-/// The live companion folder in `static/` that holds `image`, if any; a
-/// retired folder is not one.
+/// The live companion folder in `static/` that holds `image`, if any; the
+/// archive is not one.
 fn master_folder(image: &str) -> Option<&str> {
-    if is_retired(image) {
+    if is_archived(image) {
         return None;
     }
     let rest = image.strip_prefix("static/")?;
@@ -121,11 +120,9 @@ fn master_folder(image: &str) -> Option<&str> {
     Some(folder)
 }
 
-/// Whether `image` is a master nothing uses any more, in a retired folder.
-fn is_retired(image: &str) -> bool {
-    RETIRED_FOLDERS
-        .iter()
-        .any(|folder| image.starts_with(folder))
+/// Whether `image` is in the archive.
+fn is_archived(image: &str) -> bool {
+    image.starts_with(ARCHIVE_FOLDER)
 }
 
 /// A small picture of an image over grey, and its pixel size; `None` when
@@ -199,8 +196,8 @@ fn misplaced(
     masters: &[(String, Print)],
     names: &[String],
 ) -> Option<String> {
-    // Retired folders keep masters nothing uses any more, as they were.
-    if is_retired(image) {
+    // The archive keeps pictures that are not current masters, as they were.
+    if is_archived(image) {
         return None;
     }
 
@@ -282,7 +279,7 @@ fn listed_files_exist() {
 }
 
 #[test]
-fn nothing_reads_retired_masters() {
+fn nothing_reads_the_archive() {
     // Code, pages and exporters read masters from static/<companion>/ only.
     let mut code = Vec::new();
     for folder in ["src", "web", "crates", "build.rs"] {
@@ -304,9 +301,11 @@ fn nothing_reads_retired_masters() {
         let Ok(text) = fs::read_to_string(file) else {
             continue;
         };
-        for folder in RETIRED_FOLDERS {
-            assert!(!text.contains(folder), "{} reads {folder}", relative(file));
-        }
+        assert!(
+            !text.contains(ARCHIVE_FOLDER),
+            "{} reads {ARCHIVE_FOLDER}",
+            relative(file)
+        );
     }
 }
 
@@ -329,13 +328,13 @@ fn a_scaled_copy_is_found_anywhere() {
     let masters = [("static/aki/face.png".to_string(), master)];
     let names = ["aki".to_string(), "cow".to_string()];
 
-    // Copies of masters anywhere but in a retired folder; pictures named
+    // Copies of masters anywhere but in the archive; pictures named
     // after a companion outside static/.
     for (image, print, expected) in [
         ("assets/cards/card.png", Some(&copy), true),
         ("static/aki/face-64.png", Some(&copy), true),
-        ("static/retired/aki/face-64.png", Some(&copy), false),
-        ("static/anki-tan/archive/face-64.png", Some(&copy), false),
+        ("static/archive/aki/face-64.png", Some(&copy), false),
+        ("static/anki-tan/archive/face-64.png", Some(&copy), true),
         ("assets/cow.png", Some(&other), true),
         ("static/aki/face.png", Some(&masters[0].1), false),
         ("static/aki/new_pose.png", Some(&other), false),
@@ -351,12 +350,12 @@ fn a_scaled_copy_is_found_anywhere() {
 }
 
 #[test]
-fn retired_folders_hold_no_masters() {
-    // Anki-tan's archive stays next to her licence, but like static/retired/
-    // it holds no masters to export from or compare against.
+fn the_archive_holds_no_masters() {
+    // static/archive/ holds no masters to export from or compare against;
+    // a folder inside a companion's folder is not an archive.
     assert_eq!(master_folder("static/anki-tan/happy.png"), Some("anki-tan"));
-    assert_eq!(master_folder("static/anki-tan/archive/sad-full.png"), None);
-    assert_eq!(master_folder("static/retired/aki/face-32.png"), None);
+    assert_eq!(master_folder("static/archive/anki-tan/sad-full.png"), None);
+    assert_eq!(master_folder("static/archive/aki/addon/aki_face.png"), None);
 }
 
 #[test]

@@ -1,15 +1,13 @@
-# Retired Aki files
+# Archived Aki files
 
 Pictures nothing uses any more, kept byte for byte as masters (hill,
 2026-11-21). They cannot be regenerated from a current master: hand-made
-icons and share cards, review sheets, and add-on copies from before
+share cards, review sheets, and add-on copies from before
 `export-addon-art` wrote them. No exporter, page or server route reads
 this folder.
 
 | File | Original path | SHA-256 |
 |---|---|---|
-| face-192.png | static/aki/face-192.png | eb27bc43e9063c32bb1eef4f0ad23d482eda61e2e8e937fa50daf6f1163a7d65 |
-| face-32.png | static/aki/face-32.png | 44f167dd83eaa1190e6b82f3a8082f0b0dbeadc82eda838fad5ac9dcac9a11c4 |
 | addon/aki_celebrate-5017d3a0.png | addon/art/aki_celebrate.png (AnkiQuest-Desktop) | 5017d3a09a2201cc28c7d536a2deefea8e1ad25842ccd543fdaef4fb0b670adc |
 | addon/aki_face-e7ab7876.png | addon/aki_face.png (AnkiQuest-Desktop) | e7ab78764473d086c78020e8e72c89f54dec23287d00e01c95a7efb649f41ffd |
 | addon/aki_freeze-c3640637.png | addon/art/aki_freeze.png (AnkiQuest-Desktop) | c36406373d19bcb91b34ccb2dc6d4f56235fe4ff3dd0b533c102406650245ab6 |
