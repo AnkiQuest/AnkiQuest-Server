@@ -1303,6 +1303,9 @@ mod tests {
 
     #[tokio::test]
     async fn hiding_a_global_row_is_private_and_preserves_rank() {
+        // Daily quests differ per player and day, so on the real clock a quest
+        // can lift carla above bobby; a fixed time keeps the order by reviews.
+        let _clock = FixedClock::at(STUDY_TIME);
         let (app, path) = app_with(serde_json::json!({"registration": true}));
         let ana = account(&app, "ana", 4);
         let bobby = account(&app, "bobby", 8);
