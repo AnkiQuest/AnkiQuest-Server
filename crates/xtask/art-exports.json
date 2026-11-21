@@ -23,18 +23,6 @@
       "why": "Hand-made 512 px share-card copy; build.rs now exports card art from static/ into OUT_DIR. Unreferenced."
     },
     {
-      "file": "static/aki/face-192.png",
-      "why": "Hand-made face icon; build.rs now exports it from face.png into OUT_DIR and the server serves that. Unreferenced."
-    },
-    {
-      "file": "static/aki/face-32.png",
-      "why": "Hand-made face icon; build.rs now exports it from face.png into OUT_DIR and the server serves that. Unreferenced."
-    },
-    {
-      "file": "static/ankilope/face-192.png",
-      "why": "Hand-made face icon; build.rs now exports it from face.png into OUT_DIR and the server serves that. Unreferenced."
-    },
-    {
       "file": "docs/branding/ankilope-celebrate-review/review.png",
       "why": "Review sheet comparing Ankilope's celebrate pose before and after its cleanup; a record in the docs, not a copy anything shows."
     },

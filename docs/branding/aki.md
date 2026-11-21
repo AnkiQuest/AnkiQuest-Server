@@ -39,7 +39,7 @@ copy is made from the masters and checked.
 | `freeze.png` | Confirmed protection; contextual settings illustration |
 | `winner.png` | Records, trophies, winners and tamed leeches |
 | `face.png` | Compact branding and installed app icon |
-| `face-192` and `face-32` | `face.png` scaled down by `build.rs` for the website's brand mark, touch icon and favicon (also `ankilope/face-192`); the committed `face-192.png` and `face-32.png` are retired copies nothing reads |
+| `face-192` and `face-32` | `face.png` scaled down by `build.rs` for the website's brand mark, touch icon and favicon (also `ankilope/face-192`); not committed |
 
 ### moment art (#88)
 
