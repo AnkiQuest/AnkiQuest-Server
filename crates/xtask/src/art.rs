@@ -211,9 +211,9 @@ const ART: &[Art] = &[
     // icon masters; the moods show her streak pose and the chibi's sad and
     // asleep poses, and the monochrome layer the chibi's face.
     art("anki_tan_icon", "anki-tan/icon.png", 432),
-    art("anki_tan_icon_happy", "anki-tan/streak.png", 432),
-    art("anki_tan_icon_worried", "anki-tan/chibi/sad.png", 432),
-    art("anki_tan_icon_sleepy", "anki-tan/chibi/asleep.png", 432),
+    art("anki_tan_icon_happy", "anki-tan/icon_happy.png", 432),
+    art("anki_tan_icon_worried", "anki-tan/icon_worried.png", 432),
+    art("anki_tan_icon_sleepy", "anki-tan/icon_sleepy.png", 432),
     outline("anki_tan_icon_mono", "anki-tan/chibi/face.png", 432),
     // Ankilope and Bluma have no mood faces yet; the app shows the face for every mood.
     art("ankilope_icon", "ankilope/face.png", 432),
