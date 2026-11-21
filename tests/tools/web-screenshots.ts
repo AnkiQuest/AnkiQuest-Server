@@ -247,7 +247,12 @@ async function launchFixed(dir: string): Promise<Browser> {
 /** Renders every page and writes the pictures. */
 async function main(): Promise<void> {
   fs.mkdirSync(OUT, {recursive: true});
-  const fonts = fs.mkdtempSync(path.join(os.tmpdir(), "ankiquest-fonts-"));
+
+  // Find build.rs's pictures before any page loads: the cargo build blocks
+  // the event loop, and inside a route handler it times out the first page.
+  builtArt();
+
+  const fonts =fs.mkdtempSync(path.join(os.tmpdir(), "ankiquest-fonts-"));
   const browser = await launchFixed(fonts);
   console.log(`Chromium ${browser.version()}`);
   const missing = new Set<string>();
