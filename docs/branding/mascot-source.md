@@ -74,14 +74,18 @@ the Android repository, which checks them against the pinned server commit.
 
 ## Retired art
 
-A master nothing uses any more moves to `static/retired/<companion>/`; it
-is never deleted, so it can be reused or merged later. No exporter, page or
-server route reads that folder, and `build.rs` skips it. It holds Aki's and
-Ankilope's old hand-made face icons, Anki-tan's earlier generated poses and
-Bluma's earlier masters, each folder with a README where it has one.
-Exported copies elsewhere are generated: a copy that was renamed, retired
-or is no longer used is deleted with its references, never kept in a
-`retired/` folder of a client or listed as unused.
+Nothing that cannot be regenerated is deleted (hill, 2026-11-21). A master
+nothing uses any more, and any old picture that is not an export of a
+current master (hand-made copies, review sheets, add-on copies from before
+the exporter), moves to `static/retired/<companion>/` and becomes a master
+there; each folder's README lists the files with their original paths and
+SHA-256. Anki-tan's archive stays in `static/anki-tan/archive/`, next to
+her licence, and counts as retired too. No exporter, page or server route
+reads a retired folder, and `build.rs` skips `static/retired/`.
+
+Exported copies are generated: the exporters overwrite them, and a copy
+that was renamed, retired or is no longer used is deleted with its
+references. Git history keeps the old bytes.
 
 ## The guard
 
@@ -90,9 +94,9 @@ repository. An image is companion art when its path names a companion (Aki,
 the companions in `tests/fixtures/companion_unlock.json`, or a folder in
 `static/`), or when its 16 px fingerprint matches a master at another size.
 It fails unless such an image is a master in `static/<companion>/` (a
-scaled copy there fails too), anything in `static/retired/<companion>/`,
-or an export in the manifest. Animated PNGs get no fingerprint:
-their frames are not a scaled copy of one still.
+scaled copy there fails too), anything in `static/retired/<companion>/` or
+`static/anki-tan/archive/`, or an export in the manifest. Animated PNGs
+get no fingerprint: their frames are not a scaled copy of one still.
 
 Anki-tan's folder holds Shigeyuki's asset pack as published
 (`static/anki-tan/README.md` maps its files to poses). It has no
