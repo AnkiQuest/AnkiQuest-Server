@@ -69,7 +69,7 @@ register one app per provider:
 | GitHub | [Settings → Developer settings → OAuth Apps](https://github.com/settings/developers) → New OAuth App, as Authorization callback URL | `https://<domain>/auth/oauth/github/callback` | none |
 | GitLab | [User settings → Applications](https://gitlab.com/-/user_settings/applications), confidential, as Redirect URI | `https://<domain>/auth/oauth/gitlab/callback` | `openid profile` |
 
-for `https://ankiquest.rationality-munich.com` the callbacks are `https://ankiquest.rationality-munich.com/auth/oauth/google/callback`, `…/github/callback` and `…/gitlab/callback`. the server requests the scopes itself; on GitLab also tick `openid` and `profile` on the application. put each client secret in its own file.
+for `https://ankiquest.org` the callbacks are `https://ankiquest.org/auth/oauth/google/callback`, `…/github/callback` and `…/gitlab/callback`. the server requests the scopes itself; on GitLab also tick `openid` and `profile` on the application. put each client secret in its own file.
 
 on NixOS, `domain` sets `public_url` and the secrets are loaded as systemd credentials:
 
