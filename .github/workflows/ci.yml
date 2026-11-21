@@ -6,7 +6,6 @@ on:
   # both ran every job twice on the same commit.
   push:
     branches:
-      - main
       - master
   pull_request:
   # The jobs here are required checks; the merge queue waits for them on
@@ -38,10 +37,18 @@ jobs:
         run: cargo test -p ankiquest-xtask contract
       - name: Read Android's public consumed-example catalog
         run: |
-          git clone --depth 1 --filter=blob:none --sparse --branch main https://github.com/AnkiQuest/AnkiQuest-Android.git android-client
-          git -C android-client sparse-checkout set --no-cone '/AnkiDroid/src/test/resources/ankiquest-api/' '/AnkiDroid/src/test/resources/ankiquest-server.sha'
+          git clone --depth 1 --filter=blob:none --sparse --branch master https://github.com/AnkiQuest/AnkiQuest-Android.git android-client
+          git -C android-client sparse-checkout set --no-cone \
+            '/AnkiDroid/src/test/resources/ankiquest-api/' '/AnkiDroid/src/test/resources/ankiquest-server.sha' \
+            '/ankiquest-core/src/test/resources/ankiquest-api/' '/ankiquest-core/src/test/resources/ankiquest-server.sha'
       - name: Preserve Android's consumed API shapes
-        run: cargo run -p ankiquest-xtask -- android-contract --android-resources android-client/AnkiDroid/src/test/resources
+        run: |
+          resources=android-client/AnkiDroid/src/test/resources
+          # Select by the committed module, so a missing catalog or pin still fails the guard.
+          if git -C android-client cat-file -e HEAD:ankiquest-core 2>/dev/null; then
+            resources=android-client/ankiquest-core/src/test/resources
+          fi
+          cargo run -p ankiquest-xtask -- android-contract --android-resources "$resources"
 
   art:
     runs-on: ubuntu-24.04
@@ -149,6 +156,9 @@ jobs:
 
       - name: Format
         run: nix develop --command cargo fmt --all --check
+
+      - name: Nix format
+        run: nix fmt -- --check .
 
       - name: Test
         run: nix develop --command cargo test --workspace

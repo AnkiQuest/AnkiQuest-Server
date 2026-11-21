@@ -72,14 +72,13 @@
         devs = cfg.devs;
         configured_tokens = cfg.configuredTokens;
         privacy = lib.filterAttrs (_: value: value != null) cfg.privacy;
-        oauth =
-          lib.mapAttrs (name: c:
-            {
-              client_id = c.clientId;
-              client_secret_file = "/run/credentials/ankiquest.service/oauth-${name}";
-            }
-            // lib.optionalAttrs ((c.baseUrl or null) != null) {base_url = c.baseUrl;})
-          withOAuth;
+        oauth = lib.mapAttrs (name: c:
+          {
+            client_id = c.clientId;
+            client_secret_file = "/run/credentials/ankiquest.service/oauth-${name}";
+          }
+          // lib.optionalAttrs ((c.baseUrl or null) != null) {base_url = c.baseUrl;})
+        withOAuth;
         site_trust_proxy = cfg.domain != null;
         site_password_file =
           if cfg.sitePasswordFile == null

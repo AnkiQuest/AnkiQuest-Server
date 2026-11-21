@@ -136,6 +136,15 @@ pub(crate) fn stats(profile: &Profile) -> Value {
     })
 }
 
+/// A top-three place on the weekly board: the completed-week award and a shared current place
+/// both use this title, so the two read the same in wins, exports and shares.
+const PLACE_TITLE: &str = phrase("#{0} on the weekly board");
+
+/// The win title for `rank` on the weekly board.
+pub(crate) fn place_title(rank: u64) -> String {
+    crate::i18n::english(PLACE_TITLE, &[&rank.to_string()])
+}
+
 /// Stored texts that speak to the player, and how each reads when the player shares it.
 /// The first pattern that matches wins, so more specific ones come first.
 const OWN_WORDS: [(&str, &str); 16] = [
@@ -1039,8 +1048,23 @@ pub(crate) mod tests {
                     "900 XP over 5 study days last week.",
                 ),
                 (
-                    "#2 on the weekly board",
-                    "900 XP over 5 study days last week.",
+                    "Puesto 2 en la clasificación semanal",
+                    "900 XP en 5 días de estudio la semana pasada.",
+                ),
+            ),
+            // Shares stored before the place title was unified still translate.
+            (
+                (
+                    "#1 on this week's leaderboard",
+                    "I earned 900 XP this week.",
+                ),
+                (
+                    "#1 on this week's leaderboard",
+                    "I earned 900 XP this week.",
+                ),
+                (
+                    "Puesto 1 en la clasificación de esta semana",
+                    "He ganado 900 XP esta semana.",
                 ),
             ),
         ];

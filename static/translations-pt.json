@@ -1337,6 +1337,8 @@
   "{0} cards today in {1} minute.": "{0} cartões hoje em {1} minuto.",
   "{0} cards today in {1} minutes.": "{0} cartões hoje em {1} minutos.",
   "#{0} on this week's leaderboard": "{0}º lugar na classificação desta semana",
+  "#{0} on the weekly board": "{0}.º lugar na classificação semanal",
+  "{0} XP over {1} study days last week.": "{0} XP em {1} dias de estudo na semana passada.",
   "I earned {0} XP this week.": "Ganhei {0} XP esta semana.",
   "I finished my {0} studies for today.": "Terminei de estudar {0} por hoje.",
   "{0}: {1} Join me on AnkiQuest: {2}": "{0}: {1} Junta-te a mim no AnkiQuest: {2}",
