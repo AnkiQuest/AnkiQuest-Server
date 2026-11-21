@@ -1,4 +1,4 @@
-# Preserved Bluma files
+# Archived Bluma files
 
 Original AnkiQuest purple cow, generated with OpenAI image_gen. The tool
 exposed no model identifier. The repository licence applies. Aki and
