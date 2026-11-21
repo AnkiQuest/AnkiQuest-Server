@@ -16,7 +16,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type {Browser, BrowserContext, Route} from "playwright";
-import {chromium, fulfillAsset, page as built, root} from "../support/web.ts";
+import {builtArtFolder, builtPicture, chromium, fulfillAsset, page as built, root} from "../support/web.ts";
 
 /** The player the examples are recorded for. */
 const PLAYER = "hill";
@@ -144,7 +144,7 @@ async function serve(context: BrowserContext, missing: Set<string>): Promise<voi
     const url = new URL(route.request().url());
     const shot = SHOTS.find(candidate => candidate.url === url.pathname);
 
-    // Pages, built assets and recorded answers, in that order.
+    // Pages, built assets, recorded answers, then static/ and the pictures build.rs makes.
     if (shot && route.request().resourceType() === "document") {
       return route.fulfill({contentType: "text/html", body: built(shot.html)});
     }
@@ -158,7 +158,7 @@ async function serve(context: BrowserContext, missing: Set<string>): Promise<voi
     if (recorded) {
       return route.fulfill({contentType: "application/json", body: fs.readFileSync(recorded)});
     }
-    const file = staticFile(url.pathname);
+    const file = staticFile(url.pathname) ?? builtPicture(url.pathname);
     if (file) {
       return route.fulfill({contentType: TYPES[path.extname(file)] ?? "application/octet-stream", body: fs.readFileSync(file)});
     }
@@ -242,6 +242,9 @@ async function launchFixed(dir: string): Promise<Browser> {
 /** Renders every page and writes the pictures. */
 async function main(): Promise<void> {
   fs.mkdirSync(OUT, {recursive: true});
+
+  // Build the server first, so the pictures build.rs makes are ready before a page asks.
+  builtArtFolder();
   const fonts = fs.mkdtempSync(path.join(os.tmpdir(), "ankiquest-fonts-"));
   const browser = await launchFixed(fonts);
   console.log(`Chromium ${browser.version()}`);

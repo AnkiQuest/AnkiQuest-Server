@@ -161,6 +161,37 @@ export function run(entry: string, context: Record<string, unknown>): vm.Context
   return context;
 }
 
+let artOut: string | undefined;
+
+/**
+ * The folder build.rs writes the server's generated pictures to, building the server first.
+ * Call it before a page loads: a cold build takes longer than a navigation may.
+ */
+export function builtArtFolder(): string {
+  if (artOut) return artOut;
+  const messages = execFileSync("cargo", ["build", "--quiet", "--package=ankiquest", "--message-format=json"], {cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024});
+  for (const line of messages.split("\n")) {
+    if (!line.startsWith("{")) continue;
+    const message = JSON.parse(line) as {reason?: string; package_id?: string; out_dir?: string};
+    if (message.reason === "build-script-executed" && /[#/]ankiquest@/.test(message.package_id ?? "") && message.out_dir) {
+      artOut = path.join(message.out_dir, "art");
+    }
+  }
+  if (!artOut) throw new Error("cargo build reported no build script output for the server");
+  return artOut;
+}
+
+/**
+ * A picture build.rs makes that the server serves at `pathname`, such as /aki/face-192.png
+ * or /anki-tan/happy.png; undefined for other paths.
+ */
+export function builtPicture(pathname: string): string | undefined {
+  const match = pathname.match(/^\/(aki|ankilope|anki-tan)\/([\w-]+)\.png$/);
+  if (!match) return undefined;
+  const file = path.join(builtArtFolder(), match[1]!, `${match[2]}.png`);
+  return fs.existsSync(file) ? file : undefined;
+}
+
 /**
  * Answers a Playwright route for a file the server builds or embeds, or returns
  * false. Pages that load site.js need /i18n.wasm too.
