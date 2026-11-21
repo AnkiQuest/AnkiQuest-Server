@@ -1,5 +1,89 @@
 {
   "nodes": {
+    "ankiquest-dev": {
+      "inputs": {
+        "nix-darwin": "nix-darwin",
+        "nixos-wsl": "nixos-wsl",
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "rust-overlay": "rust-overlay"
+      },
+      "locked": {
+        "lastModified": 1795183738,
+        "narHash": "sha256-hHrOH4O0gmXFwCCkLjgCo+Amu1b96j5PO86VtDc7kmk=",
+        "owner": "AnkiQuest",
+        "repo": "AnkiQuest-Dev",
+        "rev": "dc3b0eb41def26ac5ee5340b6cb0d3869acdc6fb",
+        "type": "github"
+      },
+      "original": {
+        "owner": "AnkiQuest",
+        "repo": "AnkiQuest-Dev",
+        "type": "github"
+      }
+    },
+    "flake-compat": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1767039857,
+        "narHash": "sha256-vNpUSpF5Nuw8xvDLj2KCwwksIbjua2LZCqhV1LNRDns=",
+        "owner": "edolstra",
+        "repo": "flake-compat",
+        "rev": "5edf11c44bc78a0d334f6334cdaf7d60d732daab",
+        "type": "github"
+      },
+      "original": {
+        "owner": "edolstra",
+        "repo": "flake-compat",
+        "type": "github"
+      }
+    },
+    "nix-darwin": {
+      "inputs": {
+        "nixpkgs": [
+          "ankiquest-dev",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1793418699,
+        "narHash": "sha256-+RpTlcdh9KqZ+ZiLkNSTvibQWm935EcIdBzRPCTFsrQ=",
+        "ref": "refs/heads/master",
+        "rev": "ff0e21a414d4547183396da1b44a66f2577b65e9",
+        "shallow": true,
+        "type": "git",
+        "url": "https://github.com/nix-darwin/nix-darwin"
+      },
+      "original": {
+        "shallow": true,
+        "type": "git",
+        "url": "https://github.com/nix-darwin/nix-darwin"
+      }
+    },
+    "nixos-wsl": {
+      "inputs": {
+        "flake-compat": "flake-compat",
+        "nixpkgs": [
+          "ankiquest-dev",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1794368463,
+        "narHash": "sha256-ncpk0eCCyhU7M7U/PGbtwb1PXqobksBBYbJJ13abV2g=",
+        "ref": "refs/heads/main",
+        "rev": "05721a428830972f025a8575b1a19c418d422d1b",
+        "shallow": true,
+        "type": "git",
+        "url": "https://github.com/nix-community/NixOS-WSL"
+      },
+      "original": {
+        "shallow": true,
+        "type": "git",
+        "url": "https://github.com/nix-community/NixOS-WSL"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1794890597,
@@ -18,7 +102,30 @@
     },
     "root": {
       "inputs": {
+        "ankiquest-dev": "ankiquest-dev",
         "nixpkgs": "nixpkgs"
+      }
+    },
+    "rust-overlay": {
+      "inputs": {
+        "nixpkgs": [
+          "ankiquest-dev",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1795168384,
+        "narHash": "sha256-aQ4Ns5O78Pg6B1i2hNRbI1HpRtnZst/jW34MSOOeaX4=",
+        "ref": "refs/heads/master",
+        "rev": "a5c999945da3991d7aa3cc2a6075cfd22bd387e9",
+        "shallow": true,
+        "type": "git",
+        "url": "https://github.com/oxalica/rust-overlay"
+      },
+      "original": {
+        "shallow": true,
+        "type": "git",
+        "url": "https://github.com/oxalica/rust-overlay"
       }
     }
   },
