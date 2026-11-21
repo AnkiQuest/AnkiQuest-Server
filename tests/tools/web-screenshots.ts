@@ -16,7 +16,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type {Browser, BrowserContext, Route} from "playwright";
-import {chromium, fulfillAsset, page as built, root} from "../support/web.ts";
+import {builtArt, chromium, fulfillAsset, page as built, root} from "../support/web.ts";
 
 /** The player the examples are recorded for. */
 const PLAYER = "hill";
@@ -129,13 +129,18 @@ function example(url: URL): string | undefined {
   return fs.existsSync(file) ? file : undefined;
 }
 
-/** A file under static/ for a request path, if there is one. */
+/**
+ * The file the server answers a request path with, if there is one: a picture
+ * build.rs exports (face icons, web pictures), else a file under static/.
+ */
 function staticFile(pathname: string): string | undefined {
-  const file = path.join(STATIC, decodeURIComponent(pathname));
-  if (!file.startsWith(STATIC + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
-    return undefined;
+  for (const folder of [builtArt(), STATIC]) {
+    const file = path.join(folder, decodeURIComponent(pathname));
+    if (file.startsWith(folder + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) {
+      return file;
+    }
   }
-  return file;
+  return undefined;
 }
 
 /** Answers every request the page makes; returns the paths it could not answer. */
