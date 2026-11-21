@@ -21,6 +21,29 @@ pub use poses::{Poses, pose_of, stem};
 /// The pose fixture, relative to the repository root.
 pub const POSES: &str = "tests/fixtures/companion_poses.json";
 
+/// Small icons of a companion, exported for every companion with a master.
+/// One without the master shows the pose's fallback from the fixture.
+pub const ICON_POSES: [&str; 1] = ["icon_fire"];
+
+/// The companion folders in `masters` (the `static/` folder) that hold a
+/// master of `pose`, sorted.
+pub fn companions_with(masters: &Path, pose: &str) -> Result<Vec<String>, String> {
+    let file = format!("{}.png", stem(pose));
+    let entries = std::fs::read_dir(masters).map_err(|e| format!("{}: {e}", masters.display()))?;
+    let mut found = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if !entry.path().join(&file).is_file() {
+            continue;
+        }
+        let name = entry.file_name();
+        let name = name.to_str().ok_or("a folder name is not UTF-8")?;
+        found.push(name.to_string());
+    }
+    found.sort();
+    Ok(found)
+}
+
 /// Decodes a PNG master as 8-bit RGBA.
 pub fn load(path: &Path) -> Result<RgbaImage, String> {
     let image = image::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -112,6 +135,23 @@ mod tests {
         let small = shrink(image, 16, 16);
         let edge = small.get_pixel(7, 8);
         assert!(edge[1] < 8, "{edge:?}");
+    }
+
+    #[test]
+    fn finds_only_companions_with_the_master() {
+        let masters = std::env::temp_dir().join(format!("ankiquest-art-{}", std::process::id()));
+        for (folder, file) in [
+            ("aki", "celebrate.png"),
+            ("aki", "icon_fire.png"),
+            ("cow", "face.png"),
+        ] {
+            std::fs::create_dir_all(masters.join(folder)).unwrap();
+            std::fs::write(masters.join(folder).join(file), b"").unwrap();
+        }
+        assert_eq!(companions_with(&masters, "icon_fire").unwrap(), ["aki"]);
+        assert_eq!(companions_with(&masters, "happy").unwrap(), ["aki"]);
+        assert!(companions_with(&masters, "sad").unwrap().is_empty());
+        std::fs::remove_dir_all(&masters).unwrap();
     }
 
     #[test]

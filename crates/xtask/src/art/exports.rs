@@ -43,17 +43,20 @@ pub(super) struct Export {
 pub(super) enum Exporter {
     /// `export-addon-art`: 256 px palette PNGs.
     Addon,
+    /// `export-addon-art`: small palette PNG icons.
+    AddonIcon,
 }
 
 impl Exporter {
     fn name(self) -> &'static str {
         match self {
             Exporter::Addon => "addon",
+            Exporter::AddonIcon => "addon_icon",
         }
     }
 
     fn parse(name: &str) -> Option<Exporter> {
-        [Exporter::Addon]
+        [Exporter::Addon, Exporter::AddonIcon]
             .into_iter()
             .find(|exporter| exporter.name() == name)
     }

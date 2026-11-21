@@ -6,11 +6,12 @@
 //! or its bytes differ from what export would write. Exports are
 //! deterministic on Linux, where CI runs the check.
 
+use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use ankiquest_art::{load, shrink, target};
+use ankiquest_art::{ICON_POSES, companions_with, load, shrink, target};
 use image::RgbaImage;
 
 use crate::root;
@@ -41,6 +42,10 @@ const METHOD: i32 = 6;
 /// 1100 px (AnkiQuest-Android#168), so smaller poses were upscaled.
 const WIDGET: u32 = 1024;
 
+/// Icons beside the streak number: the widget draws its flame at 12 dp,
+/// 48 px at xxxhdpi; twice that leaves room for larger widget text.
+const ICON: u32 = 96;
+
 /// Luminance below which a pixel counts as line art in [`Look::Outline`].
 const LINE_LUMA: f32 = 90.0;
 
@@ -66,9 +71,10 @@ enum Look {
 }
 
 /// One drawable: name, master PNG, square size, WebP quality and look.
+#[derive(Clone)]
 struct Art {
-    name: &'static str,
-    source: &'static str,
+    name: Cow<'static, str>,
+    source: Cow<'static, str>,
     size: u32,
     quality: f32,
     look: Look,
@@ -77,8 +83,8 @@ struct Art {
 /// A drawable at the default quality.
 const fn art(name: &'static str, source: &'static str, size: u32) -> Art {
     Art {
-        name,
-        source,
+        name: Cow::Borrowed(name),
+        source: Cow::Borrowed(source),
         size,
         quality: QUALITY,
         look: Look::Colour,
@@ -88,8 +94,8 @@ const fn art(name: &'static str, source: &'static str, size: u32) -> Art {
 /// A themed icon's monochrome layer, from the master's line art.
 const fn outline(name: &'static str, source: &'static str, size: u32) -> Art {
     Art {
-        name,
-        source,
+        name: Cow::Borrowed(name),
+        source: Cow::Borrowed(source),
         size,
         quality: QUALITY,
         look: Look::Outline,
@@ -99,8 +105,8 @@ const fn outline(name: &'static str, source: &'static str, size: u32) -> Art {
 /// A themed icon's monochrome layer from a master with thin line art.
 const fn bold_outline(name: &'static str, source: &'static str, size: u32) -> Art {
     Art {
-        name,
-        source,
+        name: Cow::Borrowed(name),
+        source: Cow::Borrowed(source),
         size,
         quality: QUALITY,
         look: Look::BoldOutline,
@@ -110,8 +116,8 @@ const fn bold_outline(name: &'static str, source: &'static str, size: u32) -> Ar
 /// A pose the big streak widget shows, for either companion.
 const fn widget(name: &'static str, source: &'static str) -> Art {
     Art {
-        name,
-        source,
+        name: Cow::Borrowed(name),
+        source: Cow::Borrowed(source),
         size: WIDGET,
         quality: WIDGET_QUALITY,
         look: Look::Colour,
@@ -291,7 +297,14 @@ pub fn run(args: &[String]) -> ExitCode {
         return usage();
     };
 
-    let all: Vec<&Art> = ART.iter().collect();
+    let drawables = match drawables() {
+        Ok(drawables) => drawables,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let all: Vec<&Art> = drawables.iter().collect();
     let result = match mode {
         Mode::Export => export(&android, &all),
         Mode::Check => check(&android, &all),
@@ -331,9 +344,38 @@ fn drawable(name: &str) -> String {
     format!("{DRAWABLES}/{name}.webp")
 }
 
+/// The icons for every companion with a master of an icon pose, named
+/// `<companion>_<pose>`. A companion without one shows the fallback.
+fn icons() -> Result<Vec<Art>, String> {
+    icons_in(&root().join("static"))
+}
+
+/// [`icons`] for the masters in `masters`, so tests can use a folder of their own.
+fn icons_in(masters: &Path) -> Result<Vec<Art>, String> {
+    let mut icons = Vec::new();
+    for pose in ICON_POSES {
+        for companion in companions_with(masters, pose)? {
+            let source = masters.join(&companion).join(format!("{pose}.png"));
+            icons.push(Art {
+                name: Cow::Owned(format!("{}_{pose}", companion.replace('-', "_"))),
+                source: Cow::Owned(source.to_string_lossy().into_owned()),
+                size: ICON,
+                quality: QUALITY,
+                look: Look::Colour,
+            });
+        }
+    }
+    Ok(icons)
+}
+
+/// Every drawable: the fixed list, then the icons that have masters.
+fn drawables() -> Result<Vec<Art>, String> {
+    Ok(ART.iter().cloned().chain(icons()?).collect())
+}
+
 /// What export writes for `art`: its pixel size and WebP bytes.
 fn render(art: &Art) -> Result<((u32, u32), Vec<u8>), String> {
-    let master = look(load(&root().join(art.source))?, art.look);
+    let master = look(load(&root().join(&*art.source))?, art.look);
     let (width, height) = target(master.width(), master.height(), art.size);
     if (width, height) != (art.size, art.size) {
         println!(
@@ -356,7 +398,7 @@ fn export(android: &Path, arts: &[&Art]) -> Result<ExitCode, String> {
     fs::create_dir_all(&folder).map_err(|e| format!("{}: {e}", folder.display()))?;
     for art in arts {
         let ((width, height), bytes) = render(art)?;
-        let name = drawable(art.name);
+        let name = drawable(&art.name);
         let path = android.join(&name);
         fs::write(&path, &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
         println!("{name}: {width}x{height}, {} bytes", bytes.len());
@@ -384,7 +426,7 @@ fn check(android: &Path, arts: &[&Art]) -> Result<ExitCode, String> {
 fn stale(android: &Path, arts: &[&Art]) -> Result<Vec<String>, String> {
     let mut failed = Vec::new();
     for art in arts {
-        let name = drawable(art.name);
+        let name = drawable(&art.name);
         let Ok(committed) = fs::read(android.join(&name)) else {
             failed.push(format!("missing: {name}"));
             continue;
@@ -532,7 +574,7 @@ mod tests {
             "anki_tan_dead",
         ];
         let large: Vec<_> = ART.iter().filter(|art| art.size == WIDGET).collect();
-        let names: Vec<_> = large.iter().map(|art| art.name).collect();
+        let names: Vec<_> = large.iter().map(|art| &*art.name).collect();
         assert_eq!(poses.to_vec(), names);
         assert!(large.iter().all(|art| art.quality == WIDGET_QUALITY));
     }
@@ -553,16 +595,59 @@ mod tests {
 
     #[test]
     fn names_are_unique() {
-        let mut names: Vec<_> = ART.iter().map(|art| art.name).collect();
+        let drawables = drawables().unwrap();
+        let mut names: Vec<_> = drawables.iter().map(|art| &*art.name).collect();
         names.sort_unstable();
         names.dedup();
-        assert_eq!(ART.len(), names.len());
+        assert_eq!(drawables.len(), names.len());
+    }
+
+    #[test]
+    fn icons_are_small_and_follow_their_masters() {
+        // An icon exists only for a companion with its master; without
+        // masters there are none, and the app shows the fallback pose.
+        for icon in icons().unwrap() {
+            assert_eq!(icon.size, ICON);
+            assert!(root().join(&*icon.source).is_file(), "{}", icon.source);
+            assert!(icon.name.ends_with("_icon_fire"), "{}", icon.name);
+        }
+    }
+
+    #[test]
+    fn icons_export_and_check_from_their_masters() {
+        // A folder of masters where only Aki has icon_fire, so the test does not
+        // depend on which icons this repository has drawn yet.
+        let dir = std::env::temp_dir().join(format!("ankiquest-icons-{}", std::process::id()));
+        let (masters, android) = (dir.join("static"), dir.join("android"));
+        for folder in ["aki", "cow"] {
+            fs::create_dir_all(masters.join(folder)).unwrap();
+        }
+        let master = RgbaImage::from_pixel(400, 400, image::Rgba([200, 80, 20, 255]));
+        master.save(masters.join("aki/icon_fire.png")).unwrap();
+        master.save(masters.join("cow/face.png")).unwrap();
+
+        // Only Aki gets an icon, and it is exported at the icon size.
+        let icons = icons_in(&masters).unwrap();
+        let names: Vec<_> = icons.iter().map(|icon| &*icon.name).collect();
+        assert_eq!(names, ["aki_icon_fire"]);
+        let icons: Vec<&Art> = icons.iter().collect();
+        assert_eq!(export(&android, &icons).unwrap(), ExitCode::SUCCESS);
+        let path = android.join(drawable("aki_icon_fire"));
+        let bytes = fs::read(&path).unwrap();
+        let features = webp::BitstreamFeatures::new(&bytes).unwrap();
+        assert_eq!((features.width(), features.height()), (ICON, ICON));
+        assert_eq!(check(&android, &icons).unwrap(), ExitCode::SUCCESS);
+
+        // Check fails once the drawable is gone.
+        fs::remove_file(&path).unwrap();
+        assert_eq!(check(&android, &icons).unwrap(), ExitCode::FAILURE);
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn masters_exist() {
         for art in ART {
-            assert!(root().join(art.source).is_file(), "{}", art.source);
+            assert!(root().join(&*art.source).is_file(), "{}", art.source);
         }
     }
 
@@ -588,7 +673,7 @@ mod tests {
         assert!(stale(android.path(), &[art]).unwrap().is_empty());
 
         // Same size, other bytes: an edited file must fail.
-        let path = android.path().join(drawable(art.name));
+        let path = android.path().join(drawable(&art.name));
         let mut bytes = fs::read(&path).unwrap();
         let middle = bytes.len() / 2;
         bytes[middle] ^= 0xff;
@@ -599,7 +684,7 @@ mod tests {
 
         fs::remove_file(&path).unwrap();
         let failed = stale(android.path(), &[art]).unwrap();
-        assert_eq!(vec![format!("missing: {}", drawable(art.name))], failed);
+        assert_eq!(vec![format!("missing: {}", drawable(&art.name))], failed);
     }
 
     #[test]
