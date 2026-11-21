@@ -198,7 +198,8 @@ jobs:
           evaluate() {
             nix eval --impure --raw --expr '
               let
-                flake = builtins.getFlake "git+file://'"$PWD"'";
+                # shallow=1: the checkout is shallow, and the flake fetches its submodules.
+                flake = builtins.getFlake "git+file://'"$PWD"'?shallow=1";
                 system = flake.inputs.nixpkgs.lib.nixosSystem {
                   system = "x86_64-linux";
                   modules = [
