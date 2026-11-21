@@ -3,9 +3,9 @@
 //!
 //! An image is companion art when its path names a companion, or when it
 //! looks like a master scaled to another size. It may only be a master in
-//! `static/<companion>/` (a scaled copy there fails too), anything in
-//! `static/retired/<companion>/` (masters nothing uses any more), or an
-//! export in the art manifest. Animations are not compared with masters.
+//! `static/<companion>/` (a scaled copy there fails too), anything in a
+//! retired folder ([`RETIRED_FOLDERS`], masters nothing uses any more), or
+//! an export in the art manifest. Animations are not compared with masters.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -27,6 +27,10 @@ const UNLOCKS: &str = "tests/fixtures/companion_unlock.json";
 
 /// The folder in `static/` that keeps masters nothing uses any more.
 const RETIRED: &str = "retired";
+
+/// Folders of masters nothing uses any more: `static/retired/`, and
+/// Anki-tan's archive, which stays next to her licence.
+const RETIRED_FOLDERS: [&str; 2] = ["static/retired/", "static/anki-tan/archive/"];
 
 /// Fingerprint edge: images are compared at this size.
 const PRINT: u32 = 16;
@@ -106,20 +110,22 @@ fn companions() -> Vec<String> {
     names
 }
 
-/// The live companion folder in `static/` that holds `image`, if any;
-/// `static/retired/` is not one.
+/// The live companion folder in `static/` that holds `image`, if any; a
+/// retired folder is not one.
 fn master_folder(image: &str) -> Option<&str> {
+    if is_retired(image) {
+        return None;
+    }
     let rest = image.strip_prefix("static/")?;
     let (folder, _) = rest.split_once('/')?;
-    (folder != RETIRED).then_some(folder)
+    Some(folder)
 }
 
-/// Whether `image` is a master nothing uses any more, in `static/retired/`.
+/// Whether `image` is a master nothing uses any more, in a retired folder.
 fn is_retired(image: &str) -> bool {
-    image
-        .strip_prefix("static/")
-        .and_then(|rest| rest.strip_prefix(RETIRED))
-        .is_some_and(|rest| rest.starts_with('/'))
+    RETIRED_FOLDERS
+        .iter()
+        .any(|folder| image.starts_with(folder))
 }
 
 /// A small picture of an image over grey, and its pixel size; `None` when
@@ -193,7 +199,7 @@ fn misplaced(
     masters: &[(String, Print)],
     names: &[String],
 ) -> Option<String> {
-    // static/retired/ keeps masters nothing uses any more, as they were.
+    // Retired folders keep masters nothing uses any more, as they were.
     if is_retired(image) {
         return None;
     }
@@ -294,12 +300,13 @@ fn nothing_reads_retired_masters() {
             .filter(|path| path.is_file()),
     );
     let this = root().join(file!());
-    let folder = format!("static/{RETIRED}/");
     for file in code.iter().filter(|file| **file != this) {
         let Ok(text) = fs::read_to_string(file) else {
             continue;
         };
-        assert!(!text.contains(&folder), "{} reads {folder}", relative(file));
+        for folder in RETIRED_FOLDERS {
+            assert!(!text.contains(folder), "{} reads {folder}", relative(file));
+        }
     }
 }
 
@@ -322,12 +329,13 @@ fn a_scaled_copy_is_found_anywhere() {
     let masters = [("static/aki/face.png".to_string(), master)];
     let names = ["aki".to_string(), "cow".to_string()];
 
-    // Copies of masters anywhere but static/retired/; pictures named
+    // Copies of masters anywhere but in a retired folder; pictures named
     // after a companion outside static/.
     for (image, print, expected) in [
         ("assets/cards/card.png", Some(&copy), true),
         ("static/aki/face-64.png", Some(&copy), true),
         ("static/retired/aki/face-64.png", Some(&copy), false),
+        ("static/anki-tan/archive/face-64.png", Some(&copy), false),
         ("assets/cow.png", Some(&other), true),
         ("static/aki/face.png", Some(&masters[0].1), false),
         ("static/aki/new_pose.png", Some(&other), false),
@@ -340,6 +348,15 @@ fn a_scaled_copy_is_found_anywhere() {
             "{image}"
         );
     }
+}
+
+#[test]
+fn retired_folders_hold_no_masters() {
+    // Anki-tan's archive stays next to her licence, but like static/retired/
+    // it holds no masters to export from or compare against.
+    assert_eq!(master_folder("static/anki-tan/happy.png"), Some("anki-tan"));
+    assert_eq!(master_folder("static/anki-tan/archive/sad-full.png"), None);
+    assert_eq!(master_folder("static/retired/aki/face-32.png"), None);
 }
 
 #[test]
