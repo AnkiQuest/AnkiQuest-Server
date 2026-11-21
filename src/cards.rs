@@ -1595,7 +1595,8 @@ mod tests {
         assert_eq!(stem(art("aki", "frozen")), Some("frozen"));
         assert_eq!(stem(art("aki", "freeze")), Some("freeze"));
         assert_eq!(stem(art("ankilope", "frozen")), Some("frozen"));
-        assert_eq!(stem(art("ankilope", "freeze")), Some("celebrate"));
+        // A used freeze is a picture the fixture lists; without one, Ankilope shows frozen.
+        assert_eq!(stem(art("ankilope", "freeze")), Some("frozen"));
     }
 
     #[test]
