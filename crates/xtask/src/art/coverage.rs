@@ -2,11 +2,10 @@
 //! `tests/fixtures/companion_poses.json` (core moods, pictures, icons and
 //! extensions) for each companion. Read-only.
 //!
-//! An item's master is the file `<folder>/poses.json` lists for it, else
-//! `<folder>/<item>.png` or the older file name [`ankiquest_art::stem`]
-//! gives, below [`ankiquest_art::MASTERS`]. A missing item shows the first
-//! item its fallback chain reaches that exists. An archive folder is never
-//! read for masters; `--json` only lists it.
+//! An item's master is `<folder>/<item>.png` in the AnkiQuest-Art submodule
+//! ([`ankiquest_art::MASTERS`]). A missing item shows the first item its
+//! fallback chain reaches that exists. The archive is never read for
+//! masters; `--json` only lists it.
 //!
 //! - no flag: a Markdown table, one row per item, one column per companion.
 //! - `--missing`: per companion, the core items and extensions without a
@@ -46,7 +45,7 @@ const SCHEMA: u32 = 1;
 /// Image formats [`archive`] lists.
 const IMAGES: [&str; 3] = ["png", "webp", "gif"];
 
-/// Every companion and its master folder under `static/`, in picker order.
+/// Every companion and its master folder in the submodule, in picker order.
 const COMPANIONS: &[(&str, &str)] = &[
     ("aki", "aki"),
     ("ankilope", "ankilope"),
@@ -70,10 +69,10 @@ const NAMES: &[(&str, &str)] = &[
     ("leech_kun", "Leech-kun"),
 ];
 
-/// The licence of the pictures in a folder under `static/`.
+/// The licence of the pictures in a folder of the submodule.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Licence {
-    /// The repository's licence.
+    /// AnkiQuest-Art's licence, AGPL-3.0-or-later.
     Repository,
     /// Shigeyuki's Anki-tan and every derivative of her.
     AnkiTan,
@@ -88,28 +87,41 @@ impl Licence {
         }
     }
 
+    /// The licence's SPDX id, as the submodule's `manifest.json` gives it.
+    fn spdx(self) -> &'static str {
+        match self {
+            Licence::Repository => "AGPL-3.0-or-later",
+            Licence::AnkiTan => "CC-BY-SA-4.0",
+        }
+    }
+
     /// The licence's SPDX id, licence file and required credit.
     fn describe(self) -> Value {
-        match self {
-            Licence::Repository => json!({
-                "spdx": "AGPL-3.0-or-later",
-                "file": "LICENSE",
-                "credit": null,
-            }),
-            Licence::AnkiTan => json!({
-                "spdx": "CC-BY-SA-4.0",
-                "file": "static/anki-tan/LICENSE",
-                "credit": "Anki-tan by Shigeyuki (https://www.patreon.com/Shigeyuki)",
-            }),
-        }
+        let credit = match self {
+            Licence::Repository => None,
+            Licence::AnkiTan => Some("Anki-tan by Shigeyuki (https://www.patreon.com/Shigeyuki)"),
+        };
+        let file = match self {
+            Licence::Repository => "LICENSE",
+            Licence::AnkiTan => "anki-tan/LICENSE",
+        };
+        json!({
+            "spdx": self.spdx(),
+            "file": format!("{MASTERS}/{file}"),
+            "credit": credit,
+        })
     }
 }
 
-/// Folders below [`MASTERS`] whose pictures are not under the repository's
-/// licence, with all their subfolders.
-const LICENCES: &[(&str, Licence)] = &[("anki-tan", Licence::AnkiTan)];
+/// Folders below [`MASTERS`] whose pictures are not under AnkiQuest-Art's
+/// licence, with all their subfolders: each has its own LICENSE file.
+const LICENCES: &[(&str, Licence)] = &[
+    ("anki-tan", Licence::AnkiTan),
+    ("archive/anki-tan", Licence::AnkiTan),
+    ("archive/anki-tan-pack", Licence::AnkiTan),
+];
 
-/// The licence of the pictures in `folder`, relative to `static/`.
+/// The licence of the pictures in `folder`, relative to [`MASTERS`].
 fn licence(folder: &str) -> Licence {
     LICENCES
         .iter()
@@ -158,7 +170,7 @@ impl Stage {
     }
 }
 
-/// A companion, its master folder under `static/` and its stage.
+/// A companion, its master folder in the submodule and its stage.
 struct Companion {
     id: &'static str,
     folder: &'static str,
@@ -283,10 +295,9 @@ fn folder(root: &Path, companion: &Companion) -> PathBuf {
     root.join(MASTERS).join(companion.folder)
 }
 
-/// The master for `item` in `folder`. A broken `poses.json` lists nothing
-/// here; `pose_lists_name_masters` fails on it.
+/// The master for `item` in `folder`.
 fn master(folder: &Path, item: &str) -> Option<PathBuf> {
-    ankiquest_art::master(folder, item).ok().flatten()
+    ankiquest_art::master(folder, item)
 }
 
 /// The status of `item` in `folder`, following its fallbacks.
@@ -627,7 +638,7 @@ mod tests {
     fn checkout(masters: &[&str]) -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
         for master in masters {
-            let path = root.path().join("static").join(master);
+            let path = root.path().join(MASTERS).join(master);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, b"").unwrap();
         }
@@ -652,17 +663,17 @@ mod tests {
             r#"{"pictures": {"freeze_used": "frozen"}, "icons": {"icon": "streak"}}"#,
         );
         let root = checkout(&["aki/streak.png"]);
-        let folder = root.path().join("static/aki");
+        let folder = root.path().join(MASTERS).join("aki");
 
         // Present, fallback through two steps, and a chain with no master.
         let check = |item| status(root.path(), &folder, &poses, item);
         assert_eq!(
-            Status::Present("static/aki/streak.png".into()),
+            Status::Present("art/aki/streak.png".into()),
             check("streak")
         );
         let streak = Status::Fallback {
             shows: "streak".into(),
-            file: "static/aki/streak.png".into(),
+            file: "art/aki/streak.png".into(),
         };
         assert_eq!(streak, check("streak_blazing"));
         assert_eq!(streak, check("icon"));
@@ -672,19 +683,14 @@ mod tests {
     }
 
     #[test]
-    fn legacy_file_names_count() {
+    fn older_file_names_are_not_masters() {
+        // AnkiQuest-Art names every master after its pose (RENAMES.md there).
         let poses = fixture();
         let root = checkout(&["aki/celebrate.png", "aki/leech.png"]);
-        let folder = root.path().join("static/aki");
+        let folder = root.path().join(MASTERS).join("aki");
         let check = |item| status(root.path(), &folder, &poses, item);
-        assert_eq!(
-            Status::Present("static/aki/celebrate.png".into()),
-            check("happy")
-        );
-        assert_eq!(
-            Status::Present("static/aki/leech.png".into()),
-            check("leech_defeated")
-        );
+        assert_eq!(Status::Missing, check("happy"));
+        assert_eq!(Status::Missing, check("leech_defeated"));
     }
 
     #[test]
@@ -720,7 +726,7 @@ mod tests {
     #[test]
     fn bluma_has_the_complete_core_moods() {
         let poses = fixture();
-        let folder = root().join("static/cow");
+        let folder = root().join(MASTERS).join("cow");
         for pose in poses.of(Kind::CoreMood) {
             assert!(master(&folder, pose).is_some(), "{pose}");
         }
@@ -730,19 +736,18 @@ mod tests {
     fn asleep_masters_use_the_pose_name() {
         // #32: no master keeps the older `sleeping` file name.
         for (companion, folder) in COMPANIONS {
-            let folder = root().join("static").join(folder);
+            let folder = root().join(MASTERS).join(folder);
             assert!(!folder.join("sleeping.png").exists(), "{companion}");
         }
-        assert_eq!(ankiquest_art::stem("asleep"), "asleep");
     }
 
     #[test]
     fn anki_tan_masters_cover_the_core_moods() {
-        // The pack art and generated masters her folders' poses.json lists
-        // cover both versions' core moods, and the full version's icons.
+        // The pack art and generated masters cover both versions' core
+        // moods, and the full version has her launcher icon.
         let poses = fixture();
-        for folder in ["static/anki-tan", "static/anki-tan/chibi"] {
-            let folder = root().join(folder);
+        for folder in ["anki-tan", "anki-tan/chibi"] {
+            let folder = root().join(MASTERS).join(folder);
             for pose in poses.of(Kind::CoreMood) {
                 assert!(
                     master(&folder, pose).is_some(),
@@ -751,50 +756,39 @@ mod tests {
                 );
             }
         }
-        let full = root().join("static/anki-tan");
-        for icon in ["icon", "icon_happy", "icon_worried", "icon_sleepy"] {
-            assert!(master(&full, icon).is_some(), "{icon}");
+        let full = root().join(MASTERS).join("anki-tan");
+        assert!(master(&full, "icon").is_some());
+    }
+
+    #[test]
+    fn the_manifest_lists_every_master_coverage_finds() {
+        // Coverage reads file names; AnkiQuest-Art's manifest lists the same masters.
+        let poses = fixture();
+        let manifest = ankiquest_art::Manifest::read(&root().join(MASTERS)).unwrap();
+        for (companion, folder) in COMPANIONS {
+            let folder = root().join(MASTERS).join(folder);
+            for item in poses.names() {
+                let Some(file) = master(&folder, item) else {
+                    continue;
+                };
+                let file = relative(&root().join(MASTERS), &file);
+                let listed = manifest
+                    .masters
+                    .iter()
+                    .any(|m| m.companion == *companion && m.pose == item && m.file == file);
+                assert!(listed, "{companion}: {file}");
+            }
         }
     }
 
     #[test]
-    fn listed_files_are_masters() {
-        let poses = list(&["face", "happy"], &[("welcome", "happy")], "");
-        let root = checkout(&["aki/emoji/smile.png", "aki/celebrate.png"]);
-        let folder = root.path().join("static/aki");
-        let json = r#"{"poses": {"face": "emoji/smile.png", "happy": "celebrate.png",
-            "welcome": "emoji/wave.png"}}"#;
-        fs::write(folder.join(ankiquest_art::LISTED), json).unwrap();
-
-        // Listed and present, listed but absent.
-        let check = |item| status(root.path(), &folder, &poses, item);
-        assert_eq!(
-            Status::Present("static/aki/emoji/smile.png".into()),
-            check("face")
-        );
-        assert_eq!(
-            Status::Fallback {
-                shows: "happy".into(),
-                file: "static/aki/celebrate.png".into()
-            },
-            check("welcome")
-        );
-    }
-
-    #[test]
-    fn pose_lists_name_masters() {
-        let poses = fixture();
+    fn licences_match_the_manifest() {
+        let manifest = ankiquest_art::Manifest::read(&root().join(MASTERS)).unwrap();
         for (companion, folder) in COMPANIONS {
-            let folder = root().join(MASTERS).join(folder);
-            let Some(files) = ankiquest_art::listed(&folder).unwrap() else {
+            let Some(spdx) = manifest.licence(companion) else {
                 continue;
             };
-            for (pose, file) in files {
-                assert!(poses.kind(&pose).is_some(), "{companion}: {pose}");
-                assert!(file.is_file(), "{companion}: {}", file.display());
-                let path = relative(&root(), &file);
-                assert!(!ankiquest_art::archived(&path), "{companion}: {path}");
-            }
+            assert_eq!(licence(folder).spdx(), spdx, "{companion}");
         }
     }
 
@@ -803,7 +797,7 @@ mod tests {
         // build.rs makes face-192 and face-32 from face.png (AGENTS.md, Companion art).
         for (companion, folder) in COMPANIONS {
             for size in ["face-192.png", "face-32.png"] {
-                let file = root().join("static").join(folder).join(size);
+                let file = root().join(MASTERS).join(folder).join(size);
                 assert!(!file.exists(), "{companion}: {size}");
             }
         }
@@ -887,7 +881,7 @@ mod tests {
             r#"{"pictures": {"goal": "happy"}}"#,
         );
         let root = checkout(&[
-            "aki/celebrate.png",
+            "aki/happy.png",
             "aki/sad.png",
             "aki/winner.png",
             "aki/goal.png",
@@ -928,17 +922,20 @@ mod tests {
     #[test]
     fn every_licence_file_has_its_licence() {
         // A folder below the masters with a LICENSE file is under that
-        // licence; LICENCES names each one.
+        // licence; LICENCES names each one. The submodule's own LICENSE is
+        // AnkiQuest-Art's.
+        let masters = root().join(MASTERS);
         let mut found = Vec::new();
-        images_and_licences(&root().join(MASTERS), &mut found);
-        assert!(!found.is_empty());
-        for folder in found {
-            let under = relative(&root().join(MASTERS), &folder);
+        images_and_licences(&masters, &mut found);
+        assert!(found.len() > 1);
+        for folder in found.into_iter().filter(|folder| *folder != masters) {
+            let under = relative(&masters, &folder);
             assert_eq!(licence(&under), Licence::AnkiTan, "{under}");
         }
+        assert!(masters.join("LICENSE").is_file());
         assert_eq!(licence("anki-tan/chibi"), Licence::AnkiTan);
-        assert_eq!(licence("anki-tan/archive"), Licence::AnkiTan);
-        assert_eq!(licence("cow/archive"), Licence::Repository);
+        assert_eq!(licence("archive/anki-tan-pack/emoji"), Licence::AnkiTan);
+        assert_eq!(licence("archive/cow"), Licence::Repository);
         assert_eq!(licence("anki-tanx"), Licence::Repository);
     }
 
@@ -962,14 +959,14 @@ mod tests {
             r#"{"pictures": {"goal": "happy"}, "icons": {"icon": "sad"}}"#,
         );
         let root = checkout(&[
-            "aki/celebrate.png",
+            "aki/happy.png",
             "aki/extra.png",
             "cow/sad.png",
-            "cow/archive/old.png",
+            "archive/cow/old.png",
             "archive/aki/old.png",
-            "anki-tan/archive/pack/smile.png",
+            "archive/anki-tan-pack/pack/smile.png",
         ]);
-        fs::write(root.path().join("static/cow/archive/README.md"), "").unwrap();
+        fs::write(root.path().join("art/archive/cow/README.md"), "").unwrap();
         let cast = companions(root.path()).unwrap();
         let value = matrix(root.path(), &cast, &poses).unwrap();
 
@@ -1004,28 +1001,32 @@ mod tests {
         assert_eq!(aki["stage"], "live");
         assert_eq!(aki["licence"], "repository");
         assert_eq!(aki["items"][0]["status"], "present");
-        assert_eq!(aki["items"][0]["file"], "static/aki/celebrate.png");
+        assert_eq!(aki["items"][0]["file"], "art/aki/happy.png");
         assert_eq!(aki["items"][2]["status"], "fallback");
         assert_eq!(aki["items"][2]["shows"], "happy");
         assert_eq!(aki["items"][1]["status"], "missing");
         assert_eq!(aki["missing"]["core"], json!(["sad", "goal", "icon"]));
         assert_eq!(aki["missing"]["extensions"], json!(["winner"]));
-        assert_eq!(aki["unlisted"], json!(["static/aki/extra.png"]));
+        assert_eq!(aki["unlisted"], json!(["art/aki/extra.png"]));
         assert_eq!(value["companions"][2]["licence"], "anki-tan");
 
         // The archive, apart, with each folder's licence.
         assert_eq!(
             value["archive"],
             json!([
-                {"folder": "static/anki-tan/archive", "licence": "anki-tan",
-                 "readme": null, "files": ["static/anki-tan/archive/pack/smile.png"]},
-                {"folder": "static/archive/aki", "licence": "repository",
-                 "readme": null, "files": ["static/archive/aki/old.png"]},
-                {"folder": "static/cow/archive", "licence": "repository",
-                 "readme": "static/cow/archive/README.md", "files": ["static/cow/archive/old.png"]}
+                {"folder": "art/archive/aki", "licence": "repository",
+                 "readme": null, "files": ["art/archive/aki/old.png"]},
+                {"folder": "art/archive/anki-tan-pack", "licence": "anki-tan",
+                 "readme": null, "files": ["art/archive/anki-tan-pack/pack/smile.png"]},
+                {"folder": "art/archive/cow", "licence": "repository",
+                 "readme": "art/archive/cow/README.md", "files": ["art/archive/cow/old.png"]}
             ])
         );
         assert_eq!(value["licences"]["anki-tan"]["spdx"], "CC-BY-SA-4.0");
+        assert_eq!(
+            value["licences"]["anki-tan"]["file"],
+            "art/anki-tan/LICENSE"
+        );
     }
 
     #[test]
@@ -1037,7 +1038,7 @@ mod tests {
         assert!(
             archive
                 .iter()
-                .any(|folder| folder["folder"] == "static/cow/archive")
+                .any(|folder| folder["folder"] == "art/archive/cow")
         );
         for companion in value["companions"].as_array().unwrap() {
             for item in companion["items"].as_array().unwrap() {

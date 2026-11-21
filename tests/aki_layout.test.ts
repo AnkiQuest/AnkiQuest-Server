@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import type {Route} from 'playwright';
-import {addSite, fulfillAsset, launch, page as built, prefix, root, script} from './support/web.ts';
+import {addSite, companionPicture, fulfillAsset, launch, page as built, prefix, root, script} from './support/web.ts';
 const html = built('index');
 const styles = fs.readFileSync(path.join(root, 'static/site.css'), 'utf8') + '\n' + [...html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)].map(m => m[1]).join('\n');
 const renderer = prefix('pages/index', 'async function render(');
@@ -16,8 +16,8 @@ async function assets(route: Route) {
   if (url.pathname === '/auth/status') return route.fulfill({contentType:'application/json',body:JSON.stringify({private_site:false,authenticated:true,member:null})});
   if (url.pathname === '/api/avatars') return route.fulfill({contentType:'application/json',body:'{}'});
   if (url.pathname === '/i18n.wasm') return void await fulfillAsset(route, url.pathname);
-  const name = url.pathname.match(/^\/aki\/(welcome|review|celebrate|streak|freeze|winner|face)\.png$/)?.[1];
-  if (name) await route.fulfill({contentType:'image/png',body:fs.readFileSync(path.join(root,'static/aki',name+'.png'))});
+  const picture = companionPicture(url.pathname);
+  if (picture) await route.fulfill({contentType:'image/png',body:fs.readFileSync(picture)});
   else await route.abort();
 }
 async function main() {

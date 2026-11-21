@@ -4,11 +4,11 @@
 (AGENTS.md, Companion art): every companion by every item of
 `tests/fixtures/companion_poses.json`, with what each shows, the licence of
 its pictures and the archive. The gallery (AnkiQuest.github.io) builds from
-it on AnkiQuest-Server `master`. Paths are relative to the repository root,
-so `https://raw.githubusercontent.com/AnkiQuest/AnkiQuest-Server/master/<path>`
-fetches a file. The masters are below `static/` today
-(`ankiquest_art::MASTERS`); when they move, `folder` and `file` paths
-follow.
+it on AnkiQuest-Server `master`. Paths are relative to the repository root
+and start with `art/`, the AnkiQuest-Art submodule (`ankiquest_art::MASTERS`):
+`art/<path>` is
+`https://raw.githubusercontent.com/AnkiQuest/AnkiQuest-Art/<commit>/<path>`,
+where `<commit>` is the submodule's (`git rev-parse HEAD:art`).
 
 `schema` goes up when a field changes meaning or goes away; added fields
 keep it.
@@ -38,8 +38,8 @@ keep it.
   // Licences by key; every picture of a companion or archive folder has
   // its folder's licence. `credit` is the attribution the licence requires.
   "licences": {
-    "repository": {"spdx": "AGPL-3.0-or-later", "file": "LICENSE", "credit": null},
-    "anki-tan": {"spdx": "CC-BY-SA-4.0", "file": "static/anki-tan/LICENSE",
+    "repository": {"spdx": "AGPL-3.0-or-later", "file": "art/LICENSE", "credit": null},
+    "anki-tan": {"spdx": "CC-BY-SA-4.0", "file": "art/anki-tan/LICENSE",
                  "credit": "Anki-tan by Shigeyuki (https://www.patreon.com/Shigeyuki)"}
   },
 
@@ -48,32 +48,32 @@ keep it.
     {
       "id": "anki_tan",
       "name": "Anki-tan",
-      "folder": "static/anki-tan",
+      "folder": "art/anki-tan",
       "stage": "live",                   // or "planned"
       "licence": "anki-tan",             // a key of `licences`
       // One entry per item, in the order of `items`.
       "items": [
         {"name": "face", "kind": "core_mood", "status": "present",
-         "file": "static/anki-tan/sprite/idle/anki-tan_idle_0001.png"},
+         "file": "art/anki-tan/face.png"},
         {"name": "icon_frozen", "kind": "icon", "status": "fallback",
-         "shows": "icon", "file": "static/anki-tan/icon.png"},
+         "shows": "icon", "file": "art/anki-tan/icon.png"},
         {"name": "x", "kind": "picture", "status": "missing"}
       ],
       // What is missing, as the backlog: core items and extensions.
       "missing": {"core": ["achievement", "..."], "extensions": ["frozen_2", "..."]},
       // PNGs directly in the folder that no item names, such as Ankilope's
-      // study.png. A folder with a poses.json takes its masters from there.
+      // study.png.
       "unlisted": []
     }
   ],
 
-  // Archive folders, apart from the masters: a companion's `archive/`, or
-  // each folder of a top-level `archive/`. Replaced masters and earlier
-  // copies; never exported to a client.
+  // Archive folders, apart from the masters: each folder of AnkiQuest-Art's
+  // `archive/`. Replaced masters, earlier copies and Shigeyuki's source
+  // pack; never exported to a client.
   "archive": [
-    {"folder": "static/cow/archive", "licence": "repository",
-     "readme": "static/cow/archive/README.md",
-     "files": ["static/cow/archive/face.png", "..."]}
+    {"folder": "art/archive/cow", "licence": "repository",
+     "readme": "art/archive/cow/README.md",
+     "files": ["art/archive/cow/face.png", "..."]}
   ]
 }
 ```

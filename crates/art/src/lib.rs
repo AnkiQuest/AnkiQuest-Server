@@ -2,11 +2,11 @@
 //! tools: the pose list with its fallbacks (`tests/fixtures/companion_poses.json`)
 //! and the downscaler every exported copy of a master goes through.
 //!
-//! Masters are the PNGs in `static/<companion>/` ([`MASTERS`]), named after
-//! their pose or listed in the folder's `poses.json` ([`master`]). A folder
-//! named `archive` holds pictures that are not masters; nothing reads it as
-//! one ([`archived`]). Every other copy is made from the masters with
-//! [`shrink`], so all exports resample the same way.
+//! Masters are the PNGs in the AnkiQuest-Art submodule ([`MASTERS`]), one
+//! `<companion>/<pose>.png` per pose ([`master`]), each listed in its
+//! `manifest.json` ([`Manifest`]). Its `archive/` holds pictures that are not
+//! masters; nothing reads it as one ([`archived`]). Every copy is made from
+//! the masters with [`shrink`], so all exports resample the same way.
 
 use std::path::Path;
 
@@ -14,18 +14,19 @@ use image::codecs::png::{CompressionType, FilterType as PngFilter, PngEncoder};
 use image::imageops::{self, FilterType};
 use image::{ImageEncoder, Rgba32FImage, RgbaImage};
 
-mod listed;
+mod manifest;
 mod poses;
 
-pub use listed::{LISTED, listed};
-pub use poses::{Kind, Poses, master, pose_of, stem};
+pub use manifest::{Manifest, Master, Shared};
+pub use poses::{Kind, Poses, master};
 
 /// The pose fixture, relative to the repository root.
 pub const POSES: &str = "tests/fixtures/companion_poses.json";
 
-/// The folder that holds the masters, relative to the repository root:
-/// `<companion>/<pose>.png` below it. Every tool finds masters through this.
-pub const MASTERS: &str = "static";
+/// The folder that holds the masters, relative to the repository root: the
+/// AnkiQuest-Art submodule, `<companion>/<pose>.png` below it. Every tool
+/// finds masters through this.
+pub const MASTERS: &str = "art";
 
 /// The name of a folder of pictures that are not masters: replaced masters,
 /// earlier copies, source packs. It is never exported to a client.
@@ -108,11 +109,11 @@ mod tests {
 
     #[test]
     fn archive_folders_are_found_anywhere() {
-        assert!(archived("static/archive/cow/face.png"));
-        assert!(archived("static/cow/archive/face.png"));
+        assert!(archived("art/archive/cow/face.png"));
+        assert!(archived("art/cow/archive/face.png"));
         assert!(archived("archive/anki-tan-pack/emoji/a.png"));
-        assert!(!archived("static/cow/face.png"));
-        assert!(!archived("static/archives/face.png"));
+        assert!(!archived("art/cow/face.png"));
+        assert!(!archived("art/archives/face.png"));
     }
 
     #[test]

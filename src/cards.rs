@@ -68,6 +68,18 @@ include!(concat!(env!("OUT_DIR"), "/art/cards.rs"));
 /// The pose a card shows when its own and every fallback are missing.
 const HAPPY: &str = "happy";
 
+/// Art names wins stored before the pose list, and the pose each shows. Wins keep `celebrate`
+/// in the wins API's `art` field (`crate::wins::art`), so released apps still send it.
+const STORED: [(&str, &str); 1] = [("celebrate", HAPPY)];
+
+/// The pose a win's stored art name shows.
+fn pose_of(stored: &str) -> &str {
+    STORED
+        .iter()
+        .find(|(name, _)| *name == stored)
+        .map_or(stored, |(_, pose)| pose)
+}
+
 /// How far [`turn_purple`] turns Ankilope's hues, in degrees, as CSS `hue-rotate` does on the web.
 const COW_HUE_DEGREES: f32 = 250.0;
 
@@ -101,8 +113,8 @@ impl Look {
 impl Art {
     /// What tells this art apart in the render cache.
     fn key(self) -> String {
-        let (owner, stem, _) = CARD_ART[self.file];
-        format!("{owner}/{stem}/{:?}", self.look)
+        let (owner, pose, _) = CARD_ART[self.file];
+        format!("{owner}/{pose}/{:?}", self.look)
     }
 }
 
@@ -115,8 +127,8 @@ fn poses() -> &'static ankiquest_art::Poses {
     })
 }
 
-/// The art for `pose` of `companion`. `pose` is a master's file name, as wins store it
-/// (`celebrate`), or a pose from the fixture (`happy`). A companion without that pose shows
+/// The art for `pose` of `companion`. `pose` is a name wins store (`celebrate`, [`STORED`]) or
+/// a pose from the fixture (`happy`). A companion without that pose shows
 /// its fallback from the fixture, else its happy pose; one without art shows none.
 pub(crate) fn art(companion: &str, pose: &str) -> Option<Art> {
     if pose == "none" {
@@ -124,14 +136,13 @@ pub(crate) fn art(companion: &str, pose: &str) -> Option<Art> {
     }
     let owner = crate::companions::art_owner(companion);
     let file = |pose: &str| {
-        let stem = ankiquest_art::stem(pose);
         CARD_ART
             .iter()
-            .position(|(who, known, _)| *who == owner && *known == stem)
+            .position(|(who, known, _)| *who == owner && *known == pose)
     };
 
     // Walk the fixture's fallbacks to a pose this companion has.
-    let pose = ankiquest_art::pose_of(pose);
+    let pose = pose_of(pose);
     let found = poses()
         .resolve(pose, |pose| file(pose).is_some())
         .unwrap_or(HAPPY);
@@ -1515,14 +1526,14 @@ mod tests {
     }
 
     #[test]
-    fn art_follows_the_companion_and_falls_back_to_celebrate() {
+    fn art_follows_the_companion_and_falls_back_to_happy() {
         let file = |art: Option<Art>| art.map(|art| CARD_ART[art.file].0);
-        let stem = |art: Option<Art>| art.map(|art| CARD_ART[art.file].1);
-        assert_eq!(stem(art("aki", "streak")), Some("streak"));
-        assert_eq!(stem(art("aki", "missing")), Some("celebrate"));
-        assert_eq!(stem(art("ankilope", "winner")), Some("celebrate"));
+        let pose = |art: Option<Art>| art.map(|art| CARD_ART[art.file].1);
+        assert_eq!(pose(art("aki", "streak")), Some("streak"));
+        assert_eq!(pose(art("aki", "missing")), Some("happy"));
+        assert_eq!(pose(art("ankilope", "winner")), Some("happy"));
         assert_eq!(file(art("ankilope", "winner")), Some("ankilope"));
-        assert_eq!(stem(art("cow", "streak")), Some("celebrate"));
+        assert_eq!(pose(art("cow", "streak")), Some("happy"));
         assert_eq!(art("cow", "streak").unwrap().look, Look::Cow);
         assert_eq!(art("none", "celebrate"), None);
         assert_eq!(art("aki", "none"), None);
@@ -1530,37 +1541,37 @@ mod tests {
 
     #[test]
     fn every_companion_with_masters_has_card_art() {
-        // build.rs exports every card pose each companion folder in static/ has.
+        // build.rs exports every card pose each companion folder in art/ has.
         let mut exported: Vec<_> = CARD_ART
             .iter()
-            .map(|(who, stem, _)| format!("{who}/{stem}"))
+            .map(|(who, pose, _)| format!("{who}/{pose}"))
             .collect();
         exported.sort();
         assert_eq!(
             exported,
             [
-                "aki/celebrate",
                 "aki/freeze",
                 "aki/frozen",
+                "aki/happy",
                 "aki/streak",
                 "aki/winner",
-                "anki_tan/celebrate",
                 "anki_tan/frozen",
+                "anki_tan/happy",
                 "anki_tan/streak",
-                "ankilope/celebrate",
-                "ankilope/frozen"
+                "ankilope/frozen",
+                "ankilope/happy"
             ]
         );
 
         // Masters are shrunk to 512 px, never enlarged: Anki-tan's pack stickers are 320 px.
-        for (who, stem, png) in CARD_ART {
+        for (who, pose, png) in CARD_ART {
             let pixmap = tiny_skia::Pixmap::decode_png(png).unwrap();
             let (width, height) = (pixmap.width(), pixmap.height());
             if who == "anki_tan" {
-                assert!(width.max(height) <= 512, "{who}/{stem}");
+                assert!(width.max(height) <= 512, "{who}/{pose}");
                 continue;
             }
-            assert_eq!((width, height), (512, 512), "{who}/{stem}");
+            assert_eq!((width, height), (512, 512), "{who}/{pose}");
         }
     }
 
@@ -1573,30 +1584,31 @@ mod tests {
     }
 
     #[test]
-    fn anki_tan_cards_show_her_listed_art() {
-        // #61: her masters are the files static/anki-tan/poses.json lists.
+    fn anki_tan_cards_show_her_art() {
+        // #61: her cards show her own masters.
         let file = |art: Option<Art>| art.map(|art| CARD_ART[art.file].0);
-        let stem = |art: Option<Art>| art.map(|art| CARD_ART[art.file].1);
+        let shown = |art: Option<Art>| art.map(|art| CARD_ART[art.file].1);
         for pose in ["celebrate", "happy", "streak", "frozen", "winner", "freeze"] {
             assert_eq!(file(art("anki_tan", pose)), Some("anki_tan"), "{pose}");
         }
-        assert_eq!(stem(art("anki_tan", "streak")), Some("streak"));
-        assert_eq!(stem(art("anki_tan", "frozen")), Some("frozen"));
-        assert_eq!(stem(art("anki_tan", "winner")), Some("celebrate"));
+        assert_eq!(shown(art("anki_tan", "streak")), Some("streak"));
+        assert_eq!(shown(art("anki_tan", "frozen")), Some("frozen"));
+        assert_eq!(shown(art("anki_tan", "winner")), Some("happy"));
         assert_eq!(art("anki_tan", "streak").unwrap().look, Look::Master);
     }
 
     #[test]
     fn fixture_pose_names_pick_their_masters() {
-        // companion_poses.json names the happy pose; its master is celebrate.png. Frozen has
-        // its own master, apart from freeze.png (a used streak freeze).
-        let stem = |art: Option<Art>| art.map(|art| CARD_ART[art.file].1);
+        // Wins store `celebrate`, which shows the happy pose. Frozen has its own master, apart
+        // from freeze.png (a used streak freeze).
+        let pose = |art: Option<Art>| art.map(|art| CARD_ART[art.file].1);
         assert_eq!(art("aki", "happy"), art("aki", "celebrate"));
-        assert_eq!(stem(art("aki", "frozen")), Some("frozen"));
-        assert_eq!(stem(art("aki", "freeze")), Some("freeze"));
-        assert_eq!(stem(art("ankilope", "frozen")), Some("frozen"));
+        assert_eq!(pose(art("aki", "celebrate")), Some("happy"));
+        assert_eq!(pose(art("aki", "frozen")), Some("frozen"));
+        assert_eq!(pose(art("aki", "freeze")), Some("freeze"));
+        assert_eq!(pose(art("ankilope", "frozen")), Some("frozen"));
         // A used freeze is a picture the fixture lists; without one, Ankilope shows frozen.
-        assert_eq!(stem(art("ankilope", "freeze")), Some("frozen"));
+        assert_eq!(pose(art("ankilope", "freeze")), Some("frozen"));
     }
 
     #[test]

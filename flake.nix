@@ -3,6 +3,9 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # build.rs reads the companion art masters from the art/ submodule
+    # (AnkiQuest-Art), so the flake's source includes submodules.
+    self.submodules = true;
   };
 
   outputs = {

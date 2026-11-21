@@ -6,12 +6,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// Poses whose masters were named before the fixture: pose, then the
-/// master's file name without `.png`. Wins store these file names (the
-/// `art` field of the wins API), so they stay. No win stores the asleep
-/// pose, so its masters use the pose name (#32).
-const LEGACY: [(&str, &str); 2] = [("happy", "celebrate"), ("leech_defeated", "leech")];
-
 /// What an item of the list is. The first three are the core set a
 /// companion needs to go live.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -173,33 +167,11 @@ impl Poses {
     }
 }
 
-/// The master's file name, without `.png`, for `pose`.
-pub fn stem(pose: &str) -> &str {
-    LEGACY
-        .iter()
-        .find(|(known, _)| *known == pose)
-        .map_or(pose, |(_, stem)| stem)
-}
-
-/// The pose a master's file name, without `.png`, shows.
-pub fn pose_of(stem: &str) -> &str {
-    LEGACY
-        .iter()
-        .find(|(_, known)| *known == stem)
-        .map_or(stem, |(pose, _)| pose)
-}
-
-/// The master for `pose` in a companion's `folder`: the file the folder's
-/// `poses.json` lists ([`crate::listed`]), else `<pose>.png`, else the older
-/// file name [`stem`] gives; `None` when there is none.
-pub fn master(folder: &Path, pose: &str) -> Result<Option<PathBuf>, String> {
-    if let Some(files) = crate::listed(folder)? {
-        return Ok(files.get(pose).filter(|file| file.is_file()).cloned());
-    }
-    Ok([pose, stem(pose)]
-        .into_iter()
-        .map(|name| folder.join(format!("{name}.png")))
-        .find(|file| file.is_file()))
+/// The master for `pose` in a companion's `folder`: `<pose>.png`, or `None`
+/// when the companion has no master for it.
+pub fn master(folder: &Path, pose: &str) -> Option<PathBuf> {
+    let file = folder.join(format!("{pose}.png"));
+    file.is_file().then_some(file)
 }
 
 #[cfg(test)]
@@ -272,38 +244,22 @@ mod tests {
     }
 
     #[test]
-    fn legacy_masters_keep_their_file_names() {
-        assert_eq!(stem("happy"), "celebrate");
-        assert_eq!(stem("leech_defeated"), "leech");
-        assert_eq!(stem("frozen"), "frozen");
-        assert_eq!(stem("asleep"), "asleep");
-        assert_eq!(pose_of("celebrate"), "happy");
-        assert_eq!(pose_of("freeze"), "freeze");
-        assert_eq!(pose_of("winner"), "winner");
+    fn masters_are_named_after_their_pose() {
+        let folder = scratch("masters");
+        assert_eq!(master(&folder, "happy"), None);
+
+        // Older file names (celebrate.png) are not masters any more.
+        std::fs::write(folder.join("celebrate.png"), b"").unwrap();
+        assert_eq!(master(&folder, "happy"), None);
+        std::fs::write(folder.join("happy.png"), b"").unwrap();
+        assert_eq!(master(&folder, "happy"), Some(folder.join("happy.png")));
+        std::fs::remove_dir_all(&folder).unwrap();
     }
 
-    #[test]
-    fn masters_use_the_pose_name_first() {
-        let folder = std::env::temp_dir().join(format!("masters-{}", std::process::id()));
+    /// An empty folder of its own in the system's temporary folder.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let folder = std::env::temp_dir().join(format!("{name}-{}", std::process::id()));
         std::fs::create_dir_all(&folder).unwrap();
-        let found = |pose| master(&folder, pose).unwrap();
-        assert_eq!(found("happy"), None);
-
-        // The older name counts, the pose name wins.
-        std::fs::write(folder.join("celebrate.png"), b"").unwrap();
-        assert_eq!(found("happy"), Some(folder.join("celebrate.png")));
-        std::fs::write(folder.join("happy.png"), b"").unwrap();
-        assert_eq!(found("happy"), Some(folder.join("happy.png")));
-
-        // A folder's list wins over file names.
-        std::fs::write(folder.join("good.png"), b"").unwrap();
-        std::fs::write(
-            folder.join(crate::LISTED),
-            r#"{"poses": {"happy": "good.png"}}"#,
-        )
-        .unwrap();
-        assert_eq!(found("happy"), Some(folder.join("good.png")));
-        assert_eq!(found("sad"), None);
-        std::fs::remove_dir_all(&folder).unwrap();
+        folder
     }
 }

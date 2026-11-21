@@ -1,4 +1,5 @@
-//! Writes the Android app's companion drawables from the master PNGs in `static/`.
+//! Writes the Android app's companion drawables from the master PNGs in the
+//! AnkiQuest-Art submodule (`art/`).
 //!
 //! Each drawable is a square lossy WebP with full-quality alpha, downscaled
 //! with Lanczos to about three times its largest place in the app and never
@@ -139,9 +140,9 @@ const ART: &[Art] = &[
     widget("bluma_hopeful", "cow/hopeful.png"),
     widget("bluma_frozen", "cow/frozen.png"),
     widget("bluma_neglected", "cow/neglected.png"),
-    widget("aki_celebrate", "aki/celebrate.png"),
+    widget("aki_celebrate", "aki/happy.png"),
     widget("aki_streak", "aki/streak.png"),
-    widget("ankilope_celebrate", "ankilope/celebrate.png"),
+    widget("ankilope_celebrate", "ankilope/happy.png"),
     widget("ankilope_study", "ankilope/study.png"),
     widget("aki_welcome", "aki/welcome.png"),
     widget("aki_review", "aki/review.png"),
@@ -164,7 +165,7 @@ const ART: &[Art] = &[
     art("aki_achievement", "aki/achievement.png", 336),
     art("aki_level_up", "aki/level_up.png", 336),
     art("aki_deck_conquered", "aki/deck_conquered.png", 336),
-    art("aki_leech", "aki/leech.png", 336),
+    art("aki_leech", "aki/leech_defeated.png", 336),
     widget("aki_asleep", "aki/asleep.png"),
     widget("aki_at_risk", "aki/at_risk.png"),
     art("aki_backlog", "aki/backlog.png", 336),
@@ -193,57 +194,27 @@ const ART: &[Art] = &[
     widget("anki_tan_sad", "anki-tan/sad.png"),
     widget("anki_tan_neglected", "anki-tan/neglected.png"),
     widget("anki_tan_chibi_frozen", "anki-tan/chibi/frozen.png"),
-    // Anki-tan's other poses, from Shigeyuki's pack as
-    // static/anki-tan/README.md maps them. The pack's pictures are smaller
-    // than WIDGET and are kept at their size.
-    widget(
-        "anki_tan_face",
-        "anki-tan/sprite/idle/anki-tan_idle_0001.png",
-    ),
-    widget("anki_tan_happy", "anki-tan/sticker/anki_tan_good.png"),
-    widget("anki_tan_streak", "anki-tan/emoji/Ankitan_09_fire_eyes.png"),
-    widget(
-        "anki_tan_hopeful",
-        "anki-tan/sticker/ankitan_lets_study.png",
-    ),
-    widget("anki_tan_welcome", "anki-tan/sticker/anki_tan_hello.png"),
-    widget("anki_tan_review", "anki-tan/sticker/press_spacebar.png"),
-    widget(
-        "anki_tan_streak_legend",
-        "anki-tan/emoji/Ankitan_43_crown.png",
-    ),
-    widget(
-        "anki_tan_streak_milestone",
-        "anki-tan/emoji/Ankitan_48_perfect_streaks.png",
-    ),
-    widget("anki_tan_hurt", "anki-tan/emoji/Ankitan_28_spiral_eyes.png"),
-    widget(
-        "anki_tan_dead",
-        "anki-tan/emoji/Ankitan_39_crossed_out_eyes.png",
-    ),
+    // Anki-tan's other poses, from Shigeyuki's pack (art/anki-tan/README.md).
+    // The pack's pictures are smaller than WIDGET and are kept at their size.
+    widget("anki_tan_face", "anki-tan/face.png"),
+    widget("anki_tan_happy", "anki-tan/happy.png"),
+    widget("anki_tan_streak", "anki-tan/streak.png"),
+    widget("anki_tan_hopeful", "anki-tan/hopeful.png"),
+    widget("anki_tan_welcome", "anki-tan/welcome.png"),
+    widget("anki_tan_review", "anki-tan/review.png"),
+    widget("anki_tan_streak_legend", "anki-tan/streak_legend.png"),
+    widget("anki_tan_streak_milestone", "anki-tan/streak_milestone.png"),
+    widget("anki_tan_hurt", "anki-tan/hurt.png"),
+    widget("anki_tan_dead", "anki-tan/dead.png"),
     // Anki-tan's launcher icons (AnkiQuest-Android AnkiquestIcon), CC BY-SA 4.0.
-    // The pack's icon is 256 px and is kept at that size.
+    // The pack's icon is 256 px and is kept at that size. She has no mood
+    // icon masters; the moods show her streak pose and the chibi's sad and
+    // asleep poses, and the monochrome layer the chibi's face.
     art("anki_tan_icon", "anki-tan/icon.png", 432),
-    art(
-        "anki_tan_icon_happy",
-        "anki-tan/emoji/Ankitan_09_fire_eyes.png",
-        432,
-    ),
-    art(
-        "anki_tan_icon_worried",
-        "anki-tan/emoji/Ankitan_02_cry.png",
-        432,
-    ),
-    art(
-        "anki_tan_icon_sleepy",
-        "anki-tan/emoji/Ankitan_35_sleeping.png",
-        432,
-    ),
-    outline(
-        "anki_tan_icon_mono",
-        "anki-tan/emoji/Ankitan_00_smile.png",
-        432,
-    ),
+    art("anki_tan_icon_happy", "anki-tan/streak.png", 432),
+    art("anki_tan_icon_worried", "anki-tan/chibi/sad.png", 432),
+    art("anki_tan_icon_sleepy", "anki-tan/chibi/asleep.png", 432),
+    outline("anki_tan_icon_mono", "anki-tan/chibi/face.png", 432),
     // Ankilope and Bluma have no mood faces yet; the app shows the face for every mood.
     art("ankilope_icon", "ankilope/face.png", 432),
     bold_outline("ankilope_icon_mono", "ankilope/face.png", 432),
@@ -548,8 +519,12 @@ mod tests {
 
     #[test]
     fn masters_exist() {
+        // Every source is a master AnkiQuest-Art's manifest lists.
+        let manifest = ankiquest_art::Manifest::read(&masters()).unwrap();
         for art in ART {
             assert!(masters().join(art.source).is_file(), "{}", art.source);
+            let listed = manifest.files().any(|file| file == art.source);
+            assert!(listed, "{}", art.source);
         }
     }
 
