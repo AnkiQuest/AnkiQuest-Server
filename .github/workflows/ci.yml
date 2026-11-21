@@ -103,9 +103,9 @@ jobs:
       - name: Browser tests
         run: npm run test:web
 
-  # Regenerates the web screenshots, the README banner and the social
-  # preview, and fails unless they are byte-identical to the committed
-  # files. On failure the rendered images are uploaded for review.
+  # Regenerates the web screenshots and fails unless they are
+  # byte-identical to the committed files. On failure the rendered images
+  # are uploaded for review.
   screenshots:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -128,19 +128,23 @@ jobs:
 
       # The pages load the i18n module built for wasm.
       - name: Regenerate
-        run: rustup target add wasm32-unknown-unknown && npm run screenshots
+        run: rustup target add wasm32-unknown-unknown && npm run screenshots:web
 
       - name: Compare with the committed images
-        run: git diff --exit-code --stat -- docs/screenshots/web docs/graphics
+        run: git diff --exit-code --stat -- docs/screenshots/web
 
       - name: Upload the rendered images
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: screenshots
-          path: |
-            docs/screenshots/web/*.png
-            docs/graphics/*.png
+          path: docs/screenshots/web/*.png
+
+  # The README banner and social preview, drawn from the committed web
+  # screenshots and this repository's duo master by AnkiQuest-Dev's
+  # shared tool (docs/graphics/banner.toml).
+  banner:
+    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/banner.yml@master
 
   nix:
     runs-on: ubuntu-24.04

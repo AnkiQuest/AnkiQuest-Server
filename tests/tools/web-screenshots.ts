@@ -7,10 +7,11 @@
 // package), the fonts (only assets/fonts, through a fontconfig file, so no
 // system font is used), the clock, locale, time zone, colour scheme, viewport
 // and device scale. Runs on Linux give byte-identical files; CI checks that.
-// `cargo run -p ankiquest-xtask -- banner` then draws the banner from them.
+// AnkiQuest-Dev's ankiquest-banner then draws the banner from them
+// (docs/graphics/banner.toml).
 //
-// Run: npm run screenshots:web, or npm run screenshots for these, the banner
-// and the social preview.
+// Run: npm run screenshots:web, or ankiquest-banner --server . --record for
+// these, the banner and the social preview.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
