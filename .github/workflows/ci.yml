@@ -6,7 +6,6 @@ on:
   # both ran every job twice on the same commit.
   push:
     branches:
-      - main
       - master
   pull_request:
   # The jobs here are required checks; the merge queue waits for them on
@@ -45,7 +44,7 @@ jobs:
         run: cargo test -p ankiquest-xtask contract
       - name: Read Android's public consumed-example catalog
         run: |
-          git clone --depth 1 --filter=blob:none --sparse --branch main https://github.com/AnkiQuest/AnkiQuest-Android.git android-client
+          git clone --depth 1 --filter=blob:none --sparse --branch master https://github.com/AnkiQuest/AnkiQuest-Android.git android-client
           git -C android-client sparse-checkout set --no-cone \
             '/AnkiDroid/src/test/resources/ankiquest-api/' '/AnkiDroid/src/test/resources/ankiquest-server.sha' \
             '/ankiquest-core/src/test/resources/ankiquest-api/' '/ankiquest-core/src/test/resources/ankiquest-server.sha'

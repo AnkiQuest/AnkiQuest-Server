@@ -15,10 +15,8 @@ name: Label Sync
 # never deleted.
 
 on:
-  # Default branches: main in AnkiQuest-Android, master elsewhere.
   push:
     branches:
-      - main
       - master
     paths:
       - .github/labels.json
