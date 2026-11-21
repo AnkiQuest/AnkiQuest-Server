@@ -45,6 +45,11 @@ Extensions, both versions unless noted:
 | celebrate (unlock reveal) | `illust/anki_tan_main.png` |
 | idle and wave animations | `sprite/idle`, `sprite/hello` |
 
+Launcher icons (full version): `icon` is `icon.png`; `icon_happy`,
+`icon_worried` and `icon_sleepy` are `emoji/Ankitan_09_fire_eyes.png`,
+`emoji/Ankitan_02_cry.png` and `emoji/Ankitan_35_sleeping.png`; `icon_frozen`
+is not drawn and shows `icon`.
+
 ## Generated additions
 
 The canonical generated masters are `asleep.png`, `sad.png`,

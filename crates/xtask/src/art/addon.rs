@@ -92,8 +92,15 @@ fn is_pose(export: &Export) -> bool {
     export.exporter == Exporter::Addon
 }
 
-/// The pose `export` describes, made from its master.
+/// The pose `export` describes, made from its master. A picture in an
+/// archive folder is refused: the archive is never exported.
 fn render(export: &Export) -> Result<Vec<u8>, String> {
+    if ankiquest_art::archived(&export.master) {
+        return Err(format!(
+            "{}: {} is in the archive, not a master",
+            export.file, export.master
+        ));
+    }
     let master = load(&root().join(&export.master))?;
     let (width, height) = target(master.width(), master.height(), SIZE);
     encode(&shrink(master, width, height))
@@ -434,6 +441,19 @@ mod tests {
             step(Some(&png(&committed)), &png(&edited)),
             Ok(Step::Replace)
         );
+    }
+
+    #[test]
+    fn an_archived_master_is_refused() {
+        // An archive is never exported to a client (AGENTS.md, Companion art).
+        let archived = Export {
+            master: "static/cow/archive/face.png".into(),
+            ..winner_export()
+        };
+        let Err(error) = render(&archived) else {
+            panic!("exported an archived master");
+        };
+        assert!(error.contains("archive"), "{error}");
     }
 
     #[test]

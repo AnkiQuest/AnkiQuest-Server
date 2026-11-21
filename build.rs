@@ -89,7 +89,7 @@ fn main() -> Result<(), Error> {
 /// lists the card art by companion and master file name for `src/cards.rs`.
 fn art(root: &Path, out: &Path) -> Result<(), Error> {
     std::fs::create_dir_all(out)?;
-    let masters = root.join("static");
+    let masters = root.join(ankiquest_art::MASTERS);
     let mut table = String::from("[\n");
     let mut count = 0;
 
@@ -154,11 +154,13 @@ fn master(folder: &Path, pose: &str) -> Result<Option<PathBuf>, Error> {
 
 /// Companions with a happy master, by id and folder in static/, sorted by
 /// id. A folder's id is its name with `-` as `_` (`anki-tan` is `anki_tan`).
+/// An archive folder is no companion.
 fn companions(masters: &Path) -> Result<Vec<(String, String)>, Error> {
     let mut found = Vec::new();
     for entry in std::fs::read_dir(masters)? {
         let entry = entry?;
-        if !entry.path().is_dir() || master(&entry.path(), "happy")?.is_none() {
+        let archive = entry.file_name() == ankiquest_art::ARCHIVE;
+        if archive || !entry.path().is_dir() || master(&entry.path(), "happy")?.is_none() {
             continue;
         }
         let folder = entry

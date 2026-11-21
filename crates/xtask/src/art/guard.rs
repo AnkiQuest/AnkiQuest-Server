@@ -3,8 +3,9 @@
 //!
 //! An image is companion art when its path names a companion, or when it
 //! looks like a master scaled to another size. It may only be a master in
-//! `static/<companion>/`, an export in the art manifest, or a retired copy
-//! the manifest keeps. Animations are not compared with masters.
+//! `static/<companion>/`, a picture in an archive folder there, an export in
+//! the art manifest, or a retired copy the manifest keeps. Animations are not
+//! compared with masters.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -94,8 +95,9 @@ fn companions() -> Vec<String> {
     for companion in value["companions"].as_array().unwrap() {
         names.push(companion["companion"].as_str().unwrap().to_string());
     }
-    for folder in fs::read_dir(root().join("static")).unwrap().flatten() {
-        if folder.path().is_dir() {
+    let masters = root().join(ankiquest_art::MASTERS);
+    for folder in fs::read_dir(masters).unwrap().flatten() {
+        if folder.path().is_dir() && folder.file_name() != ankiquest_art::ARCHIVE {
             names.push(folder.file_name().to_string_lossy().into_owned());
         }
     }
@@ -105,11 +107,21 @@ fn companions() -> Vec<String> {
     names
 }
 
-/// The companion folder in `static/` that holds `image`, if any.
+/// The companion folder in `static/` that holds `image`, if any. An
+/// archive folder holds no masters.
 fn master_folder(image: &str) -> Option<&str> {
-    let rest = image.strip_prefix("static/")?;
+    let rest = image
+        .strip_prefix(ankiquest_art::MASTERS)?
+        .strip_prefix('/')?;
     let (folder, _) = rest.split_once('/')?;
-    Some(folder)
+    (folder != ankiquest_art::ARCHIVE).then_some(folder)
+}
+
+/// Whether `image` is in an archive folder among the masters: replaced
+/// masters, a source pack, earlier copies. They may be anything.
+fn archived(image: &str) -> bool {
+    let masters = format!("{}/", ankiquest_art::MASTERS);
+    image.starts_with(&masters) && ankiquest_art::archived(image)
 }
 
 /// A small picture of an image over grey, and its pixel size; `None` when
@@ -183,6 +195,10 @@ fn misplaced(
     masters: &[(String, Print)],
     names: &[String],
 ) -> Option<String> {
+    if archived(image) {
+        return None;
+    }
+
     // A master's scaled copy is a copy, even inside static/. Outside it, so
     // is a copy at full size.
     let outside = master_folder(image).is_none();
@@ -224,7 +240,7 @@ fn violations() -> Vec<String> {
     // Fingerprint the masters once.
     let masters: Vec<(String, Print)> = images
         .iter()
-        .filter(|image| master_folder(image).is_some())
+        .filter(|image| master_folder(image).is_some() && !archived(image))
         .filter_map(|image| Some((image.clone(), print(image)?)))
         .collect();
 
@@ -317,6 +333,9 @@ fn a_scaled_copy_is_found_anywhere() {
     for (image, print, expected) in [
         ("assets/cards/card.png", Some(&copy), true),
         ("static/aki/face-64.png", Some(&copy), true),
+        ("static/archive/aki/face-64.png", Some(&copy), false),
+        ("static/cow/archive/face-64.png", Some(&copy), false),
+        ("docs/archive/aki-64.png", Some(&copy), true),
         ("assets/cow.png", Some(&other), true),
         ("static/aki/face.png", Some(&masters[0].1), false),
         ("static/aki/new_pose.png", Some(&other), false),

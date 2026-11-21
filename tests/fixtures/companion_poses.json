@@ -1,5 +1,5 @@
 {
-  "_about": "The poses every live companion needs (AGENTS.md, Companion art). A new companion goes live only with all of them, and a PR adding a pose here draws it for every live companion; CI checks that with `xtask art-coverage --since`. Until every live companion has every pose (AnkiQuest/AnkiQuest-Server#57), a missing extension shows its fallback, which is a core pose or another extension that eventually reaches one; then the fallbacks are removed.",
+  "_about": "Every pose a companion can have (AGENTS.md, Companion art), each listed once. The core set a companion needs to go live is `core` (the core moods, in this order), `pictures` (the moment and share-card pictures the apps show) and `icons` (the launcher icon moods; `icon` is the default one). `extensions` are tiers and variants of a core item. Every item but a core mood names the item a companion without its master shows instead, which is a core mood or an item whose chain reaches one. hill, 2026-11-21: Ankilope, Bluma and Anki-tan stay live while their missing core items are drawn (AnkiQuest/AnkiQuest-Server#57, #116) and show these fallbacks meanwhile; a new companion goes live only with every core item drawn. A PR adding an item here draws it for every live companion; CI checks that with `xtask art-coverage --since`. `xtask art-coverage` reports which companion has which item.",
   "core": ["face", "asleep", "happy", "streak", "sad", "hopeful", "frozen", "neglected"],
   "extensions": {
     "streak_hot": "streak",
@@ -15,5 +15,31 @@
     "dead": "neglected",
     "leech_defeated": "happy",
     "winner": "happy"
+  },
+  "pictures": {
+    "achievement": "happy",
+    "at_risk": "sad",
+    "backlog": "sad",
+    "challenge": "hopeful",
+    "challenge_lost": "sad",
+    "challenge_won": "winner",
+    "comeback": "welcome",
+    "deck_conquered": "happy",
+    "freeze": "frozen",
+    "freeze_used": "frozen",
+    "goal": "happy",
+    "level_up": "happy",
+    "minimum": "review",
+    "nudge": "hopeful",
+    "place_1": "winner",
+    "place_2": "happy",
+    "place_3": "happy"
+  },
+  "icons": {
+    "icon": "face",
+    "icon_happy": "icon",
+    "icon_worried": "icon",
+    "icon_frozen": "icon",
+    "icon_sleepy": "icon"
   }
 }

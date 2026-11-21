@@ -65,7 +65,8 @@ enum Look {
     BoldOutline,
 }
 
-/// One drawable: name, master PNG, square size, WebP quality and look.
+/// One drawable: name, master PNG relative to [`masters`], square size,
+/// WebP quality and look.
 struct Art {
     name: &'static str,
     source: &'static str,
@@ -119,154 +120,135 @@ const fn widget(name: &'static str, source: &'static str) -> Art {
 }
 
 const ART: &[Art] = &[
-    widget("aki_face", "static/aki/face.png"),
-    widget("aki_sad", "static/aki/sad.png"),
-    widget("aki_hopeful", "static/aki/hopeful.png"),
-    widget("aki_frozen", "static/aki/frozen.png"),
-    widget("aki_neglected", "static/aki/neglected.png"),
-    widget("ankilope_face", "static/ankilope/face.png"),
-    widget("ankilope_sad", "static/ankilope/sad.png"),
-    widget("ankilope_hopeful", "static/ankilope/hopeful.png"),
-    widget("ankilope_frozen", "static/ankilope/frozen.png"),
-    widget("ankilope_asleep", "static/ankilope/asleep.png"),
-    widget("ankilope_neglected", "static/ankilope/neglected.png"),
-    widget("bluma_face", "static/cow/face.png"),
-    widget("bluma_asleep", "static/cow/asleep.png"),
-    widget("bluma_happy", "static/cow/happy.png"),
-    widget("bluma_streak", "static/cow/streak.png"),
-    widget("bluma_sad", "static/cow/sad.png"),
-    widget("bluma_hopeful", "static/cow/hopeful.png"),
-    widget("bluma_frozen", "static/cow/frozen.png"),
-    widget("bluma_neglected", "static/cow/neglected.png"),
-    widget("aki_celebrate", "static/aki/celebrate.png"),
-    widget("aki_streak", "static/aki/streak.png"),
-    widget("ankilope_celebrate", "static/ankilope/celebrate.png"),
-    widget("ankilope_study", "static/ankilope/study.png"),
-    widget("aki_welcome", "static/aki/welcome.png"),
-    widget("aki_review", "static/aki/review.png"),
-    widget("aki_freeze", "static/aki/freeze.png"),
-    widget("ankilope_welcome", "static/ankilope/welcome.png"),
-    art("aki_winner", "static/aki/winner.png", 168),
+    widget("aki_face", "aki/face.png"),
+    widget("aki_sad", "aki/sad.png"),
+    widget("aki_hopeful", "aki/hopeful.png"),
+    widget("aki_frozen", "aki/frozen.png"),
+    widget("aki_neglected", "aki/neglected.png"),
+    widget("ankilope_face", "ankilope/face.png"),
+    widget("ankilope_sad", "ankilope/sad.png"),
+    widget("ankilope_hopeful", "ankilope/hopeful.png"),
+    widget("ankilope_frozen", "ankilope/frozen.png"),
+    widget("ankilope_asleep", "ankilope/asleep.png"),
+    widget("ankilope_neglected", "ankilope/neglected.png"),
+    widget("bluma_face", "cow/face.png"),
+    widget("bluma_asleep", "cow/asleep.png"),
+    widget("bluma_happy", "cow/happy.png"),
+    widget("bluma_streak", "cow/streak.png"),
+    widget("bluma_sad", "cow/sad.png"),
+    widget("bluma_hopeful", "cow/hopeful.png"),
+    widget("bluma_frozen", "cow/frozen.png"),
+    widget("bluma_neglected", "cow/neglected.png"),
+    widget("aki_celebrate", "aki/celebrate.png"),
+    widget("aki_streak", "aki/streak.png"),
+    widget("ankilope_celebrate", "ankilope/celebrate.png"),
+    widget("ankilope_study", "ankilope/study.png"),
+    widget("aki_welcome", "aki/welcome.png"),
+    widget("aki_review", "aki/review.png"),
+    widget("aki_freeze", "aki/freeze.png"),
+    widget("ankilope_welcome", "ankilope/welcome.png"),
+    art("aki_winner", "aki/winner.png", 168),
     // Moment art from #88: app icon moods, streak widget, celebrations.
-    art("aki_icon_happy", "static/aki/icon_happy.png", 432),
-    art("aki_icon_worried", "static/aki/icon_worried.png", 432),
-    art("aki_icon_frozen", "static/aki/icon_frozen.png", 432),
-    art("aki_icon_sleepy", "static/aki/icon_sleepy.png", 432),
-    widget("aki_streak_hot", "static/aki/streak_hot.png"),
-    widget("aki_streak_blazing", "static/aki/streak_blazing.png"),
-    widget("aki_streak_legend", "static/aki/streak_legend.png"),
-    widget("aki_streak_milestone", "static/aki/streak_milestone.png"),
-    widget("aki_freeze_used", "static/aki/freeze_used.png"),
-    widget("aki_comeback", "static/aki/comeback.png"),
-    widget("aki_minimum", "static/aki/minimum.png"),
-    widget("aki_goal", "static/aki/goal.png"),
-    art("aki_achievement", "static/aki/achievement.png", 336),
-    art("aki_level_up", "static/aki/level_up.png", 336),
-    art("aki_deck_conquered", "static/aki/deck_conquered.png", 336),
-    art("aki_leech", "static/aki/leech.png", 336),
-    widget("aki_asleep", "static/aki/asleep.png"),
-    widget("aki_at_risk", "static/aki/at_risk.png"),
-    art("aki_backlog", "static/aki/backlog.png", 336),
-    art("ankilope_backlog", "static/ankilope/backlog.png", 336),
-    art("aki_place_1", "static/aki/place_1.png", 336),
-    art("aki_place_2", "static/aki/place_2.png", 336),
-    art("aki_place_3", "static/aki/place_3.png", 336),
-    art("ankilope_place_1", "static/ankilope/place_1.png", 336),
-    art("ankilope_place_2", "static/ankilope/place_2.png", 336),
-    art("ankilope_place_3", "static/ankilope/place_3.png", 336),
-    art("aki_nudge", "static/aki/nudge.png", 336),
-    art("aki_challenge", "static/aki/challenge.png", 336),
-    art("aki_challenge_won", "static/aki/challenge_won.png", 336),
-    art("aki_challenge_lost", "static/aki/challenge_lost.png", 336),
-    art("ankilope_nudge", "static/ankilope/nudge.png", 336),
-    art("ankilope_challenge", "static/ankilope/challenge.png", 336),
-    art(
-        "ankilope_challenge_won",
-        "static/ankilope/challenge_won.png",
-        336,
-    ),
+    art("aki_icon_happy", "aki/icon_happy.png", 432),
+    art("aki_icon_worried", "aki/icon_worried.png", 432),
+    art("aki_icon_frozen", "aki/icon_frozen.png", 432),
+    art("aki_icon_sleepy", "aki/icon_sleepy.png", 432),
+    widget("aki_streak_hot", "aki/streak_hot.png"),
+    widget("aki_streak_blazing", "aki/streak_blazing.png"),
+    widget("aki_streak_legend", "aki/streak_legend.png"),
+    widget("aki_streak_milestone", "aki/streak_milestone.png"),
+    widget("aki_freeze_used", "aki/freeze_used.png"),
+    widget("aki_comeback", "aki/comeback.png"),
+    widget("aki_minimum", "aki/minimum.png"),
+    widget("aki_goal", "aki/goal.png"),
+    art("aki_achievement", "aki/achievement.png", 336),
+    art("aki_level_up", "aki/level_up.png", 336),
+    art("aki_deck_conquered", "aki/deck_conquered.png", 336),
+    art("aki_leech", "aki/leech.png", 336),
+    widget("aki_asleep", "aki/asleep.png"),
+    widget("aki_at_risk", "aki/at_risk.png"),
+    art("aki_backlog", "aki/backlog.png", 336),
+    art("ankilope_backlog", "ankilope/backlog.png", 336),
+    art("aki_place_1", "aki/place_1.png", 336),
+    art("aki_place_2", "aki/place_2.png", 336),
+    art("aki_place_3", "aki/place_3.png", 336),
+    art("ankilope_place_1", "ankilope/place_1.png", 336),
+    art("ankilope_place_2", "ankilope/place_2.png", 336),
+    art("ankilope_place_3", "ankilope/place_3.png", 336),
+    art("aki_nudge", "aki/nudge.png", 336),
+    art("aki_challenge", "aki/challenge.png", 336),
+    art("aki_challenge_won", "aki/challenge_won.png", 336),
+    art("aki_challenge_lost", "aki/challenge_lost.png", 336),
+    art("ankilope_nudge", "ankilope/nudge.png", 336),
+    art("ankilope_challenge", "ankilope/challenge.png", 336),
+    art("ankilope_challenge_won", "ankilope/challenge_won.png", 336),
     art(
         "ankilope_challenge_lost",
-        "static/ankilope/challenge_lost.png",
+        "ankilope/challenge_lost.png",
         336,
     ),
-    art("duo_friends", "static/duo/friends.png", 336),
-    widget("anki_tan_frozen", "static/anki-tan/frozen.png"),
-    widget("anki_tan_asleep", "static/anki-tan/asleep.png"),
-    widget("anki_tan_sad", "static/anki-tan/sad.png"),
-    widget("anki_tan_neglected", "static/anki-tan/neglected.png"),
-    widget("anki_tan_chibi_frozen", "static/anki-tan/chibi/frozen.png"),
+    art("duo_friends", "duo/friends.png", 336),
+    widget("anki_tan_frozen", "anki-tan/frozen.png"),
+    widget("anki_tan_asleep", "anki-tan/asleep.png"),
+    widget("anki_tan_sad", "anki-tan/sad.png"),
+    widget("anki_tan_neglected", "anki-tan/neglected.png"),
+    widget("anki_tan_chibi_frozen", "anki-tan/chibi/frozen.png"),
     // Anki-tan's other poses, from Shigeyuki's pack as
     // static/anki-tan/README.md maps them. The pack's pictures are smaller
     // than WIDGET and are kept at their size.
     widget(
         "anki_tan_face",
-        "static/anki-tan/sprite/idle/anki-tan_idle_0001.png",
+        "anki-tan/sprite/idle/anki-tan_idle_0001.png",
     ),
-    widget(
-        "anki_tan_happy",
-        "static/anki-tan/sticker/anki_tan_good.png",
-    ),
-    widget(
-        "anki_tan_streak",
-        "static/anki-tan/emoji/Ankitan_09_fire_eyes.png",
-    ),
+    widget("anki_tan_happy", "anki-tan/sticker/anki_tan_good.png"),
+    widget("anki_tan_streak", "anki-tan/emoji/Ankitan_09_fire_eyes.png"),
     widget(
         "anki_tan_hopeful",
-        "static/anki-tan/sticker/ankitan_lets_study.png",
+        "anki-tan/sticker/ankitan_lets_study.png",
     ),
-    widget(
-        "anki_tan_welcome",
-        "static/anki-tan/sticker/anki_tan_hello.png",
-    ),
-    widget(
-        "anki_tan_review",
-        "static/anki-tan/sticker/press_spacebar.png",
-    ),
+    widget("anki_tan_welcome", "anki-tan/sticker/anki_tan_hello.png"),
+    widget("anki_tan_review", "anki-tan/sticker/press_spacebar.png"),
     widget(
         "anki_tan_streak_legend",
-        "static/anki-tan/emoji/Ankitan_43_crown.png",
+        "anki-tan/emoji/Ankitan_43_crown.png",
     ),
     widget(
         "anki_tan_streak_milestone",
-        "static/anki-tan/emoji/Ankitan_48_perfect_streaks.png",
+        "anki-tan/emoji/Ankitan_48_perfect_streaks.png",
     ),
-    widget(
-        "anki_tan_hurt",
-        "static/anki-tan/emoji/Ankitan_28_spiral_eyes.png",
-    ),
+    widget("anki_tan_hurt", "anki-tan/emoji/Ankitan_28_spiral_eyes.png"),
     widget(
         "anki_tan_dead",
-        "static/anki-tan/emoji/Ankitan_39_crossed_out_eyes.png",
+        "anki-tan/emoji/Ankitan_39_crossed_out_eyes.png",
     ),
     // Anki-tan's launcher icons (AnkiQuest-Android AnkiquestIcon), CC BY-SA 4.0.
     // The pack's icon is 256 px and is kept at that size.
-    art("anki_tan_icon", "static/anki-tan/icon.png", 432),
+    art("anki_tan_icon", "anki-tan/icon.png", 432),
     art(
         "anki_tan_icon_happy",
-        "static/anki-tan/emoji/Ankitan_09_fire_eyes.png",
+        "anki-tan/emoji/Ankitan_09_fire_eyes.png",
         432,
     ),
     art(
         "anki_tan_icon_worried",
-        "static/anki-tan/emoji/Ankitan_02_cry.png",
+        "anki-tan/emoji/Ankitan_02_cry.png",
         432,
     ),
     art(
         "anki_tan_icon_sleepy",
-        "static/anki-tan/emoji/Ankitan_35_sleeping.png",
+        "anki-tan/emoji/Ankitan_35_sleeping.png",
         432,
     ),
     outline(
         "anki_tan_icon_mono",
-        "static/anki-tan/emoji/Ankitan_00_smile.png",
+        "anki-tan/emoji/Ankitan_00_smile.png",
         432,
     ),
     // Ankilope and Bluma have no mood faces yet; the app shows the face for every mood.
-    art("ankilope_icon", "static/ankilope/face.png", 432),
-    bold_outline("ankilope_icon_mono", "static/ankilope/face.png", 432),
-    art("cow_icon", "static/cow/face.png", 432),
-    bold_outline("cow_icon_mono", "static/cow/face.png", 432),
+    art("ankilope_icon", "ankilope/face.png", 432),
+    bold_outline("ankilope_icon_mono", "ankilope/face.png", 432),
+    art("cow_icon", "cow/face.png", 432),
+    bold_outline("cow_icon_mono", "cow/face.png", 432),
 ];
 
 /// Whether to write drawables or only compare them with a fresh export.
@@ -274,6 +256,11 @@ const ART: &[Art] = &[
 enum Mode {
     Export,
     Check,
+}
+
+/// The folder that holds the masters (`ankiquest_art::MASTERS`).
+pub(crate) fn masters() -> PathBuf {
+    root().join(ankiquest_art::MASTERS)
 }
 
 /// Runs the exporter: `[--check] <android-checkout>`.
@@ -333,7 +320,7 @@ fn drawable(name: &str) -> String {
 
 /// What export writes for `art`: its pixel size and WebP bytes.
 fn render(art: &Art) -> Result<((u32, u32), Vec<u8>), String> {
-    let master = look(load(&root().join(art.source))?, art.look);
+    let master = look(load(&masters().join(art.source))?, art.look);
     let (width, height) = target(master.width(), master.height(), art.size);
     if (width, height) != (art.size, art.size) {
         println!(
@@ -562,7 +549,15 @@ mod tests {
     #[test]
     fn masters_exist() {
         for art in ART {
-            assert!(root().join(art.source).is_file(), "{}", art.source);
+            assert!(masters().join(art.source).is_file(), "{}", art.source);
+        }
+    }
+
+    #[test]
+    fn nothing_is_exported_from_an_archive() {
+        // An archive folder holds pictures that are not masters (AGENTS.md, Companion art).
+        for art in ART {
+            assert!(!ankiquest_art::archived(art.source), "{}", art.source);
         }
     }
 
