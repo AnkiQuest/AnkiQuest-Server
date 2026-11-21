@@ -179,8 +179,11 @@ export function companionPicture(pathname: string): string | undefined {
 
 let artOut: string | undefined;
 
-/** The folder build.rs writes the server's generated pictures to, building the server first. */
-function builtArtFolder(): string {
+/**
+ * The folder build.rs writes the server's generated pictures to, building the server first.
+ * Call it before a page loads: a cold build takes longer than a navigation may.
+ */
+export function builtArtFolder(): string {
   if (artOut) return artOut;
   const messages = execFileSync("cargo", ["build", "--quiet", "--package=ankiquest", "--message-format=json"], {cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024});
   for (const line of messages.split("\n")) {
