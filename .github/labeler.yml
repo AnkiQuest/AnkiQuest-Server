@@ -1,8 +1,8 @@
 # Area labels for pull requests, applied by actions/labeler in
-# .github/workflows/ankiquest_pr_labels.yml. A label is removed again when a
+# AnkiQuest-Dev's reusable pr-labels.yml. A label is removed again when a
 # later push no longer touches its paths; labels not listed here are never
-# touched. Each AnkiQuest repository has its own paths; the labels come from
-# .github/labels.json.
+# touched. Each AnkiQuest repository has its own paths; every label here must
+# be in labels.json in AnkiQuest-Dev.
 
 server:
   - changed-files:
