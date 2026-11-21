@@ -1,7 +1,7 @@
 # Keeping released Android clients compatible
 
 The `android-contract` CI job compares this server's API examples with the
-examples consumed by `AnkiQuest/AnkiQuest-Android@main`. It makes a sparse
+examples consumed by `AnkiQuest/AnkiQuest-Android@master`. It makes a sparse
 public checkout without a personal access token and runs a small Rust guard
 (`crates/xtask`). It does not run Android code or Gradle.
 
