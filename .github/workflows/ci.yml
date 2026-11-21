@@ -142,29 +142,18 @@ jobs:
             docs/screenshots/web/*.png
             docs/graphics/*.png
 
+  # Rust format, tests and clippy in the flake's dev shell, the flake check
+  # and alejandra, through AnkiQuest-Dev's shared Nix check. It reports as
+  # `nix / check`.
   nix:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-
-      - name: Format
-        run: nix develop --command cargo fmt --all --check
-
-      - name: Nix format
-        run: nix fmt -- --check .
-
-      - name: Test
-        run: nix develop --command cargo test --workspace
-
-      - name: Lint
-        run: nix develop --command cargo clippy --workspace --all-targets -- -D warnings
+    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/nix-check.yml@master
+    with:
+      rust-cache: true
+      timeout-minutes: 45
+      run: |
+        cargo fmt --all --check
+        cargo test --workspace
+        cargo clippy --workspace --all-targets -- -D warnings
 
   package:
     runs-on: ubuntu-latest
