@@ -27,7 +27,8 @@ keep it.
   ],
 
   // Every item once, in kind order: the matrix's rows. `fallback` is the
-  // item a companion without this one shows; null for a core mood.
+  // item a companion without this one shows; null for a core mood without
+  // one (`happy` and `streak` show `hopeful`).
   "items": [
     {"name": "face", "kind": "core_mood", "fallback": null},
     {"name": "place_1", "kind": "picture", "fallback": "winner"},
@@ -61,8 +62,8 @@ keep it.
       ],
       // What is missing, as the backlog: core items and extensions.
       "missing": {"core": ["achievement", "..."], "extensions": ["frozen_2", "..."]},
-      // PNGs directly in the folder that no item names, such as Ankilope's
-      // study.png.
+      // PNGs directly in the folder that AnkiQuest-Art's manifest does not
+      // list.
       "unlisted": []
     }
   ],
