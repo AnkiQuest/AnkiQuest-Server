@@ -142,39 +142,29 @@ jobs:
 
       - name: Upload the rendered images
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: screenshots
           path: |
             docs/screenshots/web/*.png
             docs/graphics/*.png
 
+  # Rust format, tests and clippy in the flake's dev shell, the flake check
+  # and alejandra, through AnkiQuest-Dev's shared Nix check. It reports as
+  # `nix / check`.
   nix:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          # The companion art masters (AnkiQuest-Art).
-          submodules: true
-
-      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-
-      - name: Format
-        run: nix develop --command cargo fmt --all --check
-
-      - name: Nix format
-        run: nix fmt -- --check .
-
-      - name: Test
-        run: nix develop --command cargo test --workspace
-
-      - name: Lint
-        run: nix develop --command cargo clippy --workspace --all-targets -- -D warnings
+    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/nix-check.yml@master
+    with:
+      rust-cache: true
+      timeout-minutes: 45
+      # build.rs reads the art masters from the art/ submodule
+      # (AnkiQuest-Art), which the shared check does not check out. Nix
+      # fetches it for the flake check by itself.
+      run: |
+        git submodule update --init --depth 1 art
+        cargo fmt --all --check
+        cargo test --workspace
+        cargo clippy --workspace --all-targets -- -D warnings
 
   package:
     runs-on: ubuntu-latest
