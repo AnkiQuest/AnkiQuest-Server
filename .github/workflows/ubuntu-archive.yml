@@ -11,6 +11,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # A newer push to a pull request cancels its older run. Every other run
+  # (default branch pushes, dispatches, merge queue) gets a group of its own
+  # and always finishes.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   mirrors:
     runs-on: ubuntu-24.04

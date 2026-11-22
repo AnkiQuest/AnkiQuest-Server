@@ -30,7 +30,26 @@ env:
   CARGO_NDK_VERSION: 4.1.2
 
 jobs:
+  # Whether the change touches anything besides documentation, from
+  # AnkiQuest-Dev's code-changed action with its default globs: nothing
+  # here reads Markdown or docs/. `bindings` runs unless the output is
+  # 'false', so a failed `changes` job runs everything; `android` and
+  # `desktop` need `bindings` and skip with it.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.changed.outputs.code }}
+    steps:
+      - id: changed
+        uses: AnkiQuest/AnkiQuest-Dev/.github/actions/code-changed@5ab685e7013b865630f96530ca8c654344738fa8
+
   bindings:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
