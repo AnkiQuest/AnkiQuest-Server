@@ -19,7 +19,7 @@ Generated with OpenAI image_gen; its model identifier was not exposed.
 The three master paths were relative to static/anki-tan/. The export path
 was relative to the repository. Published generated frozen files stay in place.
 The archived neglected pose retains all three blue headband stars; the active
-revision has one unlit star, requested by hill and approved by Aldana.
+revision has one unlit star, approved by Aldana.
 
 [Aldana Belen Rodriguez approved this archive](https://github.com/AnkiQuest/AnkiQuest-Desktop/issues/88#issuecomment-6918911105).
 Generation and cleanup records are in

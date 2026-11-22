@@ -1,7 +1,7 @@
 # Archived Aki files
 
-Pictures nothing uses any more, kept byte for byte as masters (hill,
-2026-11-21). They cannot be regenerated from a current master: hand-made
+Pictures nothing uses any more, kept byte for byte as masters.
+They cannot be regenerated from a current master: hand-made
 share cards, review sheets, and add-on copies from before
 `export-addon-art` wrote them. No exporter, page or server route reads
 this folder.

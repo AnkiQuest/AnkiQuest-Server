@@ -74,7 +74,7 @@ the Android repository, which checks them against the pinned server commit.
 
 ## Archive
 
-Nothing that cannot be regenerated is deleted (hill, 2026-11-21). A master
+Nothing that cannot be regenerated is deleted. A master
 that was replaced, redrawn or retired, and any old picture that is not an
 export of a current master (hand-made copies, review sheets, add-on copies
 from before the exporter), moves to `static/archive/<companion>/`; each
