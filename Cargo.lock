@@ -70,11 +70,8 @@ name = "ankiquest-xtask"
 version = "0.1.0"
 dependencies = [
  "ankiquest-art",
- "color_quant",
  "image",
- "png",
  "serde_json",
- "sha2",
  "tempfile",
  "webp",
 ]
@@ -446,12 +443,6 @@ name = "cmov"
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
-
-[[package]]
-name = "color_quant"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00c1c79b421ca69d94677a49b2ccf389dab3409952aed790594de8fa03b07989"
 
 [[package]]
 name = "const-oid"

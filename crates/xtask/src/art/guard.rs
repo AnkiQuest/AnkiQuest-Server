@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use image::RgbaImage;
 use image::imageops::{self, FilterType};
 
-use super::{masters, root};
+use super::root;
 
 /// Image formats companion art comes in.
 const FORMATS: [&str; 3] = ["png", "webp", "gif"];
@@ -98,6 +98,11 @@ fn companions(manifest: &ankiquest_art::Manifest) -> Vec<String> {
     names.sort();
     names.dedup();
     names
+}
+
+/// The folder that holds the masters (`ankiquest_art::MASTERS`).
+fn masters() -> PathBuf {
+    root().join(ankiquest_art::MASTERS)
 }
 
 /// A small picture of an image over grey, and its pixel size; `None` when

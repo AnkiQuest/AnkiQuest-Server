@@ -92,11 +92,8 @@ opt-level = 3
 [profile.dev.package.crc32fast]
 opt-level = 3
 
-# Downscaling and quantising masters, in build.rs and the art tests.
+# Downscaling masters, in build.rs and the art tests.
 [profile.dev.package.ankiquest-art]
-opt-level = 3
-
-[profile.dev.package.color_quant]
 opt-level = 3
 
 [profile.release]

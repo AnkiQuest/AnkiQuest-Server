@@ -1,8 +1,6 @@
 //! Repository tools, run with `cargo run -p ankiquest-xtask -- <command>`.
 //!
 //! - `android-contract --android-resources <dir> [--server-examples <dir>]`
-//! - `export-android-art [--check] <android-checkout>`
-//! - `export-addon-art [--check] <desktop-checkout>`
 //! - `art-coverage [--missing | --json | --since <companion_poses.json>]`
 //! - `event-base`
 
@@ -15,8 +13,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: xtask android-contract --android-resources <dir> \
-[--server-examples <dir>]\n       xtask export-android-art [--check] <android-checkout>\n       \
-xtask export-addon-art [--check] <desktop-checkout>\n       xtask art-coverage [--missing | --json | --since <companion_poses.json>]\n       \
+[--server-examples <dir>]\n       \
+xtask art-coverage [--missing | --json | --since <companion_poses.json>]\n       \
 xtask event-base";
 
 fn main() -> ExitCode {
@@ -27,8 +25,6 @@ fn main() -> ExitCode {
     // Dispatch to the command; each parses its own flags.
     match command.as_deref() {
         Some("android-contract") => contract::run(&rest),
-        Some("export-android-art") => art::run(&rest),
-        Some("export-addon-art") => art::addon(&rest),
         Some("art-coverage") => art::coverage(&rest),
         Some("event-base") => event::run(&rest),
         _ => usage(),
