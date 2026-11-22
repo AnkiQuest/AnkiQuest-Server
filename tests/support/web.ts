@@ -135,6 +135,24 @@ function wasmBytes(): Buffer {
   return wasm;
 }
 
+let art: string | undefined;
+
+/**
+ * The folder where build.rs exports the companion pictures the server embeds
+ * (`OUT_DIR/art`): face icons, card art and web pictures, served at
+ * `/<folder>/<name>.png` like the files in static/.
+ */
+export function builtArt(): string {
+  if (!art) {
+    const output = execFileSync("cargo", ["check", "--quiet", "--package=ankiquest", "--message-format=json"], {cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "inherit"]});
+    const messages = output.split("\n").filter(line => line.startsWith("{")).map(line => JSON.parse(line) as {reason?: string; package_id?: string; out_dir?: string});
+    const script = messages.find(message => message.reason === "build-script-executed" && /[#/]ankiquest[@#]/.test(message.package_id ?? ""));
+    if (!script?.out_dir) throw new Error("cargo check did not run the server's build script");
+    art = path.join(script.out_dir, "art");
+  }
+  return art;
+}
+
 let compiled: WebAssembly.Module | undefined;
 
 /** The compiled translation module, which `web/i18n.ts` accepts as `AnkiQuestI18nModule`. */

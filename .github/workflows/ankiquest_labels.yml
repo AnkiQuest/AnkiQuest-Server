@@ -25,6 +25,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # The latest event on an issue, pull request or branch wins. The event
+  # and its action are part of the group, so a review, a label or a draft
+  # change never cancels the required `scan` of a push; a newer push
+  # still cancels the older scan. Merge groups each have their own ref.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.action }}-${{ github.event.issue.number || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   labels:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

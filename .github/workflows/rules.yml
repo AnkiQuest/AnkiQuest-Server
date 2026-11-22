@@ -30,7 +30,26 @@ env:
   CARGO_NDK_VERSION: 4.1.2
 
 jobs:
+  # Whether the change touches anything besides documentation, from
+  # AnkiQuest-Dev's code-changed action with its default globs: nothing
+  # here reads Markdown or docs/. `bindings` runs unless the output is
+  # 'false', so a failed `changes` job runs everything; `android` and
+  # `desktop` need `bindings` and skip with it.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.changed.outputs.code }}
+    steps:
+      - id: changed
+        uses: AnkiQuest/AnkiQuest-Dev/.github/actions/code-changed@5ab685e7013b865630f96530ca8c654344738fa8
+
   bindings:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
@@ -62,7 +81,7 @@ jobs:
               --language "$language" --out-dir "$RUNNER_TEMP/bindings/$language"
           done
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ankiquest-rules-bindings
           path: ${{ runner.temp }}/bindings
@@ -71,14 +90,14 @@ jobs:
       - name: Build the host library
         run: cargo build --locked -p ankiquest-rules --features ffi --profile bindings
 
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: jetbrains
           java-version: "21"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           gradle-version: "9.8.0"
           cache-provider: basic
@@ -191,7 +210,7 @@ jobs:
             echo "Byte-identical across two clean builds."
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ankiquest-rules-android
           path: ${{ runner.temp }}/android
@@ -287,7 +306,7 @@ jobs:
             echo "Newest glibc symbol: $glibc" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
 
-      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
 
       # The bindings load the library with ctypes, so one library serves
       # every Python version.
@@ -298,7 +317,7 @@ jobs:
               "$RUNNER_TEMP/desktop" "$GITHUB_WORKSPACE/tests/fixtures/day_verdicts.json"
           done
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ankiquest-rules-${{ matrix.name }}
           path: ${{ runner.temp }}/desktop

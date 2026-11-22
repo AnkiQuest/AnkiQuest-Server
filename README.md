@@ -29,7 +29,7 @@ AnkiQuest adds XP, streaks, daily quests, friends and leaderboards to Anki. Clie
 
 ## Install
 
-To play, create an account on a server, such as [ankiquest.rationality-munich.com](https://ankiquest.rationality-munich.com), then sign in from the desktop add-on or the Android app.
+To play, create an account on a server, such as [ankiquest.org](https://ankiquest.org), then sign in from the desktop add-on or the Android app.
 
 To run your own server, follow the [installation guide](docs/install.md) for a local build, NixOS with HTTPS, health checks, backups and updates, and [server configuration](docs/server.md) for settings and administration. AnkiQuest does not replace AnkiWeb or an Anki sync server.
 
@@ -56,7 +56,8 @@ Repository tools are in `crates/xtask` (`cargo run -p ankiquest-xtask -- <comman
 
 - [Client API](docs/mobile-api.md) and recorded [API examples](docs/api/examples/). Clients copy the examples and fixtures at a pinned commit of this repository.
 - `tests/fixtures/*.json`: rules both clients compute (streak verdicts, heatmap, study time, card labels, deck names, companion poses, observed study). The server and both clients test against these cases.
-- The banner above shows the website. `npm run screenshots` regenerates every picture: it renders the pages in `static/` into `docs/screenshots/web/`, answering every API call from `docs/api/examples/`, then draws `docs/graphics/banner_readme.png` and `social_preview.png` with `cargo run -p ankiquest-xtask -- banner [--social]`. The render pins Playwright's own Chromium (from the locked `playwright` package), the fonts (Roboto, DejaVu from npm, Noto Color Emoji v2.051 checked by hash; no system fonts), the clock, locale, time zone, viewport and device scale. It runs on Linux (fontconfig); the CI `screenshots` job runs it and fails unless the committed files are byte-identical, and uploads its renders when they differ.
+- The banner above shows the website. `npm run screenshots:web` renders the pages in `static/` into `docs/screenshots/web/`, answering every API call from `docs/api/examples/`. The render pins Playwright's own Chromium (from the locked `playwright` package), the fonts (Roboto, DejaVu from npm, Noto Color Emoji v2.051 checked by hash; no system fonts), the clock, locale, time zone, viewport and device scale. It runs on Linux (fontconfig); the CI `screenshots` job runs it and fails unless the committed files are byte-identical, and uploads its renders when they differ.
+- `ankiquest-banner`, the banner tool every AnkiQuest repository shares ([AnkiQuest-Dev](https://github.com/AnkiQuest/AnkiQuest-Dev#readme-banner-and-social-preview)), draws `docs/graphics/banner_readme.png` and `social_preview.png` from those screenshots and the duo master; `docs/graphics/banner.toml` lists its inputs. `cargo run --release --manifest-path ../AnkiQuest-Dev/tools/banner/Cargo.toml -- --server . --record` renders the screenshots first and then draws both. The CI `banner` job fails unless the committed images have the drawn pixels.
 
 ## License
 

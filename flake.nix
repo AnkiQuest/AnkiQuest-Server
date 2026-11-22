@@ -3,22 +3,29 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+    # The dev shell, formatter and pinned toolchains of every AnkiQuest
+    # repository.
+    ankiquest-dev = {
+      url = "github:AnkiQuest/AnkiQuest-Dev";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = {
     self,
     nixpkgs,
+    ankiquest-dev,
   }: let
     lib = nixpkgs.lib;
-    systems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"];
-    forAllSystems = f: lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+    forAllSystems = f: lib.genAttrs ankiquest-dev.lib.systems (system: f nixpkgs.legacyPackages.${system});
     # build.rs bundles web/ with esbuild and builds the translation module for
     # wasm32-unknown-unknown, which nixpkgs' rustc supports; wasm-ld links it.
     webBuild = pkgs: {
       CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER = "${pkgs.buildPackages.lld}/bin/wasm-ld";
     };
   in {
-    formatter = forAllSystems (pkgs: pkgs.alejandra);
+    inherit (ankiquest-dev) formatter;
 
     packages = forAllSystems (pkgs: {
       default = pkgs.rustPlatform.buildRustPackage ({
@@ -36,11 +43,10 @@
         // webBuild pkgs);
     });
 
+    # AnkiQuest-Dev's server shell: the pinned Rust with the wasm32 and
+    # Android targets, esbuild, wasm-ld, Node, SQLite, Python and Gradle.
     devShells = forAllSystems (pkgs: {
-      default = pkgs.mkShell {
-        packages = with pkgs; [cargo clippy rustc rustfmt esbuild nodejs_22];
-        inherit (webBuild pkgs) CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER;
-      };
+      default = ankiquest-dev.devShells.${pkgs.stdenv.hostPlatform.system}.server;
     });
 
     nixosModules.default = {

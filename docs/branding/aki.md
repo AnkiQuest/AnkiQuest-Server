@@ -21,9 +21,9 @@ branding works offline.
 
 the Android app ships WebP copies of the Aki and Ankilope art in `drawable-nodpi`. after changing a PNG in `static/`, run `cargo run -p ankiquest-xtask -- export-android-art <android-checkout>` to rewrite them, and `--check` to confirm every drawable is byte for byte what export writes (export on Linux; CI checks there).
 
-the desktop add-on ships 256 px palette PNGs of the poses it shows in `addon/art` of AnkiQuest-Desktop, and its two faces in `addon/*_face.png`; that checkout's `art-exports.json` lists them. `cargo run -p ankiquest-xtask -- export-addon-art <desktop-checkout>` rewrites those whose picture changed, keeps the replaced files in the checkout's `assets/retired/`, and records their SHA-256, and `--check` fails while one is missing, edited, or differs from a fresh export of its master. Which pose shows for today's streak, and which line the Today panel and Home card show with it, is one rule for both clients, pinned by `tests/fixtures/streak_moods.json`; it names poses from `tests/fixtures/companion_poses.json`, and each client draws them with the chosen companion's art.
+the desktop add-on ships 256 px palette PNGs of the poses it shows in `addon/art` of AnkiQuest-Desktop, and its two faces in `addon/*_face.png`; that checkout's `art-exports.json` lists them. `cargo run -p ankiquest-xtask -- export-addon-art <desktop-checkout>` overwrites those whose picture changed, deletes those whose master is gone, and records their SHA-256, and `--check` fails while one is missing, edited, has no master, or differs from a fresh export of its master. Which pose shows for today's streak, and which line the Today panel and Home card show with it, is one rule for both clients, pinned by `tests/fixtures/streak_moods.json`; it names poses from `tests/fixtures/companion_poses.json`, and each client draws them with the chosen companion's art.
 
-the duo also leads the README banner (`docs/graphics/banner_readme.png`) and the repository's social preview (`docs/graphics/social_preview.png`). `npm run screenshots` renders the website pages into `docs/screenshots/web/` and draws the banner (`cargo run -p ankiquest-xtask -- banner`) from the duo and those screenshots and the preview (`banner --social`); the CI `screenshots` job fails while any of them is stale. Android's README banner shows the duo too, and its social preview comes from `banner --social --out <android-checkout>/docs/graphics/logos/social_preview.png`.
+the duo also leads the README banner (`docs/graphics/banner_readme.png`) and the repository's social preview (`docs/graphics/social_preview.png`). AnkiQuest-Dev's `ankiquest-banner` draws both from the duo and the website screenshots in `docs/screenshots/web/` (`docs/graphics/banner.toml`); the CI `banner` job fails while either is stale. AnkiQuest-Desktop and AnkiQuest-Android draw theirs with the same tool and the same duo master, with their own screens.
 
 [A single source for companion art](mascot-source.md) describes how every
 copy is made from the masters and checked.
@@ -39,7 +39,7 @@ copy is made from the masters and checked.
 | `freeze.png` | Confirmed protection; contextual settings illustration |
 | `winner.png` | Records, trophies, winners and tamed leeches |
 | `face.png` | Compact branding and installed app icon |
-| `face-192` and `face-32` | `face.png` scaled down by `build.rs` for the website's brand mark, touch icon and favicon (also `ankilope/face-192`); the committed `face-192.png` and `face-32.png` are retired copies nothing reads |
+| `face-192` and `face-32` | `face.png` scaled down by `build.rs` for the website's brand mark, touch icon and favicon (also `ankilope/face-192`) |
 
 ### moment art (#88)
 
