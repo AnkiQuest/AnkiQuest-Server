@@ -9,7 +9,7 @@ other agent owns pose selection and unlock activation.
 |---|---|---|---|---|
 | ![Original](../../../static/anki-tan/illust/anki_tan_main.png) | ![Frozen](../../../static/anki-tan/frozen.png) | ![Asleep](../../../static/anki-tan/asleep.png) | ![Sad](../../../static/anki-tan/sad.png) | ![Neglected](../../../static/anki-tan/neglected.png) |
 
-Aldana approved these three images on 2026-11-16. Three candidates
+Aldana approved these three images. Three candidates
 were generated per pose using OpenAI's `image_gen` tool; its model
 identifier was not exposed. Selections: asleep A, sad A, neglected C.
 The approved frozen derivative and Shigeyuki's main illustration were
@@ -45,9 +45,9 @@ are kept byte for byte in `static/archive/anki-tan/`. The published generated
 frozen files remain in place. These canonical
 asleep and sad paths are exact copies of those approved masters.
 
-hill requested one unlit headband star for neglected, two for abandoned and
-three for dead in [#88](https://github.com/AnkiQuest/AnkiQuest-Desktop/issues/88#issuecomment-6920200927).
-Aldana approved the revised neglected image on 2026-11-16. Only neglected
+The plan in [#88](https://github.com/AnkiQuest/AnkiQuest-Desktop/issues/88#issuecomment-6920200927)
+is one unlit headband star for neglected, two for abandoned and three for dead.
+Aldana approved the revised neglected image. Only neglected
 changes here; the other two poses remain future work. The earlier neglected
 master stays byte for byte in `static/archive/anki-tan/neglected-full.png`.
 [The edit record](neglected-revision.json) contains the prompt, model
