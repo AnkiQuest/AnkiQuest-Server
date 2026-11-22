@@ -17,7 +17,6 @@ use image::RgbaImage;
 use crate::root;
 
 mod addon;
-mod banner;
 mod coverage;
 mod exports;
 #[cfg(test)]
@@ -271,11 +270,6 @@ pub fn addon(args: &[String]) -> ExitCode {
 /// Runs the art coverage report.
 pub fn coverage(args: &[String]) -> ExitCode {
     coverage::run(args)
-}
-
-/// Runs the banner command: `[--social] [--out <file>]`.
-pub fn banner(args: &[String]) -> ExitCode {
-    banner::run(args)
 }
 
 /// Prints the usage text and fails.

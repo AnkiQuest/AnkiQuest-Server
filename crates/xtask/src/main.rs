@@ -4,7 +4,6 @@
 //! - `export-android-art [--check] <android-checkout>`
 //! - `export-addon-art [--check] <desktop-checkout>`
 //! - `art-coverage [--missing | --json | --since <companion_poses.json>]`
-//! - `banner [--social] [--out <file>]`
 //! - `event-base`
 
 mod art;
@@ -18,7 +17,7 @@ use std::process::ExitCode;
 const USAGE: &str = "usage: xtask android-contract --android-resources <dir> \
 [--server-examples <dir>]\n       xtask export-android-art [--check] <android-checkout>\n       \
 xtask export-addon-art [--check] <desktop-checkout>\n       xtask art-coverage [--missing | --json | --since <companion_poses.json>]\n       \
-xtask banner [--social] [--out <file>]\n       xtask event-base";
+xtask event-base";
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
@@ -31,7 +30,6 @@ fn main() -> ExitCode {
         Some("export-android-art") => art::run(&rest),
         Some("export-addon-art") => art::addon(&rest),
         Some("art-coverage") => art::coverage(&rest),
-        Some("banner") => art::banner(&rest),
         Some("event-base") => event::run(&rest),
         _ => usage(),
     }

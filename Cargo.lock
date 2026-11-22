@@ -73,7 +73,6 @@ dependencies = [
  "color_quant",
  "image",
  "png",
- "resvg",
  "serde_json",
  "sha2",
  "tempfile",

@@ -5,8 +5,7 @@
   "scripts": {
     "typecheck": "tsc -p web && tsc -p tests",
     "test:web": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-concurrency=1 tests/*.test.ts",
-    "screenshots:web": "node --experimental-strip-types --no-warnings=ExperimentalWarning tests/tools/web-screenshots.ts",
-    "screenshots": "npm run screenshots:web && cargo run -p ankiquest-xtask -- banner && cargo run -p ankiquest-xtask -- banner --social"
+    "screenshots:web": "node --experimental-strip-types --no-warnings=ExperimentalWarning tests/tools/web-screenshots.ts"
   },
   "devDependencies": {
     "@types/node": "22.20.4",
