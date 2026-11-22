@@ -25,11 +25,11 @@ on:
 permissions:
   contents: read
 
+# The newest event of a kind on one issue or pull request replaces an older
+# run: labels follow the latest state. The event and action are in the
+# group so a review or ready_for_review never cancels the conflict scan a
+# push started.
 concurrency:
-  # The latest event on an issue, pull request or branch wins. The event
-  # and its action are part of the group, so a review, a label or a draft
-  # change never cancels the required `scan` of a push; a newer push
-  # still cancels the older scan. Merge groups each have their own ref.
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.action }}-${{ github.event.issue.number || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
