@@ -3,8 +3,9 @@
 //!
 //! An image is companion art when its path names a companion, or when it
 //! looks like a master scaled to another size. It may only be a master in
-//! `static/<companion>/`, an export in the art manifest, or a retired copy
-//! the manifest keeps. Animations are not compared with masters.
+//! `static/<companion>/` (a scaled copy there fails too), anything in the
+//! archive ([`ARCHIVE_FOLDER`], pictures that are not current masters), or
+//! an export in the art manifest. Animations are not compared with masters.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -24,6 +25,12 @@ const SKIPPED: [&str; 3] = ["target", "node_modules", ".git"];
 /// The fixture that names every companion but Aki.
 const UNLOCKS: &str = "tests/fixtures/companion_unlock.json";
 
+/// The folder in `static/` that keeps pictures that are not current masters.
+const ARCHIVE: &str = "archive";
+
+/// The archive's path: replaced, redrawn and retired masters, never exported.
+const ARCHIVE_FOLDER: &str = "static/archive/";
+
 /// Fingerprint edge: images are compared at this size.
 const PRINT: u32 = 16;
 
@@ -31,9 +38,6 @@ const PRINT: u32 = 16;
 /// a master and a scaled copy of it. Copies measure up to 1.2 (a 32 px
 /// icon), the closest two different masters 1.9 (Ankilope's places 2 and 3).
 const SAME_PICTURE: f64 = 1.5;
-
-/// Folders whose files may refer to images at runtime or build time.
-const CODE: [&str; 5] = ["src", "web", "addon", "crates", "build.rs"];
 
 /// An image's path relative to the repository root, with `/` separators.
 fn relative(path: &Path) -> String {
@@ -95,7 +99,7 @@ fn companions() -> Vec<String> {
         names.push(companion["companion"].as_str().unwrap().to_string());
     }
     for folder in fs::read_dir(root().join("static")).unwrap().flatten() {
-        if folder.path().is_dir() {
+        if folder.path().is_dir() && folder.file_name() != ARCHIVE {
             names.push(folder.file_name().to_string_lossy().into_owned());
         }
     }
@@ -105,11 +109,20 @@ fn companions() -> Vec<String> {
     names
 }
 
-/// The companion folder in `static/` that holds `image`, if any.
+/// The live companion folder in `static/` that holds `image`, if any; the
+/// archive is not one.
 fn master_folder(image: &str) -> Option<&str> {
+    if is_archived(image) {
+        return None;
+    }
     let rest = image.strip_prefix("static/")?;
     let (folder, _) = rest.split_once('/')?;
     Some(folder)
+}
+
+/// Whether `image` is in the archive.
+fn is_archived(image: &str) -> bool {
+    image.starts_with(ARCHIVE_FOLDER)
 }
 
 /// A small picture of an image over grey, and its pixel size; `None` when
@@ -183,8 +196,13 @@ fn misplaced(
     masters: &[(String, Print)],
     names: &[String],
 ) -> Option<String> {
-    // A master's scaled copy is a copy, even inside static/. Outside it, so
-    // is a copy at full size.
+    // The archive keeps pictures that are not current masters, as they were.
+    if is_archived(image) {
+        return None;
+    }
+
+    // A master's scaled copy is a copy, even in a live static/<companion>/
+    // folder. Outside static/, so is a copy at full size.
     let outside = master_folder(image).is_none();
     let copy_of = print.and_then(|print| {
         masters
@@ -214,10 +232,7 @@ fn misplaced(
 /// Every image that breaks the rule, each with its reason.
 fn violations() -> Vec<String> {
     let manifest = exports::read().unwrap();
-    let listed = |image: &str| {
-        manifest.exports.iter().any(|export| export.file == image)
-            || manifest.retired.iter().any(|retired| retired.file == image)
-    };
+    let listed = |image: &str| manifest.exports.iter().any(|export| export.file == image);
     let images = images();
     let names = companions();
 
@@ -248,29 +263,26 @@ fn companion_art_lives_in_static_or_is_exported() {
     assert!(
         violations.is_empty(),
         "companion art outside static/<companion>/ must be exported from a master and \
-         listed in {MANIFEST}, or retired there: {violations:#?}"
+         listed in {MANIFEST}: {violations:#?}"
     );
 }
 
 #[test]
 fn listed_files_exist() {
-    // Companion art is never deleted, and exports are committed.
+    // Exports are committed, and so are their masters.
     let manifest = exports::read().unwrap();
-    let files = manifest.exports.iter().map(|e| &e.file);
-    for file in files.chain(manifest.retired.iter().map(|r| &r.file)) {
-        assert!(root().join(file).is_file(), "{file}");
-    }
     for export in &manifest.exports {
+        assert!(root().join(&export.file).is_file(), "{}", export.file);
         assert!(master_folder(&export.master).is_some(), "{}", export.master);
         assert!(root().join(&export.master).is_file(), "{}", export.master);
     }
 }
 
 #[test]
-fn nothing_reads_retired_files() {
-    let manifest = exports::read().unwrap();
+fn nothing_reads_the_archive() {
+    // Code, pages and exporters read masters from static/<companion>/ only.
     let mut code = Vec::new();
-    for folder in CODE {
+    for folder in ["src", "web", "crates", "build.rs"] {
         let path = root().join(folder);
         if path.is_file() {
             code.push(path);
@@ -278,19 +290,22 @@ fn nothing_reads_retired_files() {
             files(&path, &mut code);
         }
     }
-    let manifest_path = root().join(MANIFEST);
-    for file in code.iter().filter(|file| **file != manifest_path) {
+    let pages = fs::read_dir(root().join("static")).unwrap().flatten();
+    code.extend(
+        pages
+            .map(|entry| entry.path())
+            .filter(|path| path.is_file()),
+    );
+    let this = root().join(file!());
+    for file in code.iter().filter(|file| **file != this) {
         let Ok(text) = fs::read_to_string(file) else {
             continue;
         };
-        for retired in &manifest.retired {
-            assert!(
-                !text.contains(&retired.file),
-                "{} reads retired {}",
-                relative(file),
-                retired.file
-            );
-        }
+        assert!(
+            !text.contains(ARCHIVE_FOLDER),
+            "{} reads {ARCHIVE_FOLDER}",
+            relative(file)
+        );
     }
 }
 
@@ -313,10 +328,13 @@ fn a_scaled_copy_is_found_anywhere() {
     let masters = [("static/aki/face.png".to_string(), master)];
     let names = ["aki".to_string(), "cow".to_string()];
 
-    // Copies of masters, anywhere; pictures named after a companion outside static/.
+    // Copies of masters anywhere but in the archive; pictures named
+    // after a companion outside static/.
     for (image, print, expected) in [
         ("assets/cards/card.png", Some(&copy), true),
         ("static/aki/face-64.png", Some(&copy), true),
+        ("static/archive/aki/face-64.png", Some(&copy), false),
+        ("static/anki-tan/archive/face-64.png", Some(&copy), true),
         ("assets/cow.png", Some(&other), true),
         ("static/aki/face.png", Some(&masters[0].1), false),
         ("static/aki/new_pose.png", Some(&other), false),
@@ -329,6 +347,15 @@ fn a_scaled_copy_is_found_anywhere() {
             "{image}"
         );
     }
+}
+
+#[test]
+fn the_archive_holds_no_masters() {
+    // static/archive/ holds no masters to export from or compare against;
+    // a folder inside a companion's folder is not an archive.
+    assert_eq!(master_folder("static/anki-tan/happy.png"), Some("anki-tan"));
+    assert_eq!(master_folder("static/archive/anki-tan/sad-full.png"), None);
+    assert_eq!(master_folder("static/archive/aki/addon/aki_face.png"), None);
 }
 
 #[test]

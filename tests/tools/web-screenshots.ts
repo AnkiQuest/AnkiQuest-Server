@@ -16,7 +16,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type {Browser, BrowserContext, Route} from "playwright";
-import {chromium, fulfillAsset, page as built, root} from "../support/web.ts";
+import {builtArt, chromium, fulfillAsset, page as built, root} from "../support/web.ts";
 
 /** The player the examples are recorded for. */
 const PLAYER = "hill";
@@ -129,13 +129,18 @@ function example(url: URL): string | undefined {
   return fs.existsSync(file) ? file : undefined;
 }
 
-/** A file under static/ for a request path, if there is one. */
+/**
+ * The file the server answers a request path with, if there is one: a picture
+ * build.rs exports (face icons, web pictures), else a file under static/.
+ */
 function staticFile(pathname: string): string | undefined {
-  const file = path.join(STATIC, decodeURIComponent(pathname));
-  if (!file.startsWith(STATIC + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
-    return undefined;
+  for (const folder of [builtArt(), STATIC]) {
+    const file = path.join(folder, decodeURIComponent(pathname));
+    if (file.startsWith(folder + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) {
+      return file;
+    }
   }
-  return file;
+  return undefined;
 }
 
 /** Answers every request the page makes; returns the paths it could not answer. */
@@ -242,7 +247,12 @@ async function launchFixed(dir: string): Promise<Browser> {
 /** Renders every page and writes the pictures. */
 async function main(): Promise<void> {
   fs.mkdirSync(OUT, {recursive: true});
-  const fonts = fs.mkdtempSync(path.join(os.tmpdir(), "ankiquest-fonts-"));
+
+  // Find build.rs's pictures before any page loads: the cargo build blocks
+  // the event loop, and inside a route handler it times out the first page.
+  builtArt();
+
+  const fonts =fs.mkdtempSync(path.join(os.tmpdir(), "ankiquest-fonts-"));
   const browser = await launchFixed(fonts);
   console.log(`Chromium ${browser.version()}`);
   const missing = new Set<string>();

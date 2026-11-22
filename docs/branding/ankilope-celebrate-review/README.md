@@ -14,7 +14,7 @@ Pillow's Lanczos filter and saved as optimized PNGs. Their decoded pixels match
 those resizes exactly; [export hashes](exports.json) record the files. Android
 uses the existing 336px WebP exporter.
 
-[Before/after](review.png) shows the PNGs at 128px and 64px on light and dark
+[Before/after](../../../static/archive/ankilope/review/ankilope-celebrate-review.png) shows the PNGs at 128px and 64px on light and dark
 backgrounds. Both full-size composites were also inspected. See
 [alpha bounds](measurements.json); very low-alpha pixels are reported separately
 so raw preview fringes are not mistaken for opaque content.
