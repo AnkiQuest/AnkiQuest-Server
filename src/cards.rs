@@ -1533,7 +1533,9 @@ mod tests {
         assert_eq!(pose(art("aki", "missing")), Some("happy"));
         assert_eq!(pose(art("ankilope", "winner")), Some("happy"));
         assert_eq!(file(art("ankilope", "winner")), Some("ankilope"));
-        assert_eq!(pose(art("cow", "streak")), Some("happy"));
+        // Without a streak master, the fixture's core fallback shows hopeful.
+        assert_eq!(pose(art("ankilope", "streak")), Some("hopeful"));
+        assert_eq!(pose(art("cow", "streak")), Some("hopeful"));
         assert_eq!(art("cow", "streak").unwrap().look, Look::Cow);
         assert_eq!(art("none", "celebrate"), None);
         assert_eq!(art("aki", "none"), None);
@@ -1541,7 +1543,7 @@ mod tests {
 
     #[test]
     fn every_companion_with_masters_has_card_art() {
-        // build.rs exports every card pose each companion folder in art/ has.
+        // build.rs exports each card pose a companion has, or the pose its fallbacks reach.
         let mut exported: Vec<_> = CARD_ART
             .iter()
             .map(|(who, pose, _)| format!("{who}/{pose}"))
@@ -1556,14 +1558,14 @@ mod tests {
                 "aki/streak",
                 "aki/winner",
                 "anki_tan/frozen",
-                "anki_tan/happy",
-                "anki_tan/streak",
+                "anki_tan/hopeful",
                 "ankilope/frozen",
-                "ankilope/happy"
+                "ankilope/happy",
+                "ankilope/hopeful"
             ]
         );
 
-        // Masters are shrunk to 512 px, never enlarged: Anki-tan's pack stickers are 320 px.
+        // Masters are shrunk to 512 px, never enlarged.
         for (who, pose, png) in CARD_ART {
             let pixmap = tiny_skia::Pixmap::decode_png(png).unwrap();
             let (width, height) = (pixmap.width(), pixmap.height());
@@ -1585,16 +1587,20 @@ mod tests {
 
     #[test]
     fn anki_tan_cards_show_her_art() {
-        // #61: her cards show her own masters.
+        // #61: her cards show her own masters, else the fixture's fallbacks.
         let file = |art: Option<Art>| art.map(|art| CARD_ART[art.file].0);
         let shown = |art: Option<Art>| art.map(|art| CARD_ART[art.file].1);
-        for pose in ["celebrate", "happy", "streak", "frozen", "winner", "freeze"] {
+        for pose in ["frozen", "freeze"] {
             assert_eq!(file(art("anki_tan", pose)), Some("anki_tan"), "{pose}");
+            assert_eq!(shown(art("anki_tan", pose)), Some("frozen"), "{pose}");
         }
-        assert_eq!(shown(art("anki_tan", "streak")), Some("streak"));
-        assert_eq!(shown(art("anki_tan", "frozen")), Some("frozen"));
-        assert_eq!(shown(art("anki_tan", "winner")), Some("happy"));
-        assert_eq!(art("anki_tan", "streak").unwrap().look, Look::Master);
+        assert_eq!(art("anki_tan", "frozen").unwrap().look, Look::Master);
+
+        // She has no happy or streak master yet: they show her hopeful pose.
+        for pose in ["celebrate", "happy", "streak", "winner"] {
+            assert_eq!(file(art("anki_tan", pose)), Some("anki_tan"), "{pose}");
+            assert_eq!(shown(art("anki_tan", pose)), Some("hopeful"), "{pose}");
+        }
     }
 
     #[test]

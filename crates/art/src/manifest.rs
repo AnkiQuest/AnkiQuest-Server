@@ -8,8 +8,10 @@
 //!   "file": "duo/friends.png", "licence": "AGPL-3.0-or-later"}]}
 //! ```
 //!
-//! Files are relative to the submodule. The archive is never listed.
+//! Files are relative to the submodule; several poses may name the same
+//! file. The archive is never listed.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
@@ -103,10 +105,26 @@ impl Manifest {
         Ok(Manifest { masters, shared })
     }
 
-    /// Every file the manifest lists, relative to the submodule.
+    /// Every file the manifest lists, relative to the submodule, once each:
+    /// one picture may show several poses.
     pub fn files(&self) -> impl Iterator<Item = &str> {
         let masters = self.masters.iter().map(|master| master.file.as_str());
-        masters.chain(self.shared.iter().map(|shared| shared.file.as_str()))
+        let all: BTreeSet<&str> = masters
+            .chain(self.shared.iter().map(|shared| shared.file.as_str()))
+            .collect();
+        all.into_iter()
+    }
+
+    /// The master of `companion`'s `pose`; `None` when it has none.
+    pub fn master(&self, companion: &str, pose: &str) -> Option<&Master> {
+        self.masters
+            .iter()
+            .find(|master| master.companion == companion && master.pose == pose)
+    }
+
+    /// Whether `companion` has a master for `pose`.
+    pub fn has(&self, companion: &str, pose: &str) -> bool {
+        self.master(companion, pose).is_some()
     }
 
     /// The licence of `companion`'s masters; `None` when it has none.
@@ -149,30 +167,37 @@ mod tests {
     }
 
     #[test]
-    fn every_master_is_its_pose_file() {
-        // A master is `<companion folder>/<pose>.png`, outside the archive.
+    fn every_master_is_a_file_outside_the_archive() {
         let manifest = Manifest::read(&art()).unwrap();
-        for master in &manifest.masters {
-            let file = Path::new(&master.file);
-            assert_eq!(
-                file.file_name().unwrap().to_string_lossy(),
-                format!("{}.png", master.pose)
-            );
-            assert!(art().join(file).is_file(), "{}", master.file);
-            assert!(!crate::archived(&master.file), "{}", master.file);
-        }
-        for file in manifest.shared.iter().map(|shared| &shared.file) {
+        for file in manifest.files() {
             assert!(art().join(file).is_file(), "{file}");
+            assert!(!crate::archived(file), "{file}");
         }
     }
 
     #[test]
-    fn each_master_is_listed_once() {
+    fn each_pose_is_listed_once() {
         let manifest = Manifest::read(&art()).unwrap();
-        let mut files: Vec<_> = manifest.files().collect();
-        let count = files.len();
-        files.sort_unstable();
-        files.dedup();
-        assert_eq!(count, files.len());
+        let mut poses: Vec<_> = manifest
+            .masters
+            .iter()
+            .map(|master| (&master.companion, &master.pose))
+            .collect();
+        let count = poses.len();
+        poses.sort_unstable();
+        poses.dedup();
+        assert_eq!(count, poses.len());
+    }
+
+    #[test]
+    fn finds_masters_by_companion_and_pose() {
+        let manifest = Manifest::read(&art()).unwrap();
+        assert_eq!(
+            manifest.master("aki", "happy").unwrap().file,
+            "aki/happy.png"
+        );
+        assert!(manifest.has("anki_tan", "frozen"));
+        assert!(!manifest.has("aki", "celebrate"));
+        assert!(!manifest.has("unknown", "face"));
     }
 }

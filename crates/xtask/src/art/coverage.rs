@@ -2,9 +2,10 @@
 //! `tests/fixtures/companion_poses.json` (core moods, pictures, icons and
 //! extensions) for each companion. Read-only.
 //!
-//! An item's master is `<folder>/<item>.png` in the AnkiQuest-Art submodule
-//! ([`ankiquest_art::MASTERS`]). A missing item shows the first item its
-//! fallback chain reaches that exists. The archive is never read for
+//! An item's master is the file the AnkiQuest-Art submodule's manifest
+//! ([`ankiquest_art::MASTERS`]`/manifest.json`) lists for the companion and
+//! item. A missing item shows the first item its fallback chain reaches
+//! that exists. The archive is never read for
 //! masters; `--json` only lists it.
 //!
 //! - no flag: a Markdown table, one row per item, one column per companion.
@@ -17,11 +18,12 @@
 //! - `--json`: the matrix for the gallery (AnkiQuest.github.io), described
 //!   in `docs/branding/art-coverage.md`.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use ankiquest_art::{ARCHIVE, Kind, MASTERS, Poses};
+use ankiquest_art::{ARCHIVE, Kind, MASTERS, Manifest, Poses};
 use serde_json::{Value, json};
 
 use super::root;
@@ -170,11 +172,13 @@ impl Stage {
     }
 }
 
-/// A companion, its master folder in the submodule and its stage.
+/// A companion, its master folder in the submodule, its stage and its
+/// masters by item.
 struct Companion {
     id: &'static str,
     folder: &'static str,
     stage: Stage,
+    masters: BTreeMap<String, PathBuf>,
 }
 
 /// The command's arguments.
@@ -217,14 +221,14 @@ fn execute(root: &Path, mode: Mode) -> Result<String, String> {
     let companions = companions(root)?;
     match mode {
         Mode::Table => Ok(report(root, &companions, &list)),
-        Mode::Missing => Ok(backlog(root, &companions, &list)),
+        Mode::Missing => Ok(backlog(&companions, &list)),
         Mode::Json => {
             let value = matrix(root, &companions, &list)?;
             Ok(serde_json::to_string_pretty(&value).map_err(|e| e.to_string())? + "\n")
         }
         Mode::Since(base) => {
             let base = poses(&base)?;
-            let undrawn = undrawn(root, &companions, &base, &list);
+            let undrawn = undrawn(&companions, &base, &list);
             if undrawn.is_empty() {
                 return Ok("Every added item has a master for every live companion.\n".into());
             }
@@ -243,10 +247,18 @@ fn poses(path: &Path) -> Result<Poses, String> {
     Poses::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// The companions [`COMPANIONS`] lists, with their stage: the starter
-/// is live, the others as [`UNLOCKS`] says. One it does not list is left
-/// out.
+/// The submodule's manifest, or why it cannot be read.
+fn manifest(root: &Path) -> Result<Manifest, String> {
+    Manifest::read(&root.join(MASTERS)).map_err(|error| {
+        format!("{error}; is the art submodule checked out? (git submodule update --init)")
+    })
+}
+
+/// The companions [`COMPANIONS`] lists, with their stage and masters: the
+/// starter is live, the others as [`UNLOCKS`] says. One it does not list is
+/// left out.
 fn companions(root: &Path) -> Result<Vec<Companion>, String> {
+    let manifest = manifest(root)?;
     let path = root.join(UNLOCKS);
     let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     let json: Value =
@@ -271,7 +283,18 @@ fn companions(root: &Path) -> Result<Vec<Companion>, String> {
         .iter()
         .filter_map(|&(id, folder)| {
             let stage = stage(id)?;
-            Some(Companion { id, folder, stage })
+            let masters = manifest
+                .masters
+                .iter()
+                .filter(|master| master.companion == id)
+                .map(|master| (master.pose.clone(), root.join(MASTERS).join(&master.file)))
+                .collect();
+            Some(Companion {
+                id,
+                folder,
+                stage,
+                masters,
+            })
         })
         .collect())
 }
@@ -295,18 +318,18 @@ fn folder(root: &Path, companion: &Companion) -> PathBuf {
     root.join(MASTERS).join(companion.folder)
 }
 
-/// The master for `item` in `folder`.
-fn master(folder: &Path, item: &str) -> Option<PathBuf> {
-    ankiquest_art::master(folder, item)
+/// The companion's master for `item`.
+fn master<'a>(companion: &'a Companion, item: &str) -> Option<&'a Path> {
+    companion.masters.get(item).map(PathBuf::as_path)
 }
 
-/// The status of `item` in `folder`, following its fallbacks.
-fn status(root: &Path, folder: &Path, poses: &Poses, item: &str) -> Status {
+/// The status of `item` of `companion`, following its fallbacks.
+fn status(root: &Path, companion: &Companion, poses: &Poses, item: &str) -> Status {
     for (step, shown) in poses.chain(item).into_iter().enumerate() {
-        let Some(file) = master(folder, shown) else {
+        let Some(file) = master(companion, shown) else {
             continue;
         };
-        let file = relative(root, &file);
+        let file = relative(root, file);
         if step == 0 {
             return Status::Present(file);
         }
@@ -318,12 +341,12 @@ fn status(root: &Path, folder: &Path, poses: &Poses, item: &str) -> Status {
     Status::Missing
 }
 
-/// The items of the given kinds `folder` has no master for.
-fn missing<'a>(folder: &Path, poses: &'a Poses, kinds: &[Kind]) -> Vec<&'a str> {
+/// The items of the given kinds `companion` has no master for.
+fn missing<'a>(companion: &Companion, poses: &'a Poses, kinds: &[Kind]) -> Vec<&'a str> {
     kinds
         .iter()
         .flat_map(|kind| poses.of(*kind))
-        .filter(|item| master(folder, item).is_none())
+        .filter(|item| master(companion, item).is_none())
         .collect()
 }
 
@@ -337,7 +360,7 @@ fn core_kinds() -> Vec<Kind> {
 
 /// The art backlog: per companion, the core items and extensions without
 /// a master.
-fn backlog(root: &Path, companions: &[Companion], poses: &Poses) -> String {
+fn backlog(companions: &[Companion], poses: &Poses) -> String {
     let mut out = String::from("Items without a master (AGENTS.md, Companion art)\n\n");
     let list = |items: &[&str]| {
         if items.is_empty() {
@@ -347,9 +370,8 @@ fn backlog(root: &Path, companions: &[Companion], poses: &Poses) -> String {
         }
     };
     for companion in companions {
-        let folder = folder(root, companion);
-        let core = missing(&folder, poses, &core_kinds());
-        let extensions = missing(&folder, poses, &[Kind::Extension]);
+        let core = missing(companion, poses, &core_kinds());
+        let extensions = missing(companion, poses, &[Kind::Extension]);
         let stage = match companion.stage {
             Stage::Live => "",
             Stage::Planned => " (planned)",
@@ -370,7 +392,7 @@ fn backlog(root: &Path, companions: &[Companion], poses: &Poses) -> String {
 /// Each item in `poses` but not in `base` that a live companion has no
 /// master for, as `item: companion`. A `base` from before the matrix has no
 /// pictures or icons; only the lists both have are compared.
-fn undrawn(root: &Path, companions: &[Companion], base: &Poses, poses: &Poses) -> Vec<String> {
+fn undrawn(companions: &[Companion], base: &Poses, poses: &Poses) -> Vec<String> {
     let compared = |item: &str| match poses.kind(item) {
         Some(Kind::Picture | Kind::Icon) => base.has_core_set(),
         _ => true,
@@ -385,7 +407,7 @@ fn undrawn(root: &Path, companions: &[Companion], base: &Poses, poses: &Poses) -
     let mut undrawn = Vec::new();
     for item in added {
         for companion in &live {
-            if master(&folder(root, companion), item).is_none() {
+            if master(companion, item).is_none() {
                 undrawn.push(format!("{item}: {}", companion.id));
             }
         }
@@ -414,7 +436,7 @@ fn report(root: &Path, companions: &[Companion], poses: &Poses) -> String {
         for item in poses.of(kind) {
             out += &format!("| {item} | {} |", kind.name());
             for (column, companion) in companions.iter().enumerate() {
-                let status = status(root, &folder(root, companion), poses, item);
+                let status = status(root, companion, poses, item);
                 if matches!(status, Status::Present(_)) {
                     counts[column][index] += 1;
                 }
@@ -461,12 +483,11 @@ fn item_json(item: &str, kind: Kind, status: &Status) -> Value {
     }
 }
 
-/// The PNGs directly in `folder` that are no item's master, such as a
-/// picture only one companion has.
-fn unlisted(root: &Path, folder: &Path, poses: &Poses) -> Vec<String> {
-    let masters: Vec<PathBuf> = poses
-        .names()
-        .filter_map(|item| master(folder, item))
+/// The PNGs directly in `folder` that the manifest does not list.
+fn unlisted(root: &Path, folder: &Path, manifest: &Manifest) -> Vec<String> {
+    let masters: Vec<PathBuf> = manifest
+        .files()
+        .map(|file| root.join(MASTERS).join(file))
         .collect();
     let Ok(entries) = fs::read_dir(folder) else {
         return Vec::new();
@@ -483,12 +504,12 @@ fn unlisted(root: &Path, folder: &Path, poses: &Poses) -> Vec<String> {
 }
 
 /// One companion, as JSON.
-fn companion_json(root: &Path, companion: &Companion, poses: &Poses) -> Value {
+fn companion_json(root: &Path, companion: &Companion, poses: &Poses, manifest: &Manifest) -> Value {
     let folder = folder(root, companion);
     let items: Vec<Value> = Kind::ALL
         .into_iter()
         .flat_map(|kind| poses.of(kind).into_iter().map(move |item| (kind, item)))
-        .map(|(kind, item)| item_json(item, kind, &status(root, &folder, poses, item)))
+        .map(|(kind, item)| item_json(item, kind, &status(root, companion, poses, item)))
         .collect();
     json!({
         "id": companion.id,
@@ -498,10 +519,10 @@ fn companion_json(root: &Path, companion: &Companion, poses: &Poses) -> Value {
         "licence": licence(companion.folder).key(),
         "items": items,
         "missing": {
-            "core": missing(&folder, poses, &core_kinds()),
-            "extensions": missing(&folder, poses, &[Kind::Extension]),
+            "core": missing(companion, poses, &core_kinds()),
+            "extensions": missing(companion, poses, &[Kind::Extension]),
         },
-        "unlisted": unlisted(root, &folder, poses),
+        "unlisted": unlisted(root, &folder, manifest),
     })
 }
 
@@ -581,6 +602,7 @@ fn archive(root: &Path) -> Vec<Value> {
 
 /// The whole matrix for the gallery.
 fn matrix(root: &Path, companions: &[Companion], poses: &Poses) -> Result<Value, String> {
+    let manifest = manifest(root)?;
     let kinds: Vec<Value> = Kind::ALL
         .into_iter()
         .map(|kind| json!({"kind": kind.name(), "core": kind.is_core()}))
@@ -602,7 +624,7 @@ fn matrix(root: &Path, companions: &[Companion], poses: &Poses) -> Result<Value,
         "licences": licences,
         "companions": companions
             .iter()
-            .map(|companion| companion_json(root, companion, poses))
+            .map(|companion| companion_json(root, companion, poses, &manifest))
             .collect::<Vec<_>>(),
         "archive": archive(root),
     }))
@@ -633,15 +655,32 @@ mod tests {
         Poses::parse(&value.to_string()).unwrap()
     }
 
-    /// A checkout in a temporary folder with the given masters, an unlock
-    /// fixture making `cow` live and `anki_tan` planned.
-    fn checkout(masters: &[&str]) -> tempfile::TempDir {
+    /// A checkout in a temporary folder with the given pictures, an unlock
+    /// fixture making `cow` live and `anki_tan` planned. The manifest lists
+    /// each picture outside the archive as the master of the pose its file
+    /// is named after, for the companion whose folder holds it.
+    fn checkout(pictures: &[&str]) -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
-        for master in masters {
-            let path = root.path().join(MASTERS).join(master);
+        let mut masters = Vec::new();
+        for picture in pictures {
+            let path = root.path().join(MASTERS).join(picture);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, b"").unwrap();
+            let (folder, file) = picture.rsplit_once('/').unwrap();
+            let companion = COMPANIONS.iter().find(|(_, known)| *known == folder);
+            if let Some((id, _)) = companion.filter(|_| !ankiquest_art::archived(picture)) {
+                let pose = file.trim_end_matches(".png");
+                masters.push(json!({"companion": id, "pose": pose, "file": picture,
+                    "licence": licence(folder).spdx()}));
+            }
         }
+        let manifest = json!({"masters": masters, "shared": []});
+        fs::create_dir_all(root.path().join(MASTERS)).unwrap();
+        fs::write(
+            root.path().join(MASTERS).join("manifest.json"),
+            manifest.to_string(),
+        )
+        .unwrap();
         let unlocks = r#"{"companions": [
             {"companion": "cow", "status": "live"},
             {"companion": "anki_tan", "status": "planned"}
@@ -649,6 +688,16 @@ mod tests {
         fs::create_dir_all(root.path().join("tests/fixtures")).unwrap();
         fs::write(root.path().join(UNLOCKS), unlocks).unwrap();
         root
+    }
+
+    /// The companion `id` of `cast`.
+    fn find<'a>(cast: &'a [Companion], id: &str) -> &'a Companion {
+        cast.iter().find(|companion| companion.id == id).unwrap()
+    }
+
+    /// The companions of this repository's submodule.
+    fn cast() -> Vec<Companion> {
+        companions(&root()).unwrap()
     }
 
     #[test]
@@ -663,10 +712,11 @@ mod tests {
             r#"{"pictures": {"freeze_used": "frozen"}, "icons": {"icon": "streak"}}"#,
         );
         let root = checkout(&["aki/streak.png"]);
-        let folder = root.path().join(MASTERS).join("aki");
+        let cast = companions(root.path()).unwrap();
+        let aki = find(&cast, "aki");
 
         // Present, fallback through two steps, and a chain with no master.
-        let check = |item| status(root.path(), &folder, &poses, item);
+        let check = |item| status(root.path(), aki, &poses, item);
         assert_eq!(
             Status::Present("art/aki/streak.png".into()),
             check("streak")
@@ -687,8 +737,8 @@ mod tests {
         // AnkiQuest-Art names every master after its pose (RENAMES.md there).
         let poses = fixture();
         let root = checkout(&["aki/celebrate.png", "aki/leech.png"]);
-        let folder = root.path().join(MASTERS).join("aki");
-        let check = |item| status(root.path(), &folder, &poses, item);
+        let cast = companions(root.path()).unwrap();
+        let check = |item| status(root.path(), find(&cast, "aki"), &poses, item);
         assert_eq!(Status::Missing, check("happy"));
         assert_eq!(Status::Missing, check("leech_defeated"));
     }
@@ -715,20 +765,18 @@ mod tests {
         let poses = fixture();
         let root = checkout(&["archive/aki/face.png", "aki/archive/face.png"]);
         let cast = companions(root.path()).unwrap();
-        let aki = cast.iter().find(|companion| companion.id == "aki").unwrap();
-        let folder = folder(root.path(), aki);
         assert_eq!(
             Status::Missing,
-            status(root.path(), &folder, &poses, "face")
+            status(root.path(), find(&cast, "aki"), &poses, "face")
         );
     }
 
     #[test]
     fn bluma_has_the_complete_core_moods() {
         let poses = fixture();
-        let folder = root().join(MASTERS).join("cow");
+        let cast = cast();
         for pose in poses.of(Kind::CoreMood) {
-            assert!(master(&folder, pose).is_some(), "{pose}");
+            assert!(master(find(&cast, "cow"), pose).is_some(), "{pose}");
         }
     }
 
@@ -742,42 +790,29 @@ mod tests {
     }
 
     #[test]
-    fn anki_tan_masters_cover_the_core_moods() {
-        // The pack art and generated masters cover both versions' core
-        // moods, and the full version has her launcher icon.
+    fn anki_tan_shows_every_core_mood() {
+        // Chibi has a master for every core mood. The full version has her
+        // launcher icon, and every core mood she has no master for yet
+        // shows its fallback.
         let poses = fixture();
-        for folder in ["anki-tan", "anki-tan/chibi"] {
-            let folder = root().join(MASTERS).join(folder);
-            for pose in poses.of(Kind::CoreMood) {
-                assert!(
-                    master(&folder, pose).is_some(),
-                    "{}: {pose}",
-                    folder.display()
-                );
-            }
+        let cast = cast();
+        for pose in poses.of(Kind::CoreMood) {
+            assert!(
+                master(find(&cast, "anki_tan_chibi"), pose).is_some(),
+                "{pose}"
+            );
+            let status = status(&root(), find(&cast, "anki_tan"), &poses, pose);
+            assert_ne!(Status::Missing, status, "{pose}");
         }
-        let full = root().join(MASTERS).join("anki-tan");
-        assert!(master(&full, "icon").is_some());
+        assert!(master(find(&cast, "anki_tan"), "icon").is_some());
     }
 
     #[test]
-    fn the_manifest_lists_every_master_coverage_finds() {
-        // Coverage reads file names; AnkiQuest-Art's manifest lists the same masters.
-        let poses = fixture();
+    fn coverage_lists_every_companion_of_the_manifest() {
         let manifest = ankiquest_art::Manifest::read(&root().join(MASTERS)).unwrap();
-        for (companion, folder) in COMPANIONS {
-            let folder = root().join(MASTERS).join(folder);
-            for item in poses.names() {
-                let Some(file) = master(&folder, item) else {
-                    continue;
-                };
-                let file = relative(&root().join(MASTERS), &file);
-                let listed = manifest
-                    .masters
-                    .iter()
-                    .any(|m| m.companion == *companion && m.pose == item && m.file == file);
-                assert!(listed, "{companion}: {file}");
-            }
+        for master in &manifest.masters {
+            let id = master.companion.as_str();
+            assert!(COMPANIONS.iter().any(|(known, _)| *known == id), "{id}");
         }
     }
 
@@ -830,7 +865,7 @@ mod tests {
         // Only Aki has them: Bluma's are missing, Anki-tan is planned.
         let root = checkout(&["aki/winner.png", "aki/goal.png", "anki-tan/happy.png"]);
         let cast = companions(root.path()).unwrap();
-        let missing = undrawn(root.path(), &cast, &base, &poses);
+        let missing = undrawn(&cast, &base, &poses);
         assert_eq!(missing, ["goal: cow", "winner: cow"]);
 
         // Every live companion has them.
@@ -841,7 +876,7 @@ mod tests {
             "cow/goal.png",
         ]);
         let cast = companions(root.path()).unwrap();
-        assert!(undrawn(root.path(), &cast, &base, &poses).is_empty());
+        assert!(undrawn(&cast, &base, &poses).is_empty());
     }
 
     #[test]
@@ -854,7 +889,7 @@ mod tests {
         );
         let root = checkout(&[]);
         let companions = companions(root.path()).unwrap();
-        assert!(undrawn(root.path(), &companions, &poses, &poses).is_empty());
+        assert!(undrawn(&companions, &poses, &poses).is_empty());
     }
 
     #[test]
@@ -870,7 +905,7 @@ mod tests {
         );
         let root = checkout(&["aki/sad.png"]);
         let cast = companions(root.path()).unwrap();
-        assert_eq!(undrawn(root.path(), &cast, &base, &poses), ["sad: cow"]);
+        assert_eq!(undrawn(&cast, &base, &poses), ["sad: cow"]);
     }
 
     #[test]
@@ -889,7 +924,7 @@ mod tests {
         ]);
         let companions = companions(root.path()).unwrap();
         assert_eq!(
-            backlog(root.path(), &companions, &poses),
+            backlog(&companions, &poses),
             "Items without a master (AGENTS.md, Companion art)\n\n\
              - Aki (`aki`): core 0 missing: none; extensions 0 missing: none\n\
              - Bluma (`cow`): core 2 missing: happy, goal; extensions 1 missing: winner\n\
@@ -960,13 +995,13 @@ mod tests {
         );
         let root = checkout(&[
             "aki/happy.png",
-            "aki/extra.png",
             "cow/sad.png",
             "archive/cow/old.png",
             "archive/aki/old.png",
             "archive/anki-tan-pack/pack/smile.png",
         ]);
         fs::write(root.path().join("art/archive/cow/README.md"), "").unwrap();
+        fs::write(root.path().join("art/aki/extra.png"), "").unwrap();
         let cast = companions(root.path()).unwrap();
         let value = matrix(root.path(), &cast, &poses).unwrap();
 
@@ -996,7 +1031,7 @@ mod tests {
         assert_eq!(value["items"][0]["fallback"], Value::Null);
         assert_eq!(value["items"][2]["fallback"], "happy");
 
-        // Aki: present, fallback, missing, and a picture no item names.
+        // Aki: present, fallback, missing, and a picture the manifest does not list.
         let aki = &value["companions"][0];
         assert_eq!(aki["stage"], "live");
         assert_eq!(aki["licence"], "repository");
@@ -1038,7 +1073,7 @@ mod tests {
         assert!(
             archive
                 .iter()
-                .any(|folder| folder["folder"] == "art/archive/cow")
+                .any(|folder| folder["folder"] == "art/archive/aki")
         );
         for companion in value["companions"].as_array().unwrap() {
             for item in companion["items"].as_array().unwrap() {

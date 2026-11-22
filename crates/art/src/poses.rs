@@ -4,7 +4,6 @@
 //! item a companion without its master shows instead.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
 
 /// What an item of the list is. The first three are the core set a
 /// companion needs to go live.
@@ -39,6 +38,11 @@ impl Kind {
         self != Kind::Extension
     }
 }
+
+/// Core moods that show another core mood until their master is drawn:
+/// mood, then the mood shown instead. AnkiQuest-Art's pose list gives these
+/// as `core_fallbacks`; the fixture does not have them yet.
+const CORE_FALLBACKS: [(&str, &str); 2] = [("happy", "hopeful"), ("streak", "hopeful")];
 
 /// The whole list: each item's kind, and each fallback.
 pub struct Poses {
@@ -119,9 +123,16 @@ impl Poses {
         .map(|(kind, _)| kind)
     }
 
-    /// The item a companion without `item` shows instead; `None` for a
-    /// core mood or an unknown item.
+    /// The item a companion without `item` shows instead; `None` for an
+    /// unknown item and a core mood without one ([`CORE_FALLBACKS`], when
+    /// the list has the mood it names).
     pub fn fallback(&self, item: &str) -> Option<&str> {
+        if self.is_core(item) {
+            return CORE_FALLBACKS
+                .iter()
+                .find(|(mood, shown)| *mood == item && self.is_core(shown))
+                .map(|(_, shown)| *shown);
+        }
         [&self.pictures, &self.icons, &self.extensions]
             .into_iter()
             .find_map(|items| items.get(item))
@@ -147,8 +158,8 @@ impl Poses {
         Kind::ALL.into_iter().flat_map(|kind| self.of(kind))
     }
 
-    /// `pose`, then each fallback in turn, ending at a core mood. An unknown
-    /// pose is its own chain.
+    /// `pose`, then each fallback in turn, ending at a core mood without a
+    /// fallback. An unknown pose is its own chain.
     pub fn chain<'a>(&'a self, pose: &'a str) -> Vec<&'a str> {
         let mut chain = vec![pose];
         while let Some(next) = self.fallback(chain.last().unwrap_or(&pose)) {
@@ -165,13 +176,6 @@ impl Poses {
     pub fn resolve<'a>(&'a self, pose: &'a str, has: impl Fn(&str) -> bool) -> Option<&'a str> {
         self.chain(pose).into_iter().find(|pose| has(pose))
     }
-}
-
-/// The master for `pose` in a companion's `folder`: `<pose>.png`, or `None`
-/// when the companion has no master for it.
-pub fn master(folder: &Path, pose: &str) -> Option<PathBuf> {
-    let file = folder.join(format!("{pose}.png"));
-    file.is_file().then_some(file)
 }
 
 #[cfg(test)]
@@ -233,10 +237,15 @@ mod tests {
         let poses = fixture();
         assert_eq!(
             poses.chain("streak_legend"),
-            ["streak_legend", "streak_blazing", "streak_hot", "streak"]
+            [
+                "streak_legend",
+                "streak_blazing",
+                "streak_hot",
+                "streak",
+                "hopeful"
+            ]
         );
         assert_eq!(poses.chain("frozen_3"), ["frozen_3", "frozen_2", "frozen"]);
-        assert_eq!(poses.chain("winner"), ["winner", "happy"]);
         assert_eq!(poses.chain("unknown"), ["unknown"]);
         let has = |pose: &str| ["happy", "streak"].contains(&pose);
         assert_eq!(poses.resolve("streak_hot", has), Some("streak"));
@@ -244,22 +253,16 @@ mod tests {
     }
 
     #[test]
-    fn masters_are_named_after_their_pose() {
-        let folder = scratch("masters");
-        assert_eq!(master(&folder, "happy"), None);
-
-        // Older file names (celebrate.png) are not masters any more.
-        std::fs::write(folder.join("celebrate.png"), b"").unwrap();
-        assert_eq!(master(&folder, "happy"), None);
-        std::fs::write(folder.join("happy.png"), b"").unwrap();
-        assert_eq!(master(&folder, "happy"), Some(folder.join("happy.png")));
-        std::fs::remove_dir_all(&folder).unwrap();
-    }
-
-    /// An empty folder of its own in the system's temporary folder.
-    fn scratch(name: &str) -> std::path::PathBuf {
-        let folder = std::env::temp_dir().join(format!("{name}-{}", std::process::id()));
-        std::fs::create_dir_all(&folder).unwrap();
-        folder
+    fn happy_and_streak_fall_back_to_hopeful() {
+        let poses = fixture();
+        assert_eq!(poses.chain("winner"), ["winner", "happy", "hopeful"]);
+        assert_eq!(
+            poses.chain("streak_hot"),
+            ["streak_hot", "streak", "hopeful"]
+        );
+        assert_eq!(poses.chain("hopeful"), ["hopeful"]);
+        assert_eq!(poses.kind("happy"), Some(Kind::CoreMood));
+        let has = |pose: &str| pose == "hopeful";
+        assert_eq!(poses.resolve("welcome", has), Some("hopeful"));
     }
 }

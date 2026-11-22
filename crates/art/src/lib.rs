@@ -2,10 +2,10 @@
 //! tools: the pose list with its fallbacks (`tests/fixtures/companion_poses.json`)
 //! and the downscaler every exported copy of a master goes through.
 //!
-//! Masters are the PNGs in the AnkiQuest-Art submodule ([`MASTERS`]), one
-//! `<companion>/<pose>.png` per pose ([`master`]), each listed in its
-//! `manifest.json` ([`Manifest`]). Its `archive/` holds pictures that are not
-//! masters; nothing reads it as one ([`archived`]). Every copy is made from
+//! Masters are the PNGs in the AnkiQuest-Art submodule ([`MASTERS`]), found
+//! by companion and pose through its `manifest.json` ([`Manifest`]). Its
+//! `archive/` holds pictures that are not masters; nothing reads it as one
+//! ([`archived`]). Every copy is made from
 //! the masters with [`shrink`], so all exports resample the same way.
 
 use std::path::Path;
@@ -18,7 +18,7 @@ mod manifest;
 mod poses;
 
 pub use manifest::{Manifest, Master, Shared};
-pub use poses::{Kind, Poses, master};
+pub use poses::{Kind, Poses};
 
 /// The pose fixture, relative to the repository root.
 pub const POSES: &str = "tests/fixtures/companion_poses.json";
