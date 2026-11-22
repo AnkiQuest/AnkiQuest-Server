@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {test} from 'node:test';
 import type {Browser} from 'playwright';
-import {fulfillAsset, launch, page as built, root} from './support/web.ts';
+import {companionPicture, fulfillAsset, launch, page as built} from './support/web.ts';
 
 const AT = 1789000000456;
 
@@ -16,7 +16,7 @@ async function visit(browser: Browser, owner: boolean, leech: boolean, shot = ''
     const request = route.request(), pathname = new URL(request.url()).pathname;
     if (pathname === `/conquered/hill/${AT}`) return route.fulfill({contentType: 'text/html', body: built('conquered')});
     if (await fulfillAsset(route, pathname)) return;
-    if (/^\/(aki|ankilope)\/\w+\.png$/.test(pathname)) return route.fulfill({contentType: 'image/png', body: fs.readFileSync(path.join(root, 'static', pathname))});
+    if (companionPicture(pathname)) return route.fulfill({contentType: 'image/png', body: fs.readFileSync(companionPicture(pathname)!)});
     if (pathname === '/auth/status') return route.fulfill({json: {private_site: false, authenticated: owner, member: owner ? {user: 'hill'} : null}});
     if (pathname === `/api/conquests/hill/${AT}`) {
       const conquest = {at: AT, lapses: leech ? 9 : 4, answers: 23, since: AT - 40 * 86_400_000, leech};
@@ -98,7 +98,7 @@ test('the owner may show what the card was; a suggestion stays in the fragment u
       requested.push(request.url());
       if (pathname === `/conquered/hill/${AT}`) return route.fulfill({contentType: 'text/html', body: built('conquered')});
       if (await fulfillAsset(route, pathname)) return;
-      if (/^\/(aki|ankilope)\/\w+\.png$/.test(pathname)) return route.fulfill({contentType: 'image/png', body: fs.readFileSync(path.join(root, 'static', pathname))});
+      if (companionPicture(pathname)) return route.fulfill({contentType: 'image/png', body: fs.readFileSync(companionPicture(pathname)!)});
       if (pathname === '/auth/status') return route.fulfill({json: {private_site: false, authenticated: true, member: {user: 'hill'}}});
       if (pathname === `/api/conquests/hill/${AT}`) {
         const conquest = {at: AT, lapses: 6, answers: 31, since: AT - 52 * 86_400_000, leech: false};

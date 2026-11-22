@@ -161,6 +161,22 @@ export function run(entry: string, context: Record<string, unknown>): vm.Context
   return context;
 }
 
+/** URL names that predate the pose list, and the pose each serves (src/aki.rs). */
+const STORED_POSES: Record<string, string> = {celebrate: "happy"};
+
+/**
+ * The master in the art submodule that the server serves as is at `pathname`, such as
+ * art/aki/happy.png for /aki/celebrate.png; undefined for other paths and for pictures
+ * build.rs makes (face-192.png, Anki-tan's web pictures).
+ */
+export function companionPicture(pathname: string): string | undefined {
+  const match = pathname.match(/^\/(aki|ankilope)\/(\w+)\.png$/);
+  if (!match) return undefined;
+  const [, companion, name] = match;
+  const file = path.join(root, "art", companion!, `${STORED_POSES[name!] ?? name}.png`);
+  return fs.existsSync(file) ? file : undefined;
+}
+
 let artOut: string | undefined;
 
 /**

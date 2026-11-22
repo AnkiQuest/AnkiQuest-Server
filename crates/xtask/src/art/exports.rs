@@ -1,13 +1,10 @@
-//! The manifest of companion art outside `static/` (`art-exports.json`).
+//! An AnkiQuest-Desktop checkout's manifest of the add-on's companion art
+//! (`art-exports.json`), which `export-addon-art` reads and writes.
 //!
 //! `exports` lists every committed copy of a master: the file, its master
-//! and the SHA-256 the exporter wrote, so the tests can regenerate each
-//! copy and compare. `retired` lists copies nothing reads any more, kept
-//! because companion art is never deleted (AGENTS.md, Companion art).
-//!
-//! This repository's manifest lists its own copies. An AnkiQuest-Desktop
-//! checkout keeps one in the same format for the add-on's copies, which
-//! `export-addon-art` writes.
+//! (a path in AnkiQuest-Art) and the SHA-256 the exporter wrote, so the
+//! check can regenerate each copy and compare. `retired` lists copies
+//! nothing reads any more.
 
 use std::fs;
 use std::path::{Component, Path};
@@ -15,20 +12,15 @@ use std::path::{Component, Path};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-/// This repository's manifest, relative to its root. No exporter writes
-/// here; the guard tests read it.
-#[cfg(test)]
-pub(super) const MANIFEST: &str = "crates/xtask/art-exports.json";
-
 /// The add-on's manifest, relative to an AnkiQuest-Desktop checkout.
 pub(super) const DESKTOP_MANIFEST: &str = "art-exports.json";
 
 /// What the manifest says about its own format.
-const ABOUT: &str = "Companion art outside static/<companion>/. `exports`: \
-committed copies of a master, written by the named xtask exporter, with the SHA-256 \
-of the file it wrote; the tests regenerate each copy and compare. `retired`: copies \
-nothing reads any more, kept because companion art is never deleted. See \
-docs/branding/mascot-source.md.";
+const ABOUT: &str = "The add-on's companion art. `exports`: committed copies of a \
+master in AnkiQuest-Art (`master` is its path there), written by the named \
+AnkiQuest-Server xtask exporter, with the SHA-256 of the file it wrote; the check \
+regenerates each copy and compares. `retired`: copies nothing reads any more. See \
+docs/branding/mascot-source.md in AnkiQuest-Server.";
 
 /// One committed copy of a master.
 pub(super) struct Export {
@@ -69,12 +61,6 @@ pub(super) struct Retired {
 pub(super) struct Manifest {
     pub(super) exports: Vec<Export>,
     pub(super) retired: Vec<Retired>,
-}
-
-/// Reads this repository's manifest.
-#[cfg(test)]
-pub(super) fn read() -> Result<Manifest, String> {
-    read_at(&super::root().join(MANIFEST))
 }
 
 /// Reads the manifest at `path`.
@@ -176,7 +162,7 @@ mod tests {
     fn a_file_listed_twice_is_refused() {
         let folder = tempfile::tempdir().unwrap();
         let path = folder.path().join(DESKTOP_MANIFEST);
-        let entry = json!({"file": "a.png", "master": "static/aki/face.png",
+        let entry = json!({"file": "a.png", "master": "aki/face.png",
             "exporter": "addon", "sha256": ""});
         let value = json!({"exports": [entry, entry], "retired": []});
         fs::write(&path, value.to_string()).unwrap();
@@ -192,11 +178,11 @@ mod tests {
         let path = folder.path().join(DESKTOP_MANIFEST);
         let export = |file: &str, master: &str| json!({"file": file, "master": master, "exporter": "addon", "sha256": ""});
         let retired = |file: &str| json!({"file": file, "why": ""});
-        let face = "static/aki/face.png";
+        let face = "aki/face.png";
         let manifests = [
             json!({"exports": [export("../a.png", face)], "retired": []}),
             json!({"exports": [export("/tmp/a.png", face)], "retired": []}),
-            json!({"exports": [export("a.png", "static/../../a.png")], "retired": []}),
+            json!({"exports": [export("a.png", "aki/../../a.png")], "retired": []}),
             json!({"exports": [], "retired": [retired("assets/../../a.png")]}),
         ];
         for value in manifests {

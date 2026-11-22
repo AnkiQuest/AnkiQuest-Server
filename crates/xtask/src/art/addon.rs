@@ -1,6 +1,7 @@
 //! Writes the desktop add-on's companion poses into an AnkiQuest-Desktop
-//! checkout from the master PNGs in `static/`: every `addon` entry of the
-//! checkout's art manifest (`art-exports.json`).
+//! checkout from the master PNGs in the AnkiQuest-Art submodule: every
+//! `addon` entry of the checkout's art manifest (`art-exports.json`), whose
+//! `master` is a path in AnkiQuest-Art, such as `aki/happy.png`.
 //!
 //! Each pose is a 256 px square, 256-colour palette PNG with transparency.
 //! Export writes every pose whose picture changed, retires the file it
@@ -23,7 +24,7 @@ use color_quant::NeuQuant;
 use image::RgbaImage;
 
 use super::exports::{self, DESKTOP_MANIFEST, Export, Exporter, Retired};
-use super::{load, root, shrink, target};
+use super::{load, masters, shrink, target};
 
 /// Pose edge in pixels: the Today panel shows 96 px at up to 2x, and
 /// moments 112 px.
@@ -101,7 +102,7 @@ fn render(export: &Export) -> Result<Vec<u8>, String> {
             export.file, export.master
         ));
     }
-    let master = load(&root().join(&export.master))?;
+    let master = load(&masters().join(&export.master))?;
     let (width, height) = target(master.width(), master.height(), SIZE);
     encode(&shrink(master, width, height))
 }
@@ -315,7 +316,7 @@ mod tests {
     fn winner_export() -> Export {
         Export {
             file: WINNER.into(),
-            master: "static/aki/winner.png".into(),
+            master: "aki/winner.png".into(),
             exporter: Exporter::Addon,
             sha256: String::new(),
         }
@@ -447,7 +448,7 @@ mod tests {
     fn an_archived_master_is_refused() {
         // An archive is never exported to a client (AGENTS.md, Companion art).
         let archived = Export {
-            master: "static/cow/archive/face.png".into(),
+            master: "archive/cow/face.png".into(),
             ..winner_export()
         };
         let Err(error) = render(&archived) else {

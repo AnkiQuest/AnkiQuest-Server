@@ -8,18 +8,23 @@ use axum::{
 };
 use std::sync::Arc;
 
-/// A file in static/, served at the same path.
+/// A master in the AnkiQuest-Art submodule, served at `$path`, or at `$served` when the URL
+/// keeps a name from before the pose list: wins store `celebrate` (the `art` field of the wins
+/// API), so `/aki/celebrate.png` stays and shows the happy pose.
 macro_rules! png {
     ($path:literal) => {
+        png!($path, $path)
+    };
+    ($served:literal, $path:literal) => {
         (
-            concat!("/", $path),
-            include_bytes!(concat!("../static/", $path)),
+            concat!("/", $served),
+            include_bytes!(concat!("../art/", $path)),
         )
     };
 }
 
-/// A picture build.rs exports into `OUT_DIR/art`, served at the same path: a face icon, or a
-/// pose of a companion whose masters `poses.json` lists.
+/// A picture build.rs exports into `OUT_DIR/art`, served at the same path: a face icon, or one
+/// of Anki-tan's poses at web size.
 macro_rules! icon {
     ($path:literal) => {
         (
@@ -34,7 +39,7 @@ macro_rules! icon {
 const ASSETS: &[(&str, &[u8])] = &[
     png!("aki/welcome.png"),
     png!("aki/review.png"),
-    png!("aki/celebrate.png"),
+    png!("aki/celebrate.png", "aki/happy.png"),
     png!("aki/streak.png"),
     png!("aki/freeze.png"),
     png!("aki/winner.png"),
@@ -43,7 +48,7 @@ const ASSETS: &[(&str, &[u8])] = &[
     icon!("aki/face-32.png"),
     png!("ankilope/welcome.png"),
     png!("ankilope/study.png"),
-    png!("ankilope/celebrate.png"),
+    png!("ankilope/celebrate.png", "ankilope/happy.png"),
     png!("ankilope/face.png"),
     icon!("ankilope/face-192.png"),
     icon!("anki-tan/welcome.png"),
@@ -123,7 +128,7 @@ mod tests {
             assert_eq!(response.status(), StatusCode::OK);
             assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
         }
-        // #61: Anki-tan's pictures, exported from the files her poses.json lists.
+        // #61: Anki-tan's pictures, exported at web size from her masters.
         for name in ["welcome", "review", "happy", "streak", "frozen", "face-192"] {
             let path = format!("/anki-tan/{name}.png");
             assert!(public_asset(&path), "{path}");

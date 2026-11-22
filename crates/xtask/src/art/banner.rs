@@ -20,7 +20,7 @@ use image::imageops;
 use image::{ImageEncoder, RgbImage, RgbaImage};
 use resvg::{tiny_skia, usvg};
 
-use super::{load, root, shrink};
+use super::{load, masters, root, shrink};
 
 const TITLE: &str = "AnkiQuest";
 const TAGLINE: &str = "Study together, keep your streak";
@@ -93,8 +93,10 @@ const HOST: &str = "ankiquest.example";
 /// Title bar buttons, left to right: close, minimise, zoom.
 const BUTTONS: [&str; 3] = ["#ff5f57", "#febc2e", "#28c840"];
 
-/// Inputs, relative to the repository root.
-const DUO: &str = "static/duo/friends.png";
+/// The duo master, relative to the art submodule.
+const DUO: &str = "duo/friends.png";
+
+/// Other inputs, relative to the repository root.
 const SHOTS: &str = "docs/screenshots/web";
 const BOLD: &str = "assets/fonts/Roboto-Bold.ttf";
 const REGULAR: &str = "assets/fonts/Roboto-Regular.ttf";
@@ -214,7 +216,7 @@ fn render(kind: Kind) -> Result<RgbImage, String> {
     let fonts = fonts()?;
     let (width, height) = kind.size();
     let mut canvas = tiny_skia::Pixmap::new(width, height).ok_or("empty canvas")?;
-    let duo = trim(load(&root().join(DUO))?);
+    let duo = trim(load(&masters().join(DUO))?);
 
     match kind {
         Kind::Readme => readme(&mut canvas, &fonts, duo)?,
