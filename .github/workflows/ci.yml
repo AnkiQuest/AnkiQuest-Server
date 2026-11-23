@@ -25,7 +25,48 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Whether the change touches anything besides documentation, from
+  # AnkiQuest-Dev's code-changed action. Only Markdown and licence files
+  # count as documentation: the tests read the rest of docs/ (API
+  # examples, screenshots, banner, the art guard's image search). `web`
+  # also counts AGENTS.md and CLAUDE.md as code, since
+  # tests/agents.test.ts reads them. The jobs below run unless an output
+  # is 'false', so a failed `changes` job runs everything; a job skipped
+  # by its `if` counts as a passing required check.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.code.outputs.code }}
+      web: ${{ steps.web.outputs.code }}
+    steps:
+      - id: code
+        uses: AnkiQuest/AnkiQuest-Dev/.github/actions/code-changed@5ab685e7013b865630f96530ca8c654344738fa8
+        with:
+          docs: |
+            **/*.md
+            LICENSE*
+            LICENSES/**
+            .github/ISSUE_TEMPLATE/**
+            .github/pull_request_template.md
+      - id: web
+        uses: AnkiQuest/AnkiQuest-Dev/.github/actions/code-changed@5ab685e7013b865630f96530ca8c654344738fa8
+        with:
+          docs: |
+            README.md
+            docs/**/*.md
+            static/**/*.md
+            LICENSE*
+            LICENSES/**
+            .github/ISSUE_TEMPLATE/**
+            .github/pull_request_template.md
+
   android-contract:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -51,6 +92,8 @@ jobs:
           cargo run -p ankiquest-xtask -- android-contract --android-resources "$resources"
 
   art:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -78,6 +121,8 @@ jobs:
           cargo run -p ankiquest-xtask -- art-coverage --since "$RUNNER_TEMP/base-poses.json"
 
   web:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.web != 'false' }}
     runs-on: ubuntu-24.04
     env:
       PLAYWRIGHT_CHANNEL: chromium
@@ -112,6 +157,8 @@ jobs:
   # byte-identical to the committed files. On failure the rendered images
   # are uploaded for review.
   screenshots:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -157,8 +204,12 @@ jobs:
   # and alejandra, through AnkiQuest-Dev's shared Nix check. It reports as
   # `nix / check`.
   nix:
+    needs: changes
+    if: ${{ !cancelled() }}
     uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/nix-check.yml@master
     with:
+      # Reports `nix / check` as passed without running it on docs-only changes.
+      skip: ${{ needs.changes.outputs.code == 'false' }}
       rust-cache: true
       timeout-minutes: 45
       # build.rs reads the art masters from the art/ submodule
@@ -171,6 +222,8 @@ jobs:
         cargo clippy --workspace --all-targets -- -D warnings
 
   package:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
