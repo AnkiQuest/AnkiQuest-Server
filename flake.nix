@@ -53,9 +53,11 @@
           # not from the source tree (art/ is gitignored and staged only for
           # builds against a checkout).
           preBuild = ''
+            echo "staging art into $sourceRoot/art"
             mkdir -p "$sourceRoot/art"
             ${pkgs.unzip}/bin/unzip -qo ${artAsset pkgs "masters.zip"} -d "$sourceRoot/art"
             cp ${artAsset pkgs "manifest.json"} "$sourceRoot/art/manifest.json"
+            ls "$sourceRoot/art" >&2
           '';
           doCheck = false;
           meta.mainProgram = "ankiquest";
