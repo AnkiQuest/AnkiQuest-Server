@@ -2,7 +2,7 @@
 //! `tests/fixtures/companion_poses.json` (core moods, pictures, icons and
 //! extensions) for each companion. Read-only.
 //!
-//! An item's master is the file the AnkiQuest-Art submodule's manifest
+//! An item's master is the file the staged AnkiQuest-Art release's manifest
 //! ([`ankiquest_art::MASTERS`]`/manifest.json`) lists for the companion and
 //! item. A missing item shows the first item its fallback chain reaches
 //! that exists. The archive is never read for
@@ -47,7 +47,7 @@ const SCHEMA: u32 = 1;
 /// Image formats [`archive`] lists.
 const IMAGES: [&str; 3] = ["png", "webp", "gif"];
 
-/// Every companion and its master folder in the submodule, in picker order.
+/// Every companion and its master folder in the staged release, in picker order.
 const COMPANIONS: &[(&str, &str)] = &[
     ("aki", "aki"),
     ("ankilope", "ankilope"),
@@ -71,7 +71,7 @@ const NAMES: &[(&str, &str)] = &[
     ("leech_kun", "Leech-kun"),
 ];
 
-/// The licence of the pictures in a folder of the submodule.
+/// The licence of the pictures in a folder of the staged release.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Licence {
     /// AnkiQuest-Art's licence, AGPL-3.0-or-later.
@@ -89,7 +89,7 @@ impl Licence {
         }
     }
 
-    /// The licence's SPDX id, as the submodule's `manifest.json` gives it.
+    /// The licence's SPDX id, as the release's `manifest.json` gives it.
     fn spdx(self) -> &'static str {
         match self {
             Licence::Repository => "AGPL-3.0-or-later",
@@ -172,7 +172,7 @@ impl Stage {
     }
 }
 
-/// A companion, its master folder in the submodule, its stage and its
+/// A companion, its master folder in the staged release, its stage and its
 /// masters by item.
 struct Companion {
     id: &'static str,
@@ -247,10 +247,10 @@ fn poses(path: &Path) -> Result<Poses, String> {
     Poses::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// The submodule's manifest, or why it cannot be read.
+/// The staged release's manifest, or why it cannot be read.
 fn manifest(root: &Path) -> Result<Manifest, String> {
     Manifest::read(&root.join(MASTERS)).map_err(|error| {
-        format!("{error}; is the art submodule checked out? (git submodule update --init)")
+        format!("{error}; is the pinned release staged? (node tests/tools/stage-art.mjs)")
     })
 }
 
@@ -695,7 +695,7 @@ mod tests {
         cast.iter().find(|companion| companion.id == id).unwrap()
     }
 
-    /// The companions of this repository's submodule.
+    /// The companions of this repository's staged release.
     fn cast() -> Vec<Companion> {
         companions(&root()).unwrap()
     }
@@ -957,7 +957,7 @@ mod tests {
     #[test]
     fn every_licence_file_has_its_licence() {
         // A folder below the masters with a LICENSE file is under that
-        // licence; LICENCES names each one. The submodule's own LICENSE is
+        // licence; LICENCES names each one. The staged release's own LICENSE is
         // AnkiQuest-Art's.
         let masters = root().join(MASTERS);
         let mut found = Vec::new();

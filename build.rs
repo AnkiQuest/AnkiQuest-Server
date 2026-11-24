@@ -4,7 +4,7 @@
 //! `<script data-entry="…"></script>` placeholders replaced by the compiled code.
 //!
 //! Also exports the companion pictures the server embeds into `OUT_DIR/art`
-//! from the masters in the AnkiQuest-Art submodule (`art/`), found through
+//! from the masters in the pinned AnkiQuest-Art release, staged into `art/`, found through
 //! its `manifest.json`: share-card art and the pictures the pages show.
 
 use std::path::{Path, PathBuf};
@@ -119,7 +119,7 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-/// The masters, found by companion and pose through the art submodule's
+/// The masters, found by companion and pose through the staged release's
 /// manifest, and the fixture's fallbacks.
 struct Masters {
     folder: PathBuf,
@@ -131,7 +131,7 @@ impl Masters {
     fn read(root: &Path) -> Result<Masters, Error> {
         let folder = root.join(ankiquest_art::MASTERS);
         let manifest = ankiquest_art::Manifest::read(&folder).map_err(|error| {
-            format!("{error}; is the art submodule checked out? (git submodule update --init)")
+            format!("{error}; is the pinned release staged? (node tests/tools/stage-art.mjs)")
         })?;
         let fixture = std::fs::read_to_string(root.join(ankiquest_art::POSES))?;
         let poses = ankiquest_art::Poses::parse(&fixture)?;

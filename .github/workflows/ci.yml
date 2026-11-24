@@ -100,8 +100,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-          # The companion art masters (AnkiQuest-Art).
-          submodules: true
+
+      # The companion art masters: the pinned AnkiQuest-Art release,
+      # downloaded and hash-checked by the tool below; never a submodule.
+      - name: Stage the pinned art release
+        run: node tests/tools/stage-art.mjs .
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       # The art backlog (#57, #116); informational: live companions with
@@ -128,9 +131,11 @@ jobs:
       PLAYWRIGHT_CHANNEL: chromium
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          # The companion art masters (AnkiQuest-Art).
-          submodules: true
+
+      # The companion art masters: the pinned AnkiQuest-Art release,
+      # downloaded and hash-checked by the tool below; never a submodule.
+      - name: Stage the pinned art release
+        run: node tests/tools/stage-art.mjs .
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
@@ -165,8 +170,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-          # The companion art masters (AnkiQuest-Art).
-          submodules: true
+
+      # The companion art masters: the pinned AnkiQuest-Art release,
+      # downloaded and hash-checked by the tool below; never a submodule.
+      - name: Stage the pinned art release
+        run: node tests/tools/stage-art.mjs .
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
@@ -195,8 +203,8 @@ jobs:
           path: docs/screenshots/web/*.png
 
   # The README banner and social preview, drawn from the committed web
-  # screenshots and the duo master in the art submodule by AnkiQuest-Dev's
-  # shared tool (docs/graphics/banner.toml).
+  # screenshots and the duo master of the pinned AnkiQuest-Art release by
+  # AnkiQuest-Dev's shared tool (docs/graphics/banner.toml).
   banner:
     uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/banner.yml@master
 
@@ -212,11 +220,11 @@ jobs:
       skip: ${{ needs.changes.outputs.code == 'false' }}
       rust-cache: true
       timeout-minutes: 45
-      # build.rs reads the art masters from the art/ submodule
-      # (AnkiQuest-Art), which the shared check does not check out. Nix
-      # fetches it for the flake check by itself.
+      # build.rs reads the art masters from the staged AnkiQuest-Art
+      # release (ankiquest-art.json), which the shared check does not
+      # check out and Nix does not fetch.
       run: |
-        git submodule update --init --depth 1 art
+        node tests/tools/stage-art.mjs .
         cargo fmt --all --check
         cargo test --workspace
         cargo clippy --workspace --all-targets -- -D warnings
@@ -227,9 +235,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          # The companion art masters (AnkiQuest-Art).
-          submodules: true
+
+      # The companion art masters: the pinned AnkiQuest-Art release,
+      # downloaded and hash-checked by the tool below; never a submodule.
+      - name: Stage the pinned art release
+        run: node tests/tools/stage-art.mjs .
 
       - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
         with:
@@ -245,7 +255,7 @@ jobs:
           evaluate() {
             nix eval --impure --raw --expr '
               let
-                # shallow=1: the checkout is shallow, and the flake fetches its submodules.
+                # shallow=1: the checkout is shallow.
                 flake = builtins.getFlake "git+file://'"$PWD"'?shallow=1";
                 system = flake.inputs.nixpkgs.lib.nixosSystem {
                   system = "x86_64-linux";

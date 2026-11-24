@@ -1,6 +1,6 @@
 //! Companion art tools: the coverage report the gallery and CI read, and
 //! the guard that keeps art out of this repository. The masters are in the
-//! AnkiQuest-Art submodule (`art/`); AnkiQuest-Art's own tools export the
+//! AnkiQuest-Art release, staged into `art/`; AnkiQuest-Art's own tools export the
 //! clients' copies.
 
 use std::process::ExitCode;

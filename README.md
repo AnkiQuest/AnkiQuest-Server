@@ -52,7 +52,7 @@ npm run typecheck
 npm run test:web
 ```
 
-Repository tools are in `crates/xtask` (`cargo run -p ankiquest-xtask -- <command>`), including the exporters that write companion art from the masters in the `art/` submodule ([AnkiQuest-Art](https://github.com/AnkiQuest/AnkiQuest-Art); clone with `--recurse-submodules`) into an Android or Desktop checkout. See [development](docs/server.md#development).
+Repository tools are in `crates/xtask` (`cargo run -p ankiquest-xtask -- <command>`), including the exporters that write companion art from the masters of the pinned [AnkiQuest-Art](https://github.com/AnkiQuest/AnkiQuest-Art) release (staged into `art/` by `node tests/tools/stage-art.mjs .`) into an Android or Desktop checkout. See [development](docs/server.md#development).
 
 - [Client API](docs/mobile-api.md) and recorded [API examples](docs/api/examples/). Clients copy the examples and fixtures at a pinned commit of this repository.
 - `tests/fixtures/*.json`: rules both clients compute (streak verdicts, heatmap, study time, card labels, deck names, companion poses, observed study). The server and both clients test against these cases.

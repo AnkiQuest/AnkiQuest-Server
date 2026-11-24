@@ -8,7 +8,7 @@
 //!   "file": "duo/friends.png", "licence": "AGPL-3.0-or-later"}]}
 //! ```
 //!
-//! Files are relative to the submodule; several poses may name the same
+//! Files are relative to the staged release; several poses may name the same
 //! file. The archive is never listed.
 
 use std::collections::BTreeSet;
@@ -17,7 +17,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-/// The manifest's file name in the submodule.
+/// The manifest's file name in the staged release.
 const FILE: &str = "manifest.json";
 
 /// One master: a pose of one companion.
@@ -26,7 +26,7 @@ pub struct Master {
     /// Companion id, such as `cow` or `anki_tan_chibi`.
     pub companion: String,
     pub pose: String,
-    /// The file, relative to the submodule.
+    /// The file, relative to the staged release.
     pub file: String,
     /// SPDX id of the picture's licence.
     pub licence: String,
@@ -57,7 +57,7 @@ fn text(entry: &Value, key: &str) -> Result<String, String> {
 }
 
 impl Manifest {
-    /// Reads the manifest of the submodule at `art`.
+    /// Reads the manifest of the staged release at `art`.
     pub fn read(art: &Path) -> Result<Manifest, String> {
         let path = art.join(FILE);
         let json = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -105,7 +105,7 @@ impl Manifest {
         Ok(Manifest { masters, shared })
     }
 
-    /// Every file the manifest lists, relative to the submodule, once each:
+    /// Every file the manifest lists, relative to the staged release, once each:
     /// one picture may show several poses.
     pub fn files(&self) -> impl Iterator<Item = &str> {
         let masters = self.masters.iter().map(|master| master.file.as_str());
@@ -141,7 +141,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    /// The submodule in this checkout.
+    /// The staged release in this checkout.
     fn art() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../..")

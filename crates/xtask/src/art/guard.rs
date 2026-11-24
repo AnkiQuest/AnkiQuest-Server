@@ -2,7 +2,7 @@
 //! Companion art): every master, archived picture and record lives in the
 //! AnkiQuest-Art submodule (`art/`), and builds generate every copy.
 //!
-//! An image outside the submodule is companion art when its path names a
+//! An image outside the staged release is companion art when its path names a
 //! companion, or when it looks like a master at any size. Animations are not
 //! compared with masters.
 
@@ -18,7 +18,7 @@ use super::root;
 const FORMATS: [&str; 3] = ["png", "webp", "gif"];
 
 /// Folders never searched: build output, dependencies, version control,
-/// and the art submodule, where companion art belongs.
+/// and the staged art release, where companion art belongs.
 const SKIPPED: [&str; 4] = ["target", "node_modules", ".git", ankiquest_art::MASTERS];
 
 /// The fixture that names every companion but Aki.
@@ -168,7 +168,7 @@ fn distance(a: &Print, b: &Print) -> Option<f64> {
     Some(total / a.pixels.as_raw().len() as f64)
 }
 
-/// Why `image`, outside the submodule, is companion art, or `None` when it
+/// Why `image`, outside the staged release, is companion art, or `None` when it
 /// is not.
 fn misplaced(
     image: &str,
@@ -215,7 +215,7 @@ fn violations() -> Vec<String> {
 }
 
 #[test]
-fn companion_art_lives_in_the_submodule() {
+fn companion_art_lives_in_the_staged_release() {
     let violations = violations();
     assert!(
         violations.is_empty(),
@@ -226,7 +226,7 @@ fn companion_art_lives_in_the_submodule() {
 }
 
 #[test]
-fn the_submodule_is_checked_out() {
+fn the_release_is_staged() {
     // Without it every check here would pass on an empty folder.
     let manifest = ankiquest_art::Manifest::read(&masters()).unwrap();
     assert!(!manifest.masters.is_empty());

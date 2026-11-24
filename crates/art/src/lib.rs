@@ -2,7 +2,7 @@
 //! tools: the pose list with its fallbacks (`tests/fixtures/companion_poses.json`)
 //! and the downscaler every exported copy of a master goes through.
 //!
-//! Masters are the PNGs in the AnkiQuest-Art submodule ([`MASTERS`]), found
+//! Masters are the PNGs in the pinned AnkiQuest-Art release, staged into [`MASTERS`], found
 //! by companion and pose through its `manifest.json` ([`Manifest`]). Its
 //! `archive/` holds pictures that are not masters; nothing reads it as one
 //! ([`archived`]). Every copy is made from
@@ -24,7 +24,7 @@ pub use poses::{Kind, Poses};
 pub const POSES: &str = "tests/fixtures/companion_poses.json";
 
 /// The folder that holds the masters, relative to the repository root: the
-/// AnkiQuest-Art submodule, `<companion>/<pose>.png` below it. Every tool
+/// staged AnkiQuest-Art release, `<companion>/<pose>.png` below it. Every tool
 /// finds masters through this.
 pub const MASTERS: &str = "art";
 
