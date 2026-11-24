@@ -51,13 +51,13 @@
           # The pinned Art release's masters and manifest, unpacked where
           # build.rs reads them; the derivation gets them from the fetches,
           # not from the source tree (art/ is gitignored and staged only for
-          # builds against a checkout).
+          # builds against a checkout). The build phase already runs in the
+          # unpacked source root, and sourceRoot is only a relative path
+          # there, so the paths are relative to the working directory.
           preBuild = ''
-            echo "staging art into $sourceRoot/art"
-            mkdir -p "$sourceRoot/art"
-            ${pkgs.unzip}/bin/unzip -qo ${artAsset pkgs "masters.zip"} -d "$sourceRoot/art"
-            cp ${artAsset pkgs "manifest.json"} "$sourceRoot/art/manifest.json"
-            ls "$sourceRoot/art" >&2
+            mkdir -p art
+            ${pkgs.unzip}/bin/unzip -qo ${artAsset pkgs "masters.zip"} -d art
+            cp ${artAsset pkgs "manifest.json"} art/manifest.json
           '';
           doCheck = false;
           meta.mainProgram = "ankiquest";
