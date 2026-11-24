@@ -17,7 +17,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type {Browser, BrowserContext, Route} from "playwright";
-import {builtArt, chromium, fulfillAsset, page as built, root} from "../support/web.ts";
+import {builtArtFolder, builtPicture, chromium, companionPicture, fulfillAsset, page as built, root} from "../support/web.ts";
 
 /** The player the examples are recorded for. */
 const PLAYER = "hill";
@@ -130,18 +130,13 @@ function example(url: URL): string | undefined {
   return fs.existsSync(file) ? file : undefined;
 }
 
-/**
- * The file the server answers a request path with, if there is one: a picture
- * build.rs exports (face icons, web pictures), else a file under static/.
- */
+/** A file under static/ for a request path, if there is one. */
 function staticFile(pathname: string): string | undefined {
-  for (const folder of [builtArt(), STATIC]) {
-    const file = path.join(folder, decodeURIComponent(pathname));
-    if (file.startsWith(folder + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) {
-      return file;
-    }
+  const file = path.join(STATIC, decodeURIComponent(pathname));
+  if (!file.startsWith(STATIC + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+    return undefined;
   }
-  return undefined;
+  return file;
 }
 
 /** Answers every request the page makes; returns the paths it could not answer. */
@@ -150,7 +145,8 @@ async function serve(context: BrowserContext, missing: Set<string>): Promise<voi
     const url = new URL(route.request().url());
     const shot = SHOTS.find(candidate => candidate.url === url.pathname);
 
-    // Pages, built assets and recorded answers, in that order.
+    // Pages, built assets, recorded answers, then companion pictures (masters, then the
+    // ones build.rs makes) and static/.
     if (shot && route.request().resourceType() === "document") {
       return route.fulfill({contentType: "text/html", body: built(shot.html)});
     }
@@ -164,7 +160,7 @@ async function serve(context: BrowserContext, missing: Set<string>): Promise<voi
     if (recorded) {
       return route.fulfill({contentType: "application/json", body: fs.readFileSync(recorded)});
     }
-    const file = staticFile(url.pathname);
+    const file = companionPicture(url.pathname) ?? builtPicture(url.pathname) ?? staticFile(url.pathname);
     if (file) {
       return route.fulfill({contentType: TYPES[path.extname(file)] ?? "application/octet-stream", body: fs.readFileSync(file)});
     }
@@ -249,11 +245,9 @@ async function launchFixed(dir: string): Promise<Browser> {
 async function main(): Promise<void> {
   fs.mkdirSync(OUT, {recursive: true});
 
-  // Find build.rs's pictures before any page loads: the cargo build blocks
-  // the event loop, and inside a route handler it times out the first page.
-  builtArt();
-
-  const fonts =fs.mkdtempSync(path.join(os.tmpdir(), "ankiquest-fonts-"));
+  // Build the server first, so the pictures build.rs makes are ready before a page asks.
+  builtArtFolder();
+  const fonts = fs.mkdtempSync(path.join(os.tmpdir(), "ankiquest-fonts-"));
   const browser = await launchFixed(fonts);
   console.log(`Chromium ${browser.version()}`);
   const missing = new Set<string>();

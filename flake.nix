@@ -24,6 +24,17 @@
     webBuild = pkgs: {
       CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER = "${pkgs.buildPackages.lld}/bin/wasm-ld";
     };
+    # The AnkiQuest-Art release ankiquest-art.json pins (AnkiQuest-Sync
+    # bumps it): the package's build unpacks its masters and manifest into
+    # art/, where build.rs reads them through crates/art's MASTERS. No
+    # submodule; the flake's source has never the masters, so the pin's
+    # hashes select the fixed-output fetches.
+    artPin = builtins.fromJSON (builtins.readFile ./ankiquest-art.json);
+    artAsset = pkgs: name:
+      pkgs.fetchurl {
+        url = "https://github.com/AnkiQuest/AnkiQuest-Art/releases/download/${artPin.tag}/${name}";
+        sha256 = artPin.assets.${name};
+      };
   in {
     inherit (ankiquest-dev) formatter;
 
@@ -33,10 +44,21 @@
           version = "0.1.0";
           src = lib.cleanSource self;
           cargoLock.lockFile = ./Cargo.lock;
-          nativeBuildInputs = [pkgs.esbuild pkgs.pkg-config];
+          nativeBuildInputs = [pkgs.esbuild pkgs.pkg-config pkgs.unzip];
           buildInputs = [pkgs.sqlite];
           # Resolve SQLite from the same Nix closure that runs the package.
           env.LIBSQLITE3_SYS_USE_PKG_CONFIG = "1";
+          # The pinned Art release's masters and manifest, unpacked where
+          # build.rs reads them; the derivation gets them from the fetches,
+          # not from the source tree (art/ is gitignored and staged only for
+          # builds against a checkout). The build phase already runs in the
+          # unpacked source root, and sourceRoot is only a relative path
+          # there, so the paths are relative to the working directory.
+          preBuild = ''
+            mkdir -p art
+            ${pkgs.unzip}/bin/unzip -qo ${artAsset pkgs "masters.zip"} -d art
+            cp ${artAsset pkgs "manifest.json"} art/manifest.json
+          '';
           doCheck = false;
           meta.mainProgram = "ankiquest";
         }

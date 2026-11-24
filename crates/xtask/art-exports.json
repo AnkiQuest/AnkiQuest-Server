@@ -1,4 +1,0 @@
-{
-  "_about": "Companion art outside static/<companion>/. `exports`: committed copies of a master, written by the named xtask exporter, with the SHA-256 of the file it wrote; the tests regenerate each copy and compare. Export deletes a copy whose master is gone. See docs/branding/mascot-source.md.",
-  "exports": []
-}

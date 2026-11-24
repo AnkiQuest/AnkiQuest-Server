@@ -3,10 +3,9 @@
 //! `crates/i18n-wasm` as WebAssembly, and each page in `static/` with its
 //! `<script data-entry="…"></script>` placeholders replaced by the compiled code.
 //!
-//! Also exports the companion pictures the server embeds into `OUT_DIR/art`,
-//! downscaled from the masters in `static/<companion>/`: share-card art, the
-//! small face icons and the web pictures of companions whose masters a
-//! `poses.json` lists (Anki-tan).
+//! Also exports the companion pictures the server embeds into `OUT_DIR/art`
+//! from the masters in the pinned AnkiQuest-Art release, staged into `art/`, found through
+//! its `manifest.json`: share-card art and the pictures the pages show.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -33,32 +32,62 @@ const PAGES: [&str; 8] = [
     "oauth",
 ];
 
-/// The folder in static/ that keeps pictures that are not current
-/// masters; no export reads it.
-const ARCHIVE: &str = "archive";
-
-/// Poses a share card shows, as the fixture names them, and `freeze`
-/// (a used streak freeze), which the fixture does not name. A companion
-/// without one falls back through the fixture when the card is drawn.
+/// Poses a share card shows, as the fixture names them. A companion without
+/// one shows the pose its fallbacks reach (`src/cards.rs`).
 const CARD_POSES: [&str; 5] = ["happy", "streak", "frozen", "freeze", "winner"];
+
+/// Companions whose cards show their own art. Bluma's cards show Ankilope's
+/// art turned purple (`src/cards.rs`), so hers is not exported yet.
+const CARD_COMPANIONS: [&str; 3] = ["aki", "anki_tan", "ankilope"];
 
 /// Share-card art edge in pixels: cards draw it at up to 470 px.
 const CARD_SIZE: u32 = 512;
 
-/// Face icons the pages use: master folder, file name and edge in pixels.
-const ICONS: [(&str, &str, u32); 4] = [
-    ("aki", "face-192", 192),
-    ("aki", "face-32", 32),
-    ("ankilope", "face-192", 192),
-    ("anki-tan", "face-192", 192),
+/// How the server serves a picture of a master.
+#[derive(Clone, Copy)]
+enum Size {
+    /// The master's own bytes.
+    Master,
+    /// Fitted into this many pixels square.
+    Fit(u32),
+}
+
+/// Face icons: small copies of `face`, which pages draw at 25 to 72 pixels.
+const FACE_192: Size = Size::Fit(192);
+const FACE_32: Size = Size::Fit(32);
+
+/// Pictures of masters larger than the pages need: pages draw them at up
+/// to 132 CSS pixels.
+const WEB: Size = Size::Fit(320);
+
+/// Every companion picture the server serves at `/<folder>/<name>.png`:
+/// companion id, URL folder, name, the pose it shows and its size.
+/// `web/aki.ts` asks for these. `celebrate` keeps the name wins store (the
+/// `art` field of the wins API) and shows the happy pose. A companion
+/// without the pose's master shows the first pose its fallbacks reach; a
+/// picture whose chain reaches no master is not served.
+const PICTURES: [(&str, &str, &str, &str, Size); 20] = [
+    ("aki", "aki", "welcome", "welcome", Size::Master),
+    ("aki", "aki", "review", "review", Size::Master),
+    ("aki", "aki", "celebrate", "happy", Size::Master),
+    ("aki", "aki", "streak", "streak", Size::Master),
+    ("aki", "aki", "freeze", "freeze", Size::Master),
+    ("aki", "aki", "winner", "winner", Size::Master),
+    ("aki", "aki", "face", "face", Size::Master),
+    ("aki", "aki", "face-192", "face", FACE_192),
+    ("aki", "aki", "face-32", "face", FACE_32),
+    ("ankilope", "ankilope", "welcome", "welcome", Size::Master),
+    ("ankilope", "ankilope", "study", "study", Size::Master),
+    ("ankilope", "ankilope", "celebrate", "happy", Size::Master),
+    ("ankilope", "ankilope", "face", "face", Size::Master),
+    ("ankilope", "ankilope", "face-192", "face", FACE_192),
+    ("anki_tan", "anki-tan", "welcome", "welcome", WEB),
+    ("anki_tan", "anki-tan", "review", "review", WEB),
+    ("anki_tan", "anki-tan", "happy", "happy", WEB),
+    ("anki_tan", "anki-tan", "streak", "streak", WEB),
+    ("anki_tan", "anki-tan", "frozen", "frozen", WEB),
+    ("anki_tan", "anki-tan", "face-192", "face", FACE_192),
 ];
-
-/// Poses the web pages draw from a listed folder, as `<pose>.png` next to
-/// its face icon. `web/aki.ts` maps the page's moods onto these.
-const WEB_POSES: [&str; 5] = ["welcome", "review", "happy", "streak", "frozen"];
-
-/// Web picture edge in pixels: pages draw them at up to 132 CSS pixels.
-const WEB_SIZE: u32 = 320;
 
 type Error = Box<dyn std::error::Error>;
 
@@ -69,6 +98,7 @@ fn main() -> Result<(), Error> {
     for watched in [
         "web",
         "static",
+        ankiquest_art::MASTERS,
         "crates/art",
         "crates/i18n",
         "crates/i18n-wasm",
@@ -89,101 +119,117 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-/// Writes the card art, face icons and web pictures, and `cards.rs`, which
-/// lists the card art by companion and master file name for `src/cards.rs`.
+/// The masters, found by companion and pose through the staged release's
+/// manifest, and the fixture's fallbacks.
+struct Masters {
+    folder: PathBuf,
+    manifest: ankiquest_art::Manifest,
+    poses: ankiquest_art::Poses,
+}
+
+impl Masters {
+    fn read(root: &Path) -> Result<Masters, Error> {
+        let folder = root.join(ankiquest_art::MASTERS);
+        let manifest = ankiquest_art::Manifest::read(&folder).map_err(|error| {
+            format!("{error}; is the pinned release staged? (node tests/tools/stage-art.mjs)")
+        })?;
+        let fixture = std::fs::read_to_string(root.join(ankiquest_art::POSES))?;
+        let poses = ankiquest_art::Poses::parse(&fixture)?;
+        Ok(Masters {
+            folder,
+            manifest,
+            poses,
+        })
+    }
+
+    /// The master of `companion`'s `pose`, if it has one.
+    fn file(&self, companion: &str, pose: &str) -> Option<PathBuf> {
+        let master = self.manifest.master(companion, pose)?;
+        Some(self.folder.join(&master.file))
+    }
+
+    /// The first pose in `pose`'s fallback chain that `companion` has a
+    /// master for.
+    fn shown<'a>(&'a self, companion: &str, pose: &'a str) -> Option<&'a str> {
+        self.poses
+            .resolve(pose, |pose| self.manifest.has(companion, pose))
+    }
+}
+
+/// Writes the card art and the served pictures, with `cards.rs`, which
+/// lists the card art by companion and pose for `src/cards.rs`, and
+/// `pictures.rs`, which lists the served pictures for `src/aki.rs`.
 fn art(root: &Path, out: &Path) -> Result<(), Error> {
     std::fs::create_dir_all(out)?;
-    let masters = root.join("static");
-    let mut table = String::from("[\n");
-    let mut count = 0;
+    let masters = Masters::read(root)?;
 
-    // Card art for every companion folder in static/.
-    for (companion, folder) in companions(&masters)? {
-        let folder = masters.join(folder);
-        for pose in CARD_POSES {
-            let stem = ankiquest_art::stem(pose);
-            let Some(master) = master(&folder, pose)? else {
+    // Card art for each companion that has its own: each card pose's master,
+    // or the one its fallbacks reach.
+    let mut cards = Vec::new();
+    for companion in CARD_COMPANIONS {
+        let mut shown: Vec<&str> = CARD_POSES
+            .iter()
+            .filter_map(|pose| masters.shown(companion, pose))
+            .collect();
+        shown.sort_unstable();
+        shown.dedup();
+        for pose in shown {
+            let Some(master) = masters.file(companion, pose) else {
                 continue;
             };
             let path = out
                 .join("cards")
-                .join(&companion)
-                .join(format!("{stem}.png"));
-            export(&master, &path, CARD_SIZE)?;
-            table += &format!("    ({companion:?}, {stem:?}, include_bytes!({path:?})),\n");
-            count += 1;
+                .join(companion)
+                .join(format!("{pose}.png"));
+            export(&master, &path, Size::Fit(CARD_SIZE))?;
+            cards.push(format!(
+                "({companion:?}, {pose:?}, include_bytes!({path:?}))"
+            ));
         }
     }
-    table += "]";
     let code = format!(
-        "/// Card art by companion and master file name, made by build.rs.\n\
-         const CARD_ART: [(&str, &str, &[u8]); {count}] = {table};\n"
+        "/// Card art by companion and pose, made by build.rs.\n\
+         const CARD_ART: [(&str, &str, &[u8]); {}] = [{}];\n",
+        cards.len(),
+        cards.join(", ")
     );
     std::fs::write(out.join("cards.rs"), code)?;
 
-    // Face icons, from each companion's face master.
-    for (folder, name, size) in ICONS {
-        let master = master(&masters.join(folder), "face")?
-            .ok_or_else(|| format!("static/{folder} has no face master"))?;
-        export(&master, &out.join(folder).join(format!("{name}.png")), size)?;
-    }
-
-    // Web pictures for listed folders; the others are served from static/.
-    for (_, folder) in companions(&masters)? {
-        if ankiquest_art::listed(&masters.join(&folder))?.is_none() {
+    // The pictures pages ask for, each from its pose or its fallback.
+    let mut served = Vec::new();
+    for (companion, folder, name, pose, size) in PICTURES {
+        let Some(master) = masters
+            .shown(companion, pose)
+            .and_then(|pose| masters.file(companion, pose))
+        else {
             continue;
-        }
-        for pose in WEB_POSES {
-            let master = master(&masters.join(&folder), pose)?
-                .ok_or_else(|| format!("static/{folder} has no {pose} master"))?;
-            export(
-                &master,
-                &out.join(&folder).join(format!("{pose}.png")),
-                WEB_SIZE,
-            )?;
-        }
+        };
+        let path = out.join(folder).join(format!("{name}.png"));
+        export(&master, &path, size)?;
+        served.push(format!(
+            "(\"/{folder}/{name}.png\", include_bytes!({path:?}))"
+        ));
     }
+    let code = format!(
+        "/// Companion pictures by the path they are served at, made by build.rs.\n\
+         const PICTURES: [(&str, &[u8]); {}] = [{}];\n",
+        served.len(),
+        served.join(", ")
+    );
+    std::fs::write(out.join("pictures.rs"), code)?;
     Ok(())
 }
 
-/// The master for `pose` in `folder`: the file the folder's `poses.json`
-/// lists, else `<stem>.png`; `None` when there is none.
-fn master(folder: &Path, pose: &str) -> Result<Option<PathBuf>, Error> {
-    if let Some(files) = ankiquest_art::listed(folder)? {
-        return Ok(files.get(pose).filter(|file| file.is_file()).cloned());
-    }
-    let file = folder.join(format!("{}.png", ankiquest_art::stem(pose)));
-    Ok(file.is_file().then_some(file))
-}
-
-/// Companions with a happy master, by id and folder in static/ other than
-/// `ARCHIVE`, sorted by id. A folder's id is its name with `-` as `_` (`anki-tan` is `anki_tan`).
-fn companions(masters: &Path) -> Result<Vec<(String, String)>, Error> {
-    let mut found = Vec::new();
-    for entry in std::fs::read_dir(masters)? {
-        let entry = entry?;
-        if !entry.path().is_dir() || entry.file_name() == ARCHIVE {
-            continue;
-        }
-        if master(&entry.path(), "happy")?.is_none() {
-            continue;
-        }
-        let folder = entry
-            .file_name()
-            .into_string()
-            .map_err(|_| "folder name is not UTF-8")?;
-        found.push((folder.replace('-', "_"), folder));
-    }
-    found.sort();
-    Ok(found)
-}
-
-/// Writes `master` fitted into `size` square as PNG to `path`.
-fn export(master: &Path, path: &Path, size: u32) -> Result<(), Error> {
-    let image = ankiquest_art::fit(ankiquest_art::load(master)?, size);
+/// Writes `master` to `path` at `size`, as PNG.
+fn export(master: &Path, path: &Path, size: Size) -> Result<(), Error> {
     if let Some(folder) = path.parent() {
         std::fs::create_dir_all(folder)?;
     }
+    let Size::Fit(size) = size else {
+        std::fs::copy(master, path)?;
+        return Ok(());
+    };
+    let image = ankiquest_art::fit(ankiquest_art::load(master)?, size);
     std::fs::write(path, ankiquest_art::encode(&image)?)?;
     Ok(())
 }

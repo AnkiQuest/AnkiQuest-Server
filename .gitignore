@@ -7,3 +7,6 @@ node_modules
 /crates/rules/bindings/kotlin/build
 /crates/rules/bindings/kotlin/.gradle
 /crates/rules/bindings/kotlin/.kotlin
+
+# The staged AnkiQuest-Art release (tests/tools/stage-art.mjs), never a submodule.
+/art/

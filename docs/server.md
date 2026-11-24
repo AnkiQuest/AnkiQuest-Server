@@ -336,7 +336,10 @@ server. outside systemd, `addr` is bound as usual.
 
 the pages' scripts are TypeScript in `web/`; build.rs bundles them with esbuild and the server embeds the result, with `web/pages/*.ts` inlined where a page has `<script data-entry="pages/…"></script>`. translation lives in `crates/i18n`, which the server links directly and the pages load as `/i18n.wasm` (built from `crates/i18n-wasm`), so both look up the same catalogs the same way.
 
+the companion art is the pinned [AnkiQuest-Art](https://github.com/AnkiQuest/AnkiQuest-Art) release, staged into `art/`; build.rs reads its masters, so stage it first.
+
 ```sh
+node tests/tools/stage-art.mjs .
 rustup target add wasm32-unknown-unknown
 npm ci
 npm run typecheck

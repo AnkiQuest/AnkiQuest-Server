@@ -8,58 +8,16 @@ use axum::{
 };
 use std::sync::Arc;
 
-/// A file in static/, served at the same path.
-macro_rules! png {
-    ($path:literal) => {
-        (
-            concat!("/", $path),
-            include_bytes!(concat!("../static/", $path)),
-        )
-    };
-}
-
-/// A picture build.rs exports into `OUT_DIR/art`, served at the same path: a face icon, or a
-/// pose of a companion whose masters `poses.json` lists.
-macro_rules! icon {
-    ($path:literal) => {
-        (
-            concat!("/", $path),
-            include_bytes!(concat!(env!("OUT_DIR"), "/art/", $path)),
-        )
-    };
-}
-
-/// Every companion picture, by the path it is served at. `face-192.png` and `face-32.png` are
-/// small copies of `face.png` for icons, which pages draw at 25 to 72 pixels.
-const ASSETS: &[(&str, &[u8])] = &[
-    png!("aki/welcome.png"),
-    png!("aki/review.png"),
-    png!("aki/celebrate.png"),
-    png!("aki/streak.png"),
-    png!("aki/freeze.png"),
-    png!("aki/winner.png"),
-    png!("aki/face.png"),
-    icon!("aki/face-192.png"),
-    icon!("aki/face-32.png"),
-    png!("ankilope/welcome.png"),
-    png!("ankilope/study.png"),
-    png!("ankilope/celebrate.png"),
-    png!("ankilope/face.png"),
-    icon!("ankilope/face-192.png"),
-    icon!("anki-tan/welcome.png"),
-    icon!("anki-tan/review.png"),
-    icon!("anki-tan/happy.png"),
-    icon!("anki-tan/streak.png"),
-    icon!("anki-tan/frozen.png"),
-    icon!("anki-tan/face-192.png"),
-];
+// Every companion picture, by the path it is served at: masters as they are, face icons and
+// Anki-tan's pictures made smaller. build.rs finds each through the art submodule's manifest.
+include!(concat!(env!("OUT_DIR"), "/art/pictures.rs"));
 
 pub(crate) fn public_asset(path: &str) -> bool {
-    ASSETS.iter().any(|(served, _)| *served == path)
+    PICTURES.iter().any(|(served, _)| *served == path)
 }
 
 async fn asset(uri: Uri) -> Response {
-    let Some((_, bytes)) = ASSETS.iter().find(|(served, _)| *served == uri.path()) else {
+    let Some((_, bytes)) = PICTURES.iter().find(|(served, _)| *served == uri.path()) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     (
@@ -123,18 +81,40 @@ mod tests {
             assert_eq!(response.status(), StatusCode::OK);
             assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
         }
-        // #61: Anki-tan's pictures, exported from the files her poses.json lists.
+        // #61: Anki-tan's pictures, exported at web size from her masters or the ones their
+        // fallbacks reach: she has no happy or streak master yet, so those show hopeful.
         for name in ["welcome", "review", "happy", "streak", "frozen", "face-192"] {
             let path = format!("/anki-tan/{name}.png");
             assert!(public_asset(&path), "{path}");
             let response = get(&path).await;
             assert_eq!(response.status(), StatusCode::OK, "{path}");
         }
+        let bytes = |path: &str| {
+            PICTURES
+                .iter()
+                .find(|(served, _)| *served == path)
+                .unwrap()
+                .1
+        };
+        assert_eq!(bytes("/anki-tan/happy.png"), bytes("/anki-tan/streak.png"));
+        assert_ne!(bytes("/anki-tan/happy.png"), bytes("/anki-tan/frozen.png"));
         assert!(!public_asset("/ankilope/config.json"));
         assert!(!public_asset("/ankilope/winner.png"));
         assert_eq!(
             get("/ankilope/unknown.png").await.status(),
             StatusCode::NOT_FOUND
         );
+    }
+
+    #[tokio::test]
+    async fn masters_are_served_as_they_are() {
+        // `celebrate` keeps the name wins store and shows the happy master, byte for byte.
+        let response = get("/aki/celebrate.png").await;
+        let bytes = axum::body::to_bytes(response.into_body(), 4 * 1024 * 1024)
+            .await
+            .unwrap();
+        let masters = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(ankiquest_art::MASTERS);
+        let master = std::fs::read(masters.join("aki/happy.png")).unwrap();
+        assert_eq!(bytes.as_ref(), master.as_slice());
     }
 }

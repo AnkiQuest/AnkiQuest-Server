@@ -10,9 +10,9 @@ record = ["npm", "run", "screenshots:web"]
 readme = "docs/graphics/banner_readme.png"
 social = "docs/graphics/social_preview.png"
 
-# The pose master, in this repository (--server .).
+# The pose master, in the art submodule of this repository (--server .).
 [companion]
-pose = "static/duo/friends.png"
+pose = "art/duo/friends.png"
 height = 138
 
 # Back to front, so nearer windows cover the ones behind them: Today and

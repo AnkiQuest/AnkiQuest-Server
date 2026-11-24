@@ -52,7 +52,7 @@ npm run typecheck
 npm run test:web
 ```
 
-Repository tools are in `crates/xtask` (`cargo run -p ankiquest-xtask -- <command>`), including the exporters that write companion art from `static/` into an Android or Desktop checkout. See [development](docs/server.md#development).
+Repository tools are in `crates/xtask` (`cargo run -p ankiquest-xtask -- <command>`), including the exporters that write companion art from the masters of the pinned [AnkiQuest-Art](https://github.com/AnkiQuest/AnkiQuest-Art) release (staged into `art/` by `node tests/tools/stage-art.mjs .`) into an Android or Desktop checkout. See [development](docs/server.md#development).
 
 - [Client API](docs/mobile-api.md) and recorded [API examples](docs/api/examples/). Clients copy the examples and fixtures at a pinned commit of this repository.
 - `tests/fixtures/*.json`: rules both clients compute (streak verdicts, heatmap, study time, card labels, deck names, companion poses, observed study). The server and both clients test against these cases.
@@ -63,4 +63,4 @@ Repository tools are in `crates/xtask` (`cargo run -p ankiquest-xtask -- <comman
 
 AGPL-3.0-or-later.
 
-Anki-tan (`static/anki-tan/`) is by [Shigeyuki](https://www.patreon.com/Shigeyuki), from the [Anki-tan asset pack](https://shigeyukey.github.io/shige-addons-wiki/Anki-tan.html), licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Derivatives of her art are CC BY-SA 4.0 too.
+Anki-tan (`art/anki-tan/`, in [AnkiQuest-Art](https://github.com/AnkiQuest/AnkiQuest-Art)) is by [Shigeyuki](https://www.patreon.com/Shigeyuki), from the [Anki-tan asset pack](https://shigeyukey.github.io/shige-addons-wiki/Anki-tan.html), licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Derivatives of her art are CC BY-SA 4.0 too.

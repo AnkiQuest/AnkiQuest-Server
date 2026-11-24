@@ -135,24 +135,6 @@ function wasmBytes(): Buffer {
   return wasm;
 }
 
-let art: string | undefined;
-
-/**
- * The folder where build.rs exports the companion pictures the server embeds
- * (`OUT_DIR/art`): face icons, card art and web pictures, served at
- * `/<folder>/<name>.png` like the files in static/.
- */
-export function builtArt(): string {
-  if (!art) {
-    const output = execFileSync("cargo", ["check", "--quiet", "--package=ankiquest", "--message-format=json"], {cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "inherit"]});
-    const messages = output.split("\n").filter(line => line.startsWith("{")).map(line => JSON.parse(line) as {reason?: string; package_id?: string; out_dir?: string});
-    const script = messages.find(message => message.reason === "build-script-executed" && /[#/]ankiquest[@#]/.test(message.package_id ?? ""));
-    if (!script?.out_dir) throw new Error("cargo check did not run the server's build script");
-    art = path.join(script.out_dir, "art");
-  }
-  return art;
-}
-
 let compiled: WebAssembly.Module | undefined;
 
 /** The compiled translation module, which `web/i18n.ts` accepts as `AnkiQuestI18nModule`. */
@@ -177,6 +159,53 @@ export function run(entry: string, context: Record<string, unknown>): vm.Context
   vm.createContext(context);
   vm.runInContext(script(entry), context);
   return context;
+}
+
+/** URL names that predate the pose list, and the pose each serves (src/aki.rs). */
+const STORED_POSES: Record<string, string> = {celebrate: "happy"};
+
+/**
+ * The master in the art submodule that the server serves as is at `pathname`, such as
+ * art/aki/happy.png for /aki/celebrate.png; undefined for other paths and for pictures
+ * build.rs makes (face-192.png, Anki-tan's web pictures).
+ */
+export function companionPicture(pathname: string): string | undefined {
+  const match = pathname.match(/^\/(aki|ankilope)\/(\w+)\.png$/);
+  if (!match) return undefined;
+  const [, companion, name] = match;
+  const file = path.join(root, "art", companion!, `${STORED_POSES[name!] ?? name}.png`);
+  return fs.existsSync(file) ? file : undefined;
+}
+
+let artOut: string | undefined;
+
+/**
+ * The folder build.rs writes the server's generated pictures to, building the server first.
+ * Call it before a page loads: a cold build takes longer than a navigation may.
+ */
+export function builtArtFolder(): string {
+  if (artOut) return artOut;
+  const messages = execFileSync("cargo", ["build", "--quiet", "--package=ankiquest", "--message-format=json"], {cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024});
+  for (const line of messages.split("\n")) {
+    if (!line.startsWith("{")) continue;
+    const message = JSON.parse(line) as {reason?: string; package_id?: string; out_dir?: string};
+    if (message.reason === "build-script-executed" && /[#/]ankiquest@/.test(message.package_id ?? "") && message.out_dir) {
+      artOut = path.join(message.out_dir, "art");
+    }
+  }
+  if (!artOut) throw new Error("cargo build reported no build script output for the server");
+  return artOut;
+}
+
+/**
+ * A picture build.rs makes that the server serves at `pathname`, such as /aki/face-192.png
+ * or /anki-tan/happy.png; undefined for other paths.
+ */
+export function builtPicture(pathname: string): string | undefined {
+  const match = pathname.match(/^\/(aki|ankilope|anki-tan)\/([\w-]+)\.png$/);
+  if (!match) return undefined;
+  const file = path.join(builtArtFolder(), match[1]!, `${match[2]}.png`);
+  return fs.existsSync(file) ? file : undefined;
 }
 
 /**

@@ -1,117 +1,103 @@
 # A single source for companion art
 
-The transparent PNG masters live in `static/<companion>/<pose>.png`, and
-nowhere else. Every other picture of a companion is made from them by
-`build.rs` or an `xtask` exporter and checked in CI; nobody commits a
-hand-made copy (AGENTS.md, Companion art).
+The transparent PNG masters live in
+[AnkiQuest-Art](https://github.com/AnkiQuest/AnkiQuest-Art), which this
+repository takes as the git submodule `art/` (`ankiquest_art::MASTERS`,
+the one place the path is named). Art's `manifest.json` lists every master
+with its companion, pose, file and licence; this repository finds each
+master through it, by companion and pose, never by file name. Several poses
+may name the same file (Anki-tan chibi's `idle.png`). Art's `archive/`
+keeps pictures that are not masters and its `docs/` the generation records
+and review sheets; nothing here reads either as a master. No picture of a
+companion is committed to this repository: every copy is made from the
+masters by `build.rs` (AGENTS.md, Companion art).
 
-Pose names and fallbacks come from `tests/fixtures/companion_poses.json`.
-Masters named before the fixture keep their file names: `happy` is
-`celebrate.png` (`crates/art/src/poses.rs`). Every `asleep` master is
-`asleep.png`; Aki's and Ankilope's were `sleeping.png` until #32.
-`freeze.png` (a used streak freeze) is not the core `frozen` pose. Wins store those file names in their `art`
-field.
+Check out the submodule with `git clone --recurse-submodules`, or
+`git submodule update --init` in an existing checkout. A new or changed
+master lands in AnkiQuest-Art first; this repository picks it up by moving
+the submodule to the new commit.
+
+Pose names and fallbacks come from `tests/fixtures/companion_poses.json`:
+the core moods, the moment and share-card pictures and the launcher icon
+moods a companion needs to go live, and the extensions. Until their
+masters are drawn, the core moods `happy` and `streak` show `hopeful`
+(`CORE_FALLBACKS` in `crates/art`, as AnkiQuest-Art's pose list will give
+them). `freeze.png` (a used streak freeze) is the `freeze` picture, not the
+core `frozen` pose. Art's `RENAMES.md` says where each picture that was in
+`static/` is now.
+
+Wins store the art name `celebrate` in their `art` field, from before the
+pose list; `src/cards.rs` shows the `happy` pose for it, and the server
+serves `/aki/celebrate.png` and `/ankilope/celebrate.png` from the happy
+masters, so released apps and stored wins keep working.
 
 ```text
-static/<companion>/<pose>.png
+art/manifest.json --> art/<companion>/<pose>.png
     |
-    +-- build.rs (crates/art) --> OUT_DIR: share-card art, face icons
-    |
-    +-- xtask export-addon-art --> Desktop addon/art/*.png, addon/*_face.png
-    |
-    +-- xtask export-android-art --> Android drawable-nodpi WebPs
-    |
-    +-- xtask banner --> docs/graphics/banner_readme.png, social_preview.png
+    +-- build.rs (crates/art) --> OUT_DIR/art: share-card art and every
+                                  picture src/aki.rs serves
 ```
 
-## Shared exporter
+The clients' copies (add-on art, Android drawables) are exported by
+AnkiQuest-Art's own tool (`tools/art-export`), which AnkiQuest-Desktop and
+AnkiQuest-Android run at build time. The README banner and social preview
+are drawn by AnkiQuest-Dev's `ankiquest-banner` from
+`docs/graphics/banner.toml`, whose pose is `art/duo/friends.png`.
+
+## Shared code
 
 `crates/art` (`ankiquest-art`) holds the downscaler every export uses
-(Lanczos in premultiplied alpha, never upscaled), the PNG encoder and the
-pose list with its fallbacks. `build.rs` and `crates/xtask` both call it.
+(Lanczos in premultiplied alpha, never upscaled), the PNG encoder, the pose
+list with its fallbacks and the reader for Art's `manifest.json`.
+`build.rs` and `crates/xtask` both call it.
 
 ## Server
 
 `build.rs` writes these under Cargo's `OUT_DIR/art`, and the server embeds
 them from there:
 
-- Share-card art, 512 px: for every folder in `static/` with a `happy`
-  master, each card pose it has (`happy`, `streak`, `frozen`, `freeze`, `winner`),
-  listed in a generated `cards.rs`. `src/cards.rs` picks the pose, else its
-  fallback from the fixture, else `happy`; a companion without masters shows
-  no art. The cow has no masters yet (#88) and shows Ankilope's art turned
-  purple.
-- Face icons: `aki/face-192`, `aki/face-32` and `ankilope/face-192`, served
-  at `/aki/face-192.png` and so on.
+- Share-card art, 512 px, for Aki, Anki-tan and Ankilope: for each card
+  pose (`happy`, `streak`, `frozen`, `freeze`, `winner`) the master, or the
+  one its fallbacks reach, listed in a generated `cards.rs`. `src/cards.rs`
+  picks the pose, else its fallback, else `happy`; a companion without
+  masters shows no art. Bluma's cards still show Ankilope's art turned
+  purple (#88).
+- Every picture the pages ask for, listed in a generated `pictures.rs`
+  that `src/aki.rs` serves: Aki's and Ankilope's masters as they are, the
+  face icons (`face-192`, `face-32`) and Anki-tan's pictures at 320 px. A
+  picture whose pose has no master shows the one its fallbacks reach;
+  Anki-tan's `welcome`, `review`, `happy` and `streak` show her `hopeful`
+  master until those are drawn.
 
-Nix builds from `lib.cleanSource`, which includes `static/`, `crates/art`
-and the fixture, so `nix build` runs the same export.
-
-## Committed copies
-
-`crates/xtask/art-exports.json` lists the copies that must be committed
-because a consumer reads them straight from a checkout. This repository
-has none at the moment.
-
-The desktop add-on's copies (`addon/art/*.png` and `addon/*_face.png`) are
-in AnkiQuest-Desktop, listed in the same format in its `art-exports.json`.
-`cargo run -p ankiquest-xtask -- export-addon-art <desktop-checkout>`
-overwrites each one whose picture changed and records each file's
-SHA-256. An entry whose master is gone (removed or renamed) is deleted:
-export removes the file and drops the entry, and a renamed pose needs a
-new entry under its new name. `--check` fails when a file differs from
-its hash or from a fresh export of its master, or has no master.
-
-Linux exports are canonical. Other platforms and quantiser versions move a
-few palette entries, so a committed pose is current when a fresh export
-differs from it by a mean under 0.5/255 per channel and in under 1% of its
-pixels. A clean checkout passes on every platform, and export there leaves
-the committed files alone.
-
-The README banner and social preview are drawn by `xtask banner` and
-checked by its own tests against a fresh render. Android's WebPs live in
-the Android repository, which checks them against the pinned server commit.
-
-## Archive
-
-Nothing that cannot be regenerated is deleted. A master
-that was replaced, redrawn or retired, and any old picture that is not an
-export of a current master (hand-made copies, review sheets, add-on copies
-from before the exporter), moves to `static/archive/<companion>/`; each
-folder's README lists the files with their original paths and SHA-256. No
-exporter, page or server route reads the archive, and `build.rs` skips
-`static/archive/`.
-
-Smaller sizes a build generates from a master (`face-192`, `face-32`) are
-neither committed nor archived.
-
-Exported copies are generated: the exporters overwrite them, and a copy
-that was renamed, retired or is no longer used is deleted with its
-references. Git history keeps the old bytes.
+Nix builds with `inputs.self.submodules = true`, so the flake's source
+includes `art/` and `nix build` runs the same export.
 
 ## The guard
 
 `crates/xtask/src/art/guard.rs` walks every PNG, WebP and GIF in the
-repository. An image is companion art when its path names a companion (Aki,
-the companions in `tests/fixtures/companion_unlock.json`, or a folder in
-`static/`), or when its 16 px fingerprint matches a master at another size.
-It fails unless such an image is a master in `static/<companion>/` (a
-scaled copy there fails too), anything in `static/archive/`, or an export
-in the manifest. Animated PNGs
+repository outside `art/`. An image is companion art when its path names a
+companion (Aki, the companions in `tests/fixtures/companion_unlock.json`,
+or one in Art's manifest), or when its 16 px fingerprint matches a master
+at the same or a smaller size. Any such image fails the test. Animated PNGs
 get no fingerprint: their frames are not a scaled copy of one still.
 
-Anki-tan's folder holds Shigeyuki's asset pack as published
-(`static/anki-tan/README.md` maps its files to poses). It has no
-`<pose>.png` masters yet, so share cards show no art for her.
+## Coverage
+
+`cargo run -p ankiquest-xtask -- art-coverage` prints which companion has
+which item of the fixture, `--missing` the backlog, and `--json` the matrix
+the gallery reads ([art-coverage.md](art-coverage.md)); its file paths are
+paths in this checkout, below `art/`. CI runs `--since` with the base
+commit's fixture: an item added to the list needs a master for every live
+companion. Gaps the list already had do not fail; those companions show the
+fallbacks.
 
 ## Adding art
 
-- A new master: add `static/<companion>/<pose>.png`. Share cards pick it up
-  on the next build when it is a card pose.
-- A new add-on pose: add an `addon` entry to the Desktop checkout's
-  manifest and run `export-addon-art <desktop-checkout>`.
-- A new Android drawable: add it to `ART` in `crates/xtask/src/art.rs` and
-  run `export-android-art`.
+- A new master: add it to AnkiQuest-Art and its `manifest.json`, then move
+  the submodule here. Share cards and served pictures pick it up on the
+  next build.
+- A new served picture: add it to `PICTURES` in `build.rs`.
+- A new client copy: add it to AnkiQuest-Art's `tools/art-export`.
 
 Review generated assets at native size and 64 px on light and dark
 backgrounds.
