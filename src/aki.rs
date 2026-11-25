@@ -82,22 +82,42 @@ mod tests {
             assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
         }
         // #61: Anki-tan's pictures, exported at web size from her masters or the ones their
-        // fallbacks reach: she has no happy or streak master yet, so those show hopeful.
-        for name in ["welcome", "review", "happy", "streak", "frozen", "face-192"] {
+        // fallbacks reach.
+        let names = ["welcome", "review", "happy", "streak", "frozen"];
+        for name in names.into_iter().chain(["face-192"]) {
             let path = format!("/anki-tan/{name}.png");
             assert!(public_asset(&path), "{path}");
             let response = get(&path).await;
             assert_eq!(response.status(), StatusCode::OK, "{path}");
         }
-        let bytes = |path: &str| {
+
+        // Two of her pictures have the same bytes exactly when the pinned release's manifest
+        // and the pose fixture lead both to the same master.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let manifest = ankiquest_art::Manifest::read(&root.join(ankiquest_art::MASTERS)).unwrap();
+        let fixture = std::fs::read_to_string(root.join(ankiquest_art::POSES)).unwrap();
+        let poses = ankiquest_art::Poses::parse(&fixture).unwrap();
+        let master = |pose: &str| {
+            let shown = poses.resolve(pose, |pose| manifest.has("anki_tan", pose))?;
+            Some(manifest.master("anki_tan", shown)?.file.clone())
+        };
+        let bytes = |name: &str| {
+            let path = format!("/anki-tan/{name}.png");
             PICTURES
                 .iter()
                 .find(|(served, _)| *served == path)
                 .unwrap()
                 .1
         };
-        assert_eq!(bytes("/anki-tan/happy.png"), bytes("/anki-tan/streak.png"));
-        assert_ne!(bytes("/anki-tan/happy.png"), bytes("/anki-tan/frozen.png"));
+        for one in names {
+            for other in names {
+                assert_eq!(
+                    bytes(one) == bytes(other),
+                    master(one) == master(other),
+                    "{one} and {other}"
+                );
+            }
+        }
         assert!(!public_asset("/ankilope/config.json"));
         assert!(!public_asset("/ankilope/winner.png"));
         assert_eq!(

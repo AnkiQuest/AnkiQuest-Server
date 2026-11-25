@@ -187,11 +187,20 @@ fn art(root: &Path, out: &Path) -> Result<(), Error> {
             ));
         }
     }
+    // The card art, and for the tests the poses and companions it was made for.
     let code = format!(
         "/// Card art by companion and pose, made by build.rs.\n\
-         const CARD_ART: [(&str, &str, &[u8]); {}] = [{}];\n",
+         const CARD_ART: [(&str, &str, &[u8]); {}] = [{}];\n\
+         /// The poses build.rs exports card art for.\n\
+         #[cfg(test)]\n\
+         const CARD_POSES: [&str; {}] = {CARD_POSES:?};\n\
+         /// The companions build.rs exports card art for.\n\
+         #[cfg(test)]\n\
+         const CARD_COMPANIONS: [&str; {}] = {CARD_COMPANIONS:?};\n",
         cards.len(),
-        cards.join(", ")
+        cards.join(", "),
+        CARD_POSES.len(),
+        CARD_COMPANIONS.len(),
     );
     std::fs::write(out.join("cards.rs"), code)?;
 

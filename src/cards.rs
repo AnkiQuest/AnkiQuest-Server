@@ -127,6 +127,12 @@ fn poses() -> &'static ankiquest_art::Poses {
     })
 }
 
+/// The pose a card for `pose` shows, given the poses a companion `has` art for: the first in
+/// the fixture's fallback chain it has, else happy.
+fn card_pose(pose: &str, has: impl Fn(&str) -> bool) -> &str {
+    poses().resolve(pose_of(pose), has).unwrap_or(HAPPY)
+}
+
 /// The art for `pose` of `companion`. `pose` is a name wins store (`celebrate`, [`STORED`]) or
 /// a pose from the fixture (`happy`). A companion without that pose shows
 /// its fallback from the fixture, else its happy pose; one without art shows none.
@@ -141,11 +147,7 @@ pub(crate) fn art(companion: &str, pose: &str) -> Option<Art> {
             .position(|(who, known, _)| *who == owner && *known == pose)
     };
 
-    // Walk the fixture's fallbacks to a pose this companion has.
-    let pose = pose_of(pose);
-    let found = poses()
-        .resolve(pose, |pose| file(pose).is_some())
-        .unwrap_or(HAPPY);
+    let found = card_pose(pose, |pose| file(pose).is_some());
     let look = if companion == crate::companions::COW {
         Look::Cow
     } else {
@@ -1525,18 +1527,68 @@ mod tests {
         assert!(chips("level", &serde_json::json!({}), "en").is_empty());
     }
 
+    /// The staged AnkiQuest-Art release's manifest, which build.rs made the card art from.
+    fn manifest() -> ankiquest_art::Manifest {
+        let art = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(ankiquest_art::MASTERS);
+        ankiquest_art::Manifest::read(&art).unwrap()
+    }
+
+    /// The pose `companion`'s card for `pose` shows by the pinned release's masters, if any.
+    fn expected<'a>(
+        manifest: &ankiquest_art::Manifest,
+        companion: &str,
+        pose: &'a str,
+    ) -> Option<&'a str> {
+        let owner = crate::companions::art_owner(companion);
+        let pose = card_pose(pose, |pose| manifest.has(owner, pose));
+        manifest.has(owner, pose).then_some(pose)
+    }
+
     #[test]
-    fn art_follows_the_companion_and_falls_back_to_happy() {
-        let file = |art: Option<Art>| art.map(|art| CARD_ART[art.file].0);
+    fn cards_fall_back_through_the_fixture() {
+        // The rule on made-up art, so it stays tested whatever the pinned release has drawn.
+        let with = |drawn: &'static [&'static str]| move |pose: &str| drawn.contains(&pose);
+        assert_eq!(card_pose("streak", with(&["streak", "hopeful"])), "streak");
+        assert_eq!(card_pose("streak", with(&["happy", "hopeful"])), "hopeful");
+        assert_eq!(
+            card_pose("streak_hot", with(&["happy", "streak"])),
+            "streak"
+        );
+        assert_eq!(card_pose("winner", with(&["happy", "hopeful"])), "happy");
+        assert_eq!(card_pose("freeze", with(&["freeze", "frozen"])), "freeze");
+        assert_eq!(card_pose("freeze", with(&["happy", "frozen"])), "frozen");
+
+        // Wins store `celebrate`, which shows the happy pose.
+        assert_eq!(card_pose("celebrate", with(&["happy", "hopeful"])), "happy");
+        assert_eq!(card_pose("celebrate", with(&["hopeful"])), "hopeful");
+
+        // A pose the fixture doesn't list, or one nothing in its chain is drawn for, shows happy.
+        assert_eq!(card_pose("missing", with(&["streak", "happy"])), "happy");
+        assert_eq!(card_pose("frozen", with(&[])), "happy");
+    }
+
+    #[test]
+    fn art_follows_the_companion_and_falls_back() {
+        // Each companion's card shows its own master or the one its fallbacks reach.
+        let manifest = manifest();
+        let owner = |art: Option<Art>| art.map(|art| CARD_ART[art.file].0);
         let pose = |art: Option<Art>| art.map(|art| CARD_ART[art.file].1);
-        assert_eq!(pose(art("aki", "streak")), Some("streak"));
-        assert_eq!(pose(art("aki", "missing")), Some("happy"));
-        assert_eq!(pose(art("ankilope", "winner")), Some("happy"));
-        assert_eq!(file(art("ankilope", "winner")), Some("ankilope"));
-        // Without a streak master, the fixture's core fallback shows hopeful.
-        assert_eq!(pose(art("ankilope", "streak")), Some("hopeful"));
-        assert_eq!(pose(art("cow", "streak")), Some("hopeful"));
+        for companion in CARD_COMPANIONS.into_iter().chain([crate::companions::COW]) {
+            for asked in CARD_POSES.into_iter().chain(["celebrate", "missing"]) {
+                let shown = art(companion, asked);
+                let want = expected(&manifest, companion, asked);
+                assert_eq!(pose(shown), want, "{companion}/{asked}");
+                if want.is_some() {
+                    let own = crate::companions::art_owner(companion);
+                    assert_eq!(owner(shown), Some(own), "{companion}/{asked}");
+                }
+            }
+        }
+
+        // The cow borrows Ankilope's art, turned purple.
+        assert_eq!(owner(art("cow", "streak")), Some("ankilope"));
         assert_eq!(art("cow", "streak").unwrap().look, Look::Cow);
+        assert_eq!(art("ankilope", "streak").unwrap().look, Look::Master);
         assert_eq!(art("none", "celebrate"), None);
         assert_eq!(art("aki", "none"), None);
     }
@@ -1544,26 +1596,33 @@ mod tests {
     #[test]
     fn every_companion_with_masters_has_card_art() {
         // build.rs exports each card pose a companion has, or the pose its fallbacks reach.
+        let manifest = manifest();
         let mut exported: Vec<_> = CARD_ART
             .iter()
             .map(|(who, pose, _)| format!("{who}/{pose}"))
             .collect();
         exported.sort();
-        assert_eq!(
-            exported,
-            [
-                "aki/freeze",
-                "aki/frozen",
-                "aki/happy",
-                "aki/streak",
-                "aki/winner",
-                "anki_tan/frozen",
-                "anki_tan/hopeful",
-                "ankilope/frozen",
-                "ankilope/happy",
-                "ankilope/hopeful"
-            ]
-        );
+        let mut want: Vec<_> = CARD_COMPANIONS
+            .iter()
+            .flat_map(|who| {
+                let manifest = &manifest;
+                CARD_POSES.iter().filter_map(move |pose| {
+                    let shown = poses().resolve(pose, |pose| manifest.has(who, pose))?;
+                    Some(format!("{who}/{shown}"))
+                })
+            })
+            .collect();
+        want.sort();
+        want.dedup();
+        assert_eq!(exported, want);
+        for who in CARD_COMPANIONS {
+            assert!(
+                exported
+                    .iter()
+                    .any(|art| art.starts_with(&format!("{who}/"))),
+                "{who} has no card art"
+            );
+        }
 
         // Masters are shrunk to 512 px, never enlarged.
         for (who, pose, png) in CARD_ART {
@@ -1588,18 +1647,16 @@ mod tests {
     #[test]
     fn anki_tan_cards_show_her_art() {
         // #61: her cards show her own masters, else the fixture's fallbacks.
-        let file = |art: Option<Art>| art.map(|art| CARD_ART[art.file].0);
-        let shown = |art: Option<Art>| art.map(|art| CARD_ART[art.file].1);
-        for pose in ["frozen", "freeze"] {
-            assert_eq!(file(art("anki_tan", pose)), Some("anki_tan"), "{pose}");
-            assert_eq!(shown(art("anki_tan", pose)), Some("frozen"), "{pose}");
-        }
-        assert_eq!(art("anki_tan", "frozen").unwrap().look, Look::Master);
-
-        // She has no happy or streak master yet: they show her hopeful pose.
-        for pose in ["celebrate", "happy", "streak", "winner"] {
-            assert_eq!(file(art("anki_tan", pose)), Some("anki_tan"), "{pose}");
-            assert_eq!(shown(art("anki_tan", pose)), Some("hopeful"), "{pose}");
+        let manifest = manifest();
+        for pose in CARD_POSES.into_iter().chain(["celebrate"]) {
+            let shown = art("anki_tan", pose).unwrap();
+            assert_eq!(CARD_ART[shown.file].0, "anki_tan", "{pose}");
+            assert_eq!(
+                Some(CARD_ART[shown.file].1),
+                expected(&manifest, "anki_tan", pose),
+                "{pose}"
+            );
+            assert_eq!(shown.look, Look::Master, "{pose}");
         }
     }
 
@@ -1614,7 +1671,11 @@ mod tests {
         assert_eq!(pose(art("aki", "freeze")), Some("freeze"));
         assert_eq!(pose(art("ankilope", "frozen")), Some("frozen"));
         // A used freeze is a picture the fixture lists; without one, Ankilope shows frozen.
-        assert_eq!(pose(art("ankilope", "freeze")), Some("frozen"));
+        let manifest = manifest();
+        assert_eq!(
+            pose(art("ankilope", "freeze")),
+            expected(&manifest, "ankilope", "freeze")
+        );
     }
 
     #[test]
