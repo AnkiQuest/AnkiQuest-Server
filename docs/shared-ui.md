@@ -55,16 +55,17 @@ which is a separate question.
 - Source in `ui/`, TypeScript with the server's `tsconfig` settings, tested with `node --test`.
 - `build.rs` bundles it for the server's pages, as it does `web/`.
 - A release job builds `ankiquest-ui.js` (one IIFE, no imports) and `ankiquest-ui.css` and publishes
-  them with the rules module, in the same `rules-<N>` release and pin file, since components call the
-  module. Consumers pin by SHA-256 as they pin Art.
+  them with the rules module, in the same `rules-<N>` release, since components call the module.
+  The add-on takes the newest release when it builds, checks it against the release's `SHA256SUMS`
+  and records the tag, as it does for the rules.
 - The bundle targets the Qt WebEngine of the oldest Anki the add-on supports (23.10): no syntax or
   CSS that its Chromium lacks. The add-on's CI already has an Anki 23.10 job; the component tests run
   there in WebEngine, as `qt_heatmap_rules.py` does for the module.
 - The add-on inlines the bundle into its pages, as it inlines the module, so pages work offline and
   need no web export.
 - A component's data and text arguments are its interface: a change that breaks them is a new major
-  version of the package, recorded in the release notes, and the pin update in each client is the
-  migration.
+  version of the package, recorded in the release notes; the add-on changes its pages in the same
+  step as it takes that release.
 
 ## Android
 
@@ -89,8 +90,8 @@ stay for the rest.
   is proposed in AnkiQuest/AnkiQuest-Desktop#381).
 - **Two screenshot suites** (server Playwright, add-on WebEngine) change together on every visual
   change of a shared component; Android's change only with the design tokens.
-- **Coupling**: a component change reaches the add-on only through a release and a pin update, as
-  rules and art do. The server's own pages always use `master`.
+- **Coupling**: a component change reaches the add-on through the next release, at its next build,
+  as the rules do. The server's own pages always use `master`.
 - **Moving the add-on's HTML out of Python** changes how its pages are built and tested: data stays
   in Python, layout moves to TypeScript. `board.py` and `heatmap_ui.py` are about 1,000 lines.
 - **Parity rule**: the website changes look where it adopts the clients' heatmap and cards
