@@ -38,7 +38,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: read # code-changed lists the pull request's files
     outputs:
       code: ${{ steps.code.outputs.code }}
       web: ${{ steps.web.outputs.code }}
@@ -70,7 +70,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -97,7 +97,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -130,7 +130,9 @@ jobs:
     env:
       PLAYWRIGHT_CHANNEL: chromium
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # The companion art masters: the pinned AnkiQuest-Art release,
       # downloaded and hash-checked by the tool below; never a submodule.
@@ -167,7 +169,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -229,19 +231,36 @@ jobs:
         cargo test --workspace
         cargo clippy --workspace --all-targets -- -D warnings
 
+  # zizmor's security audit of the workflows, with the rules in
+  # .github/zizmor.yml, in AnkiQuest-Dev's default shell (the server shell
+  # has no zizmor). It reports as `zizmor / check`.
+  zizmor:
+    needs: changes
+    if: ${{ !cancelled() }}
+    uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/nix-check.yml@master
+    with:
+      flake: github:AnkiQuest/AnkiQuest-Dev
+      flake-check: false
+      format: ""
+      zizmor: true
+      skip: ${{ needs.changes.outputs.code == 'false' }}
+      timeout-minutes: 15
+
   package:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # The companion art masters: the pinned AnkiQuest-Art release,
       # downloaded and hash-checked by the tool below; never a submodule.
       - name: Stage the pinned art release
         run: node tests/tools/stage-art.mjs .
 
-      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
