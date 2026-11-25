@@ -8,11 +8,12 @@ license = "AGPL-3.0-or-later"
 repository = "https://github.com/AnkiQuest/AnkiQuest-Server"
 
 [workspace]
-members = [".", "crates/art", "crates/i18n", "crates/i18n-wasm", "crates/rules", "crates/xtask"]
+members = [".", "crates/art", "crates/packs", "crates/i18n", "crates/i18n-wasm", "crates/rules", "crates/xtask"]
 
 [dependencies]
 ankiquest-art = { path = "crates/art" }
 ankiquest-i18n = { path = "crates/i18n" }
+ankiquest-packs = { path = "crates/packs" }
 ankiquest-rules = { path = "crates/rules", features = ["serde"] }
 argon2 = "0.6"
 axum = "0.8"
@@ -72,6 +73,10 @@ opt-level = 3
 
 # The Android art check encodes every drawable; unoptimised libwebp takes minutes.
 [profile.dev.package.libwebp-sys]
+opt-level = 3
+
+# Uploaded companion packs decode WebP; unoptimised it takes seconds per picture.
+[profile.dev.package.image-webp]
 opt-level = 3
 
 [profile.dev.package.png]
