@@ -249,7 +249,7 @@ async fn examples_match_the_handlers() {
             "POST",
             "/api/accounts",
             None,
-            json!({"user": "ana", "password": PASSWORD, "display": "Ana", "device": "Pixel 8"}),
+            json!({"user": "ana", "password": PASSWORD, "display": "Ana", "device": "Pixel 8", "public": true}),
         )
         .await;
     let signed_in = f
@@ -948,7 +948,7 @@ async fn examples_match_the_handlers() {
         .await,
     ));
 
-    // The global leaderboard: profiles are public and listed by default, but Ana made hers
+    // The global leaderboard: Ana ticked "Public profile" at sign-up, but now makes hers
     // private. With no friends yet she sees public standings and her own full row, which nobody
     // else sees until she turns the global leaderboard on. Then hill sees her there as a
     // stranger: name, level, XP and streak only.

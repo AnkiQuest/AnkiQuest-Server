@@ -74,7 +74,7 @@ signupForm.addEventListener('submit',async function(event){
   submit.disabled=true;await AnkiQuestI18n.ready;message.textContent=aqText("Creating your account…");
   var user=input(signupForm,'user').value.trim().toLowerCase(),password=input(signupForm,'password');
   try{
-    var response=await fetch('/api/accounts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:user,password:password.value,display:input(signupForm,'display').value.trim(),device:'Website'})});
+    var response=await fetch('/api/accounts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:user,password:password.value,display:input(signupForm,'display').value.trim(),device:'Website',public:input(signupForm,'public').checked})});
     password.value='';
     if(response.ok){
       var created:{user:string;token:string}=await response.json();

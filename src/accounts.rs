@@ -324,6 +324,25 @@ pub(crate) fn create(
     )? == 1)
 }
 
+/// [`create`] and the profile the player chose at sign-up, together or not at all.
+fn create_with_profile(
+    conn: &Connection,
+    user: &str,
+    display: &str,
+    hash: &str,
+    public: Option<bool>,
+) -> Result<bool, Error> {
+    let tx = conn.unchecked_transaction()?;
+    if !create(&tx, user, display, hash, now_ms())? {
+        return Ok(false);
+    }
+    if let Some(public) = public {
+        crate::social::choose_visibility(&tx, user, public)?;
+    }
+    tx.commit()?;
+    Ok(true)
+}
+
 fn stored_hash(conn: &Connection, user: &str) -> Result<Option<String>, Error> {
     Ok(conn
         .query_row(
@@ -391,6 +410,12 @@ pub(crate) fn adopt(
     if !create(conn, user, display, hash, now)? {
         return Ok(false);
     }
+    // A configured player's profile was public unless they chose otherwise; an account
+    // without a row would be private, so the profile is written down as it was.
+    conn.execute(
+        "insert or ignore into visibility (user, public, old_default) values (?1, 1, 0)",
+        [user],
+    )?;
     conn.execute(
         "insert or ignore into account_tokens (token_hash, user, device, created_at) values (?1, ?2, ?3, ?4)",
         params![token_hash(token), user, ADOPTED_DEVICE, now],
@@ -470,6 +495,10 @@ struct Signup {
     display: Option<String>,
     #[serde(default)]
     device: Option<String>,
+    /// Whether the profile is public, as the player answered at sign-up. Without an answer it
+    /// is private ([`crate::social::Visibility`]).
+    #[serde(default)]
+    public: Option<bool>,
 }
 
 pub async fn signup(
@@ -517,12 +546,12 @@ pub async fn signup(
     let Ok(Ok(hash)) = tokio::task::spawn_blocking(move || hash_password(&password)).await else {
         return internal("password hashing failed".into());
     };
-    match create(
+    match create_with_profile(
         &app.store.lock().unwrap().conn,
         &user,
         &display,
         &hash,
-        now_ms(),
+        request.public,
     ) {
         Ok(true) => {}
         Ok(false) => return refuse(StatusCode::CONFLICT, "That username is taken."),
@@ -1682,6 +1711,12 @@ mod tests {
             sign_in(&app, "alice", "a new long password", "Laptop")
                 .await
                 .is_some()
+        );
+        assert_eq!(
+            app.visibility(&app.store.lock().unwrap().conn, "alice")
+                .unwrap(),
+            crate::social::Visibility::Public,
+            "her profile stays public as a configured player's was"
         );
         let listed = list(&app, "alice", &with_token("alice-token")).await;
         assert_eq!(listed["devices"][0]["name"], ADOPTED_DEVICE, "{listed}");

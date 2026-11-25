@@ -36,7 +36,7 @@ const EXPORT: &[(&str, &str)] = &[
     ("sign_in_links", "select provider, subject, created_at from sign_in_links where user = ?1"),
     // Whether two-factor is on, not its secret: a download should not be a way to copy it.
     ("two_factor", "select state, updated_at from two_factor where user = ?1"),
-    ("visibility", "select public from visibility where user = ?1"),
+    ("visibility", "select public, old_default from visibility where user = ?1"),
     ("reviews", "select id, cid, last_ivl, ivl, time_ms, kind, ease from reviews where user = ?1 order by id"),
     ("anki_day", "select offset_west_min, rollover_hour from clocks where user = ?1"),
     ("anki_day_history", "select effective_from_ms, offset_west_min, rollover_hour
@@ -1209,10 +1209,10 @@ mod tests {
         assert!(page.contains("mailto:privacy@example.org"));
         assert!(!page.contains("{{"), "every placeholder is filled");
         assert!(
-            page.contains("Your profile is also public by default")
+            page.contains("Your profile is private unless you make it public")
                 && page.contains("listed on the global leaderboard")
                 && page.contains("untick <strong>Public profile</strong>"),
-            "the notice says what is on by default and how to turn it off"
+            "the notice says what is off by default and how to change it"
         );
         let anonymous = notice_page(&Notice::default(), false, 0, &[]);
         assert!(

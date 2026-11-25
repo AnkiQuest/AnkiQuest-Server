@@ -3,6 +3,7 @@
 //! once the person has picked a username; later ones sign into the linked player.
 
 use crate::accounts::{AccountKind, SignIn, clean_device, clean_display, valid_username};
+use crate::social::Visibility;
 use crate::web_util::escape;
 use crate::web_util::{base64url, hex, hex_cookie, normalize_user, random_bytes, set_cookie};
 use crate::web_util::{refuse, reply};
@@ -504,7 +505,13 @@ fn message(status: StatusCode, text: &str, back: &str, cookies: &[HeaderValue]) 
     )
 }
 
-fn form_page(status: StatusCode, user: &str, display: &str, error: Option<&str>) -> Response {
+fn form_page(
+    status: StatusCode,
+    user: &str,
+    display: &str,
+    visibility: Visibility,
+    error: Option<&str>,
+) -> Response {
     page(
         status,
         &format!(
@@ -514,6 +521,8 @@ fn form_page(status: StatusCode, user: &str, display: &str, error: Option<&str>)
 <input id="user" name="user" value="{user}" autocomplete="username" autocapitalize="none" spellcheck="false" required minlength="3" maxlength="32" autofocus>
 <label for="display">{display_label}</label>
 <input id="display" name="display" value="{display}" autocomplete="nickname" maxlength="40">
+<label class="oauth-check"><input id="public" name="public" type="checkbox"{checked}> {public}</label>
+<p class="oauth-hint">{public_hint}</p>
 <button class="oauth-button" type="submit">{create}</button>
 <p class="oauth-error" role="status">{error}</p>
 <p class="oauth-privacy"><a href="/privacy">{privacy}</a></p>
@@ -521,6 +530,15 @@ fn form_page(status: StatusCode, user: &str, display: &str, error: Option<&str>)
             title = translated("Choose a username"),
             username = translated("Username"),
             display_label = translated("Display name (optional)"),
+            public = translated("Public profile"),
+            public_hint = translated(
+                "Anyone can open your profile and you are listed on the global leaderboard."
+            ),
+            checked = if visibility.is_public() {
+                " checked"
+            } else {
+                ""
+            },
             create = translated("Create account"),
             privacy = translated("How AnkiQuest handles your data"),
             user = escape(user),
@@ -758,7 +776,14 @@ enum Created {
     AlreadyLinked(String),
 }
 
-fn create_linked(app: &App, signup: &Signup, user: &str, display: &str) -> Result<Created, Error> {
+/// Creates the account with the profile the person chose on the sign-up form.
+fn create_linked(
+    app: &App,
+    signup: &Signup,
+    user: &str,
+    display: &str,
+    visibility: Visibility,
+) -> Result<Created, Error> {
     let store = app.store.lock().unwrap();
     if let Some(owner) = owner(app, &store.conn, signup.provider, &signup.subject)? {
         return Ok(Created::AlreadyLinked(owner));
@@ -772,6 +797,7 @@ fn create_linked(app: &App, signup: &Signup, user: &str, display: &str) -> Resul
         "insert into sign_in_links (provider, subject, user, created_at) values (?1, ?2, ?3, ?4)",
         params![signup.provider.key(), signup.subject, user, now],
     )?;
+    crate::social::choose_visibility(&transaction, user, visibility.is_public())?;
     transaction.commit()?;
     drop(store);
     app.accounts.insert(user, display);
@@ -1264,7 +1290,13 @@ async fn callback(
 
 async fn signup_page(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
     match flow_cookie(&headers).and_then(|key| app.access.oauth.signup(key, now_ms())) {
-        Some(signup) => form_page(StatusCode::OK, &signup.user, &signup.display, None),
+        Some(signup) => form_page(
+            StatusCode::OK,
+            &signup.user,
+            &signup.display,
+            Visibility::Private,
+            None,
+        ),
         None => see_other("/login", &[]),
     }
 }
@@ -1275,6 +1307,19 @@ struct Choice {
     user: String,
     #[serde(default)]
     display: String,
+    /// The "Public profile" box, sent only when ticked.
+    #[serde(default)]
+    public: Option<String>,
+}
+
+impl Choice {
+    fn visibility(&self) -> Visibility {
+        if self.public.is_some() {
+            Visibility::Public
+        } else {
+            Visibility::Private
+        }
+    }
 }
 
 /// Creates the account a first sign-in asked for, with the username the person chose.
@@ -1311,7 +1356,15 @@ async fn create(
             &[],
         );
     }
-    let again = |status, text| form_page(status, &choice.user, &choice.display, Some(text));
+    let again = |status, text| {
+        form_page(
+            status,
+            &choice.user,
+            &choice.display,
+            choice.visibility(),
+            Some(text),
+        )
+    };
     let user = normalize_user(&choice.user);
     if !valid_username(&user) {
         return again(
@@ -1336,7 +1389,7 @@ async fn create(
         );
     }
     let clear = set_flow(&app, "", 0);
-    let user = match create_linked(&app, &signup, &user, &display) {
+    let user = match create_linked(&app, &signup, &user, &display, choice.visibility()) {
         Ok(Created::Account) => user,
         Ok(Created::AlreadyLinked(owner)) => owner,
         Ok(Created::NameTaken) => return again(StatusCode::CONFLICT, "That username is taken."),
@@ -1937,6 +1990,52 @@ mod tests {
         .await;
         assert_eq!(created.status(), StatusCode::SEE_OTHER);
         cookie(&created, "ankiquest_session").unwrap()
+    }
+
+    #[tokio::test]
+    async fn the_sign_up_form_asks_for_a_public_profile_unticked() {
+        let (base, _mock) = provider().await;
+        let (app, path) = fixture(true, &base);
+        for (user, form, expected) in [
+            ("ana", "user=ana", Visibility::Private),
+            ("bea", "user=bea&public=on", Visibility::Public),
+        ] {
+            let callback = round_trip(&app, "gitlab", "", "good-code", None).await;
+            let pending = cookie(&callback, COOKIE).unwrap();
+            let page =
+                text(send(&app, "GET", SIGNUP_PATH, &[("cookie", &pending)], "").await).await;
+            assert!(
+                page.contains(r#"name="public" type="checkbox">"#),
+                "the box starts unticked: {page}"
+            );
+            let created = send(
+                &app,
+                "POST",
+                SIGNUP_PATH,
+                &[
+                    ("cookie", &pending),
+                    ("content-type", FORM),
+                    ("origin", ORIGIN),
+                ],
+                form,
+            )
+            .await;
+            assert_eq!(created.status(), StatusCode::SEE_OTHER);
+            assert_eq!(
+                app.visibility(&app.store.lock().unwrap().conn, user)
+                    .unwrap(),
+                expected,
+                "{form}"
+            );
+            // The next round trip signs up someone else at the same provider.
+            app.store
+                .lock()
+                .unwrap()
+                .conn
+                .execute("delete from sign_in_links", [])
+                .unwrap();
+        }
+        cleanup(app, path);
     }
 
     async fn bearer_session(app: &Arc<App>, token: &str) -> String {

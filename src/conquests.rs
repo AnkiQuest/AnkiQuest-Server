@@ -929,6 +929,17 @@ mod tests {
         with_reviews(&app, "hill", 1);
         crate::accounts::create(&app.store.lock().unwrap().conn, "ana", "Ana", "", 0).unwrap();
         app.accounts.insert("ana", "Ana");
+        // An account from when profiles were public by default, as the migration that made
+        // new profiles private leaves it.
+        app.store
+            .lock()
+            .unwrap()
+            .conn
+            .execute(
+                "insert into visibility (user, public, old_default) values ('ana', 1, 1)",
+                [],
+            )
+            .unwrap();
         let token = app.issue_token("ana", "Phone").unwrap();
         let mut ana = HeaderMap::new();
         ana.insert(
@@ -965,7 +976,7 @@ mod tests {
         assert_eq!(
             label(headers("cerro")).await,
             None,
-            "the conquest is public by default, what the card was is not"
+            "the conquest is public by the old default, what the card was is not"
         );
         assert_eq!(
             conquests::show(
@@ -987,15 +998,7 @@ mod tests {
             .execute("insert into friendships (a, b, requested_by, accepted, created_at) values ('ana', 'hill', 'ana', 1, 0)", [])
             .unwrap();
         assert_eq!(label(headers("hill")).await.as_deref(), Some("la ardilla"));
-        app.store
-            .lock()
-            .unwrap()
-            .conn
-            .execute(
-                "insert into visibility (user, public) values ('ana', 1)",
-                [],
-            )
-            .unwrap();
+        crate::social::choose_visibility(&app.store.lock().unwrap().conn, "ana", true).unwrap();
         assert_eq!(
             label(headers("cerro")).await.as_deref(),
             Some("la ardilla"),

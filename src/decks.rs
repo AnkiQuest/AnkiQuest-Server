@@ -626,16 +626,21 @@ impl Store {
     }
 
     /// Whether the player is on the global leaderboard: their own choice, or, until they make
-    /// one, whether their profile is public (which it is unless they made it private).
+    /// one, whether their profile is public ([`crate::social::Visibility`]).
     pub fn global_leaderboard(&self, user: &str) -> Result<bool, Error> {
-        Ok(self.conn.query_row(
-            "select coalesce(
-                 (select global_leaderboard from player_settings where user = ?1),
-                 (select public from visibility where user = ?1),
-                 1)",
-            [user],
-            |r| r.get(0),
-        )?)
+        let chosen: Option<bool> = self
+            .conn
+            .query_row(
+                "select global_leaderboard from player_settings where user = ?1",
+                [user],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        if let Some(chosen) = chosen {
+            return Ok(chosen);
+        }
+        Ok(crate::social::visibility_in(&self.conn, user)?.is_public())
     }
 
     pub fn set_global_leaderboard(&mut self, user: &str, shown: bool) -> Result<(), Error> {

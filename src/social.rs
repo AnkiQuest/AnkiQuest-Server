@@ -1,5 +1,5 @@
 //! Who sees and reaches whom: groups joined by invite, mutual friends, and public profiles,
-//! which every player has until they make theirs private.
+//! which a player has when they chose one ([`Visibility`]).
 //! Everyone who is not a self-service account (configured and sync-folder players) keeps
 //! sharing the original community, so existing deployments behave as before.
 
@@ -155,13 +155,68 @@ pub(crate) fn is_member(conn: &Connection, group: i64, user: &str) -> rusqlite::
         .exists(params![group, user])
 }
 
-fn public_flag(conn: &Connection, user: &str) -> rusqlite::Result<Option<bool>> {
+/// Who may open a player's profile. Stored in `visibility` as `public` and `old_default`;
+/// a player without a row has never chosen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Visibility {
+    /// Friends and group mates only: the player chose it, or signed up without choosing.
+    Private,
+    /// Anyone: the player chose it, or is a player from before accounts who never chose.
+    Public,
+    /// Anyone, but conquest labels stay with friends: an account from when profiles were
+    /// public by default whose player never chose (`old_default`, set by the migration
+    /// that made new profiles private).
+    PublicByOldDefault,
+}
+
+impl Visibility {
+    /// The profile from a `visibility` row (`public`, `old_default`), or for a player without
+    /// one. Players from before accounts kept public profiles through every default change.
+    pub(crate) fn from_row(row: Option<(bool, bool)>, legacy: bool) -> Self {
+        match row {
+            Some((true, true)) => Visibility::PublicByOldDefault,
+            Some((true, false)) => Visibility::Public,
+            Some((false, _)) => Visibility::Private,
+            None if legacy => Visibility::Public,
+            None => Visibility::Private,
+        }
+    }
+
+    pub(crate) fn is_public(self) -> bool {
+        self != Visibility::Private
+    }
+}
+
+fn visibility_row(conn: &Connection, user: &str) -> rusqlite::Result<Option<(bool, bool)>> {
     conn.query_row(
-        "select public from visibility where user = ?1",
+        "select public, old_default from visibility where user = ?1",
         [user],
-        |r| r.get(0),
+        |r| Ok((r.get(0)?, r.get(1)?)),
     )
     .optional()
+}
+
+/// [`App::visibility`] for code that only holds the database: a player from before accounts is
+/// one without an `accounts` row.
+pub(crate) fn visibility_in(conn: &Connection, user: &str) -> rusqlite::Result<Visibility> {
+    let legacy = !conn
+        .prepare("select 1 from accounts where user = ?1")?
+        .exists([user])?;
+    Ok(Visibility::from_row(visibility_row(conn, user)?, legacy))
+}
+
+/// Records the player's own choice, which also ends a public profile by the old default.
+pub(crate) fn choose_visibility(
+    conn: &Connection,
+    user: &str,
+    public: bool,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "insert into visibility (user, public, old_default) values (?1, ?2, 0)
+         on conflict (user) do update set public = excluded.public, old_default = 0",
+        params![user, public],
+    )?;
+    Ok(())
 }
 
 /// Players who turned the global leaderboard off themselves.
@@ -238,16 +293,24 @@ impl App {
             .collect()
     }
 
-    /// Profiles are public until their player makes them private.
-    pub fn is_public(&self, conn: &Connection, user: &str) -> rusqlite::Result<bool> {
-        Ok(public_flag(conn, user)?.unwrap_or(true))
+    pub(crate) fn visibility(&self, conn: &Connection, user: &str) -> rusqlite::Result<Visibility> {
+        Ok(Visibility::from_row(
+            visibility_row(conn, user)?,
+            self.legacy(user),
+        ))
     }
 
-    /// Whether the profile was public before profiles became public by default: chosen so, or
-    /// a player from before accounts who never chose. What a player wrote about their cards
-    /// (conquest labels) reaches strangers only then, as it did when they wrote it.
+    /// Whether anyone may open the profile ([`Visibility`]).
+    pub fn is_public(&self, conn: &Connection, user: &str) -> rusqlite::Result<bool> {
+        Ok(self.visibility(conn, user)?.is_public())
+    }
+
+    /// Whether the profile is public by the player's choice, or a player from before accounts
+    /// who never chose. What a player wrote about their cards (conquest labels) reaches
+    /// strangers only then, since labels written while profiles were public by default were
+    /// meant for friends.
     pub(crate) fn chose_public(&self, conn: &Connection, user: &str) -> rusqlite::Result<bool> {
-        Ok(public_flag(conn, user)?.unwrap_or_else(|| self.legacy(user)))
+        Ok(self.visibility(conn, user)? == Visibility::Public)
     }
 
     /// The people a player shares something with, including the player.
@@ -266,15 +329,18 @@ impl App {
 
     /// Everyone with a public profile who did not take themselves off the global board.
     pub fn global(&self, conn: &Connection) -> rusqlite::Result<BTreeSet<String>> {
-        let private: BTreeSet<String> = conn
-            .prepare("select user from visibility where public = 0")?
-            .query_map([], |r| r.get(0))?
+        let rows: std::collections::BTreeMap<String, (bool, bool)> = conn
+            .prepare("select user, public, old_default from visibility")?
+            .query_map([], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?))))?
             .collect::<rusqlite::Result<_>>()?;
         let unlisted = global_opt_outs(conn)?;
         Ok(self
             .known_users()
             .into_iter()
-            .filter(|user| !private.contains(user) && !unlisted.contains(user))
+            .filter(|user| {
+                Visibility::from_row(rows.get(user).copied(), self.legacy(user)).is_public()
+                    && !unlisted.contains(user)
+            })
             .collect())
     }
 
@@ -779,11 +845,7 @@ async fn change(
                 Ok(())
             }
             Change::Visibility { public } => {
-                conn.execute(
-                    "insert into visibility (user, public) values (?1, ?2)
-                     on conflict (user) do update set public = excluded.public",
-                    params![user, public],
-                )?;
+                choose_visibility(conn, &user, public)?;
                 Ok(())
             }
         })
@@ -1081,7 +1143,7 @@ pub fn routes() -> Router<Arc<App>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{call, cleanup, sign_up, with_reviews};
+    use crate::test_support::{call, cleanup, sign_up, sign_up_public, with_reviews};
     use std::path::PathBuf;
 
     fn fixture() -> (Arc<App>, PathBuf) {
@@ -1103,8 +1165,9 @@ mod tests {
     async fn configured_players_keep_their_community_and_accounts_start_alone() {
         let (app, path) = fixture();
         sign_up(&app, "ana").await;
-        // A stranger to everyone who has studied, so profiles' own visibility decides.
-        sign_up(&app, "carl").await;
+        // A stranger to everyone who has studied, so profiles' own visibility decides. Carl
+        // ticked "Public profile" at sign-up.
+        sign_up_public(&app, "carl").await;
         with_reviews(&app, "carl", 1);
         let stranger = Viewer {
             member: Some("carl".into()),
@@ -1118,43 +1181,35 @@ mod tests {
             app.is_public(conn, "alice").unwrap(),
             "legacy profiles stay as public as before"
         );
-        assert!(
-            app.is_public(conn, "ana").unwrap(),
-            "accounts start public too"
-        );
         assert!(app.chose_public(conn, "alice").unwrap());
         assert!(
-            !app.chose_public(conn, "ana").unwrap(),
-            "but never chose it, which keeps conquest labels for friends"
+            !app.is_public(conn, "ana").unwrap(),
+            "an account that did not answer at sign-up starts private"
         );
+        assert!(app.chose_public(conn, "carl").unwrap(), "carl chose public");
         let anonymous = Viewer {
             member: None,
             community: false,
         };
-        assert!(app.visible(conn, &stranger, "ana").unwrap());
-        assert!(!app.visible_by_choice(conn, &stranger, "ana").unwrap());
+        assert!(!app.visible(conn, &stranger, "ana").unwrap());
         assert!(
-            !app.visible(conn, &anonymous, "ana").unwrap(),
+            !app.visible(conn, &anonymous, "carl").unwrap(),
             "nobody's study reaches visitors who are not signed in"
         );
-        assert_eq!(
+        let listed = |conn: &Connection| -> Vec<String> {
             app.board(conn, &anonymous, None)
                 .unwrap()
                 .unwrap()
                 .into_iter()
-                .collect::<Vec<_>>(),
-            ["alice", "ana", "bob", "carl"]
-        );
-        conn.execute(
-            "insert into visibility (user, public) values ('ana', 0)",
-            [],
-        )
-        .unwrap();
-        assert!(
-            !app.is_public(conn, "ana").unwrap(),
-            "a private profile stays private"
-        );
-        assert!(!app.visible(conn, &stranger, "ana").unwrap());
+                .collect()
+        };
+        assert_eq!(listed(conn), ["alice", "bob", "carl"]);
+
+        // Making the profile public later lists it and shows it to strangers.
+        choose_visibility(conn, "ana", true).unwrap();
+        assert_eq!(app.visibility(conn, "ana").unwrap(), Visibility::Public);
+        assert!(app.visible(conn, &stranger, "ana").unwrap());
+        assert!(app.visible_by_choice(conn, &stranger, "ana").unwrap());
         assert!(
             app.visible(
                 conn,
@@ -1166,29 +1221,113 @@ mod tests {
             )
             .unwrap()
         );
-        assert_eq!(
-            app.board(conn, &anonymous, None)
-                .unwrap()
-                .unwrap()
-                .into_iter()
-                .collect::<Vec<_>>(),
-            ["alice", "bob", "carl"]
-        );
+        assert_eq!(listed(conn), ["alice", "ana", "bob", "carl"]);
+
+        // And private again.
+        choose_visibility(conn, "ana", false).unwrap();
+        assert!(!app.visible(conn, &stranger, "ana").unwrap());
+        assert_eq!(listed(conn), ["alice", "bob", "carl"]);
         conn.execute(
             "insert into player_settings (user, global_leaderboard) values ('bob', 0)",
             [],
         )
         .unwrap();
         assert_eq!(
-            app.board(conn, &anonymous, None)
-                .unwrap()
-                .unwrap()
-                .into_iter()
-                .collect::<Vec<_>>(),
+            listed(conn),
             ["alice", "carl"],
             "a public profile that left the global board is not listed there"
         );
         assert!(app.visible(conn, &stranger, "bob").unwrap());
+        drop(store);
+        cleanup(app, path);
+    }
+
+    #[test]
+    fn a_profile_is_public_by_choice_by_the_old_default_or_from_before_accounts() {
+        let cases = [
+            (Some((true, false)), false, Visibility::Public),
+            (Some((true, false)), true, Visibility::Public),
+            (Some((false, false)), false, Visibility::Private),
+            (Some((false, false)), true, Visibility::Private),
+            (Some((true, true)), false, Visibility::PublicByOldDefault),
+            (None, true, Visibility::Public),
+            (None, false, Visibility::Private),
+        ];
+        for (row, legacy, expected) in cases {
+            assert_eq!(
+                Visibility::from_row(row, legacy),
+                expected,
+                "{row:?} {legacy}"
+            );
+        }
+        assert!(!Visibility::Private.is_public());
+        assert!(Visibility::Public.is_public());
+        assert!(Visibility::PublicByOldDefault.is_public());
+    }
+
+    #[tokio::test]
+    async fn the_sign_up_answer_decides_the_profile() {
+        let (app, path) = fixture();
+        sign_up(&app, "ana").await;
+        sign_up_public(&app, "bea").await;
+        let request = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/accounts")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                serde_json::json!({"user": "cleo", "password": "long enough pw", "public": false})
+                    .to_string(),
+            ))
+            .unwrap();
+        let (status, _) = crate::test_support::json_response(
+            crate::test_support::route_from(&app, request, "192.0.2.77:40000").await,
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let store = app.store.lock().unwrap();
+        let conn = &store.conn;
+        assert_eq!(app.visibility(conn, "ana").unwrap(), Visibility::Private);
+        assert_eq!(app.visibility(conn, "bea").unwrap(), Visibility::Public);
+        assert_eq!(app.visibility(conn, "cleo").unwrap(), Visibility::Private);
+        assert!(
+            !store.global_leaderboard("ana").unwrap(),
+            "private: off the global board"
+        );
+        assert!(store.global_leaderboard("bea").unwrap(), "public: on it");
+        drop(store);
+        cleanup(app, path);
+    }
+
+    #[tokio::test]
+    async fn an_old_default_profile_ends_with_the_players_choice() {
+        let (app, path) = fixture();
+        sign_up(&app, "ana").await;
+        let store = app.store.lock().unwrap();
+        let conn = &store.conn;
+        // As the migration that made new profiles private leaves an account that never chose.
+        conn.execute(
+            "insert or replace into visibility (user, public, old_default) values ('ana', 1, 1)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            app.visibility(conn, "ana").unwrap(),
+            Visibility::PublicByOldDefault
+        );
+        assert!(app.is_public(conn, "ana").unwrap());
+        assert!(
+            !app.chose_public(conn, "ana").unwrap(),
+            "labels stay with friends"
+        );
+        assert!(store.global_leaderboard("ana").unwrap());
+        assert!(
+            conn.execute("update visibility set public = 0 where user = 'ana'", [],)
+                .is_err(),
+            "an old default is always public"
+        );
+        choose_visibility(conn, "ana", true).unwrap();
+        assert_eq!(app.visibility(conn, "ana").unwrap(), Visibility::Public);
+        assert!(app.chose_public(conn, "ana").unwrap());
         drop(store);
         cleanup(app, path);
     }
@@ -1266,8 +1405,8 @@ mod tests {
                 "other groups' boards stay private"
             );
             assert!(
-                app.visible(conn, &outsider, "ana").unwrap(),
-                "a profile nobody made private is public"
+                !app.visible(conn, &outsider, "ana").unwrap(),
+                "a profile nobody made public is private"
             );
             assert!(!app.visible_by_choice(conn, &outsider, "ana").unwrap());
             assert!(app.visible_by_choice(conn, &viewer, "ana").unwrap());
@@ -1565,7 +1704,7 @@ mod tests {
     async fn strangers_stay_off_each_others_boards_profiles_and_lists() {
         let (app, path) = fixture();
         let ana = sign_up(&app, "ana").await;
-        let bo = sign_up(&app, "bobby").await;
+        let bo = sign_up_public(&app, "bobby").await;
         study(&app, "ana", &ana).await;
         study(&app, "bobby", &bo).await;
         study(&app, "alice", "alice-token").await;
@@ -1582,7 +1721,7 @@ mod tests {
         assert_eq!(
             users(&board),
             ["alice", "ana", "bobby"],
-            "profiles start public"
+            "bobby chose a public profile at sign-up; ana sees herself"
         );
         let (status, _) = call(
             &app,
@@ -1728,9 +1867,10 @@ mod tests {
     /// Ana owns "Spanish club"; Bobby and Cyril have accounts and have studied.
     async fn club() -> (Arc<App>, PathBuf, String, String, String, i64) {
         let (app, path) = fixture();
-        let ana = sign_up(&app, "ana").await;
-        let bo = sign_up(&app, "bobby").await;
-        let cy = sign_up(&app, "cyril").await;
+        // Public profiles, so the owner can invite the others by name.
+        let ana = sign_up_public(&app, "ana").await;
+        let bo = sign_up_public(&app, "bobby").await;
+        let cy = sign_up_public(&app, "cyril").await;
         for user in ["ana", "bobby", "cyril"] {
             with_reviews(&app, user, 1);
         }

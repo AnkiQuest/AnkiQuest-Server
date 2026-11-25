@@ -181,15 +181,27 @@ pub(crate) async fn call(
 }
 
 /// Signs `user` up as an account, from an address of their own so sign-up limits stay out of
-/// the way, and returns their token. Needs `"registration": true`.
+/// the way, and returns their token. The player does not answer "Public profile", so the
+/// profile is private. Needs `"registration": true`.
 pub(crate) async fn sign_up(app: &Arc<App>, user: &str) -> String {
+    sign_up_with(app, user, serde_json::json!({})).await
+}
+
+/// [`sign_up`] for a player who ticked "Public profile".
+pub(crate) async fn sign_up_public(app: &Arc<App>, user: &str) -> String {
+    sign_up_with(app, user, serde_json::json!({"public": true})).await
+}
+
+async fn sign_up_with(app: &Arc<App>, user: &str, extra: serde_json::Value) -> String {
+    let mut body = serde_json::json!({"user": user, "password": "long enough pw"});
+    body.as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
     let request = axum::http::Request::builder()
         .method("POST")
         .uri("/api/accounts")
         .header("content-type", "application/json")
-        .body(axum::body::Body::from(
-            serde_json::json!({"user": user, "password": "long enough pw"}).to_string(),
-        ))
+        .body(axum::body::Body::from(body.to_string()))
         .unwrap();
     let peer = format!("192.0.2.{}:40000", user.len());
     let (_, body) = json_response(route_from(app, request, &peer).await).await;
