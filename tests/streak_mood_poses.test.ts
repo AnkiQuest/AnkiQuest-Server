@@ -85,3 +85,32 @@ test("the stage cases follow the stage starts", () => {
     assert.equal(stage, expected, `${time} ms of ${minutes} minutes`);
   }
 });
+
+type Away = {
+  away_levels: {mood: string; from_days: number}[];
+  away_run: {name: string; heatmap: {state: string}[] | null; expected: number}[];
+};
+
+const NONE = "none";
+
+test("the away levels rise and show the neglected poses", () => {
+  // neglected, abandoned and dead are levels of one mood family: each later level starts later
+  // and every one ends at the neglected core pose.
+  const {away_levels: levels} = read<Away>("streak_moods.json");
+  const shows = new Map(moods.moods.map(({expected}) => [expected.mood, expected.pose]));
+  for (const [index, level] of levels.entries()) {
+    assert.ok(index === 0 || level.from_days > levels[index - 1].from_days, level.mood);
+    assert.equal(core(shows.get(level.mood) ?? ""), "neglected", level.mood);
+  }
+});
+
+test("the away run counts days without reviews after the last study day", () => {
+  // Today's own cell is not before today; a run that reaches the start of the heatmap has no
+  // study day before it, so it is a new player, not one away.
+  for (const {name, heatmap, expected} of read<Away>("streak_moods.json").away_run) {
+    const before = (heatmap ?? []).slice(0, -1);
+    const last = before.findLastIndex((day) => day.state !== NONE);
+    const away = last < 0 ? 0 : before.length - 1 - last;
+    assert.equal(away, expected, name);
+  }
+});
