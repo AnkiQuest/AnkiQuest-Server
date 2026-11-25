@@ -1,0 +1,14 @@
+{
+  "friends": {
+    "friend": {
+      "credit": "Cerro",
+      "id": "mochi",
+      "licence": "CC-BY-4.0",
+      "name": "Mochi",
+      "notice": null,
+      "sha256": "example-pack-1",
+      "size": 636,
+      "version": 1
+    }
+  }
+}

@@ -43,6 +43,7 @@ mod migrations;
 mod notifications;
 mod oauth;
 mod observations;
+mod packs;
 mod privacy;
 mod reciprocity;
 mod reminders;
@@ -255,6 +256,7 @@ fn router(app: Arc<App>) -> Router {
     Router::new()
         .merge(aki::routes())
         .merge(avatars::routes())
+        .merge(packs::routes())
         .merge(friend_nudges::routes())
         .merge(shares::routes())
         .merge(wins::routes())

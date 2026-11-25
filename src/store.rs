@@ -166,6 +166,7 @@ impl Store {
         crate::oauth::initialize(&conn)?;
         crate::social::initialize(&conn)?;
         crate::avatars::initialize(&conn)?;
+        crate::packs::initialize(&conn)?;
         crate::conquests::initialize(&conn)?;
         crate::i18n::initialize(&conn)?;
         crate::companions::initialize(&conn)?;

@@ -8,7 +8,7 @@ Regenerate after an intended change and commit the result:
 UPDATE_API_EXAMPLES=1 cargo test api_examples
 ```
 
-Random values are replaced, numbered in order of appearance: device tokens by `example-token-N`, win link tokens by `example-link-N`, device ids by `example-device-N`, group invite codes by `example-invite-N`, app sign-in tickets by `example-ticket-N`, two-factor secrets by `example-secret-N`, recovery codes by `example-recovery-N`.
+Random values are replaced, numbered in order of appearance: device tokens by `example-token-N`, win link tokens by `example-link-N`, device ids by `example-device-N`, group invite codes by `example-invite-N`, app sign-in tickets by `example-ticket-N`, two-factor secrets by `example-secret-N`, recovery codes by `example-recovery-N`, companion pack hashes by `example-pack-N`.
 
 | file | request |
 |---|---|
@@ -41,6 +41,10 @@ Random values are replaced, numbered in order of appearance: device tokens by `e
 | `wins.json` | `GET /api/wins/{user}` |
 | `decks.json` | `GET /api/decks/{user}` |
 | `companion.json` | `GET /api/companion/{user}` |
+| `pack_upload.json` | `POST /api/packs/{user}` with a companion pack zip (`docs/companion-packs.md`); the hash is `example-pack-1` |
+| `pack_visibility.json` | `PUT /api/packs/{user}/{sha256}` `{"visibility": "friends"}` |
+| `packs.json` | `GET /api/packs/{user}`: the player's packs, bytes used and the limits |
+| `packs_friends.json` | `GET /api/packs/{user}/friends` for a friend of that player |
 | `settings.json` | `GET /api/settings/{user}` |
 | `settings_save.json` | `PUT /api/settings/{user}`, with a key the server does not know and keeps |
 | `settings_countdowns.json` | `PUT /api/settings/{user}` with a `countdowns` list: an exam with a deck and an event without |

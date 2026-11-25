@@ -126,7 +126,7 @@ All need a token or session of `{user}`.
 | `PUT /api/packs/{user}/{sha256}` `{"visibility": "friends" \| "owner"}` | the pack; `404` when the player has no such pack |
 | `DELETE /api/packs/{user}/{sha256}` | `204`; `404` when the player has no such pack |
 | `GET /api/packs/{user}/friends` | `{"friends": {"<friend>": <pack without visibility and uploaded_at>}}`: each friend's pack visible to friends, leaving out packs this player reported |
-| `GET /api/packs/{user}/file/{sha256}` | the canonical zip, `application/zip`, `ETag` the hash, `Cache-Control: private, max-age=31536000, immutable`; `404` unless the player owns a pack with this hash or a friend shows it, and it is not removed |
+| `GET /api/packs/{user}/file/{sha256}` | the canonical zip, `application/zip`, `ETag` the hash (`304` for `If-None-Match`); like every data answer it is `no-store`, and clients keep packs by hash themselves; `404` unless the player owns a pack with this hash or a friend shows it, and it is not removed |
 | `POST /api/packs/{user}/reports/{sha256}` `{"reason": "offensive" \| "copyright" \| "other"}` | `204`; the pack is hidden for this player at once and the report is logged for administrators. `404` unless a friend shows it. Reporting twice keeps the first report |
 | `DELETE /api/packs/{user}/reports/{sha256}` | `204`; withdraws the report and shows the pack again |
 

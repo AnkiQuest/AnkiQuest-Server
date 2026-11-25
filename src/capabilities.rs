@@ -18,6 +18,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "app_sign_in",
     crate::companions::ART_FEATURE,
     "companion_milestones",
+    crate::packs::FEATURE,
     "companion_unlocks",
     "cookie_session",
     "countdowns",

@@ -33,6 +33,12 @@ pub(crate) const TABLE: &str = "create table if not exists companion_preferences
          'quest_chan_chibi', 'leech_kun'))
 ) without rowid;";
 
+/// Whether `id` names one of AnkiQuest's own companions, planned ones and `none` included:
+/// an uploaded pack may not use it (`docs/companion-packs.md`).
+pub(crate) fn official(id: &str) -> bool {
+    FREE.contains(&id) || Unlock::parse(id).is_some()
+}
+
 /// Whether a player may save `value`: a free companion or a live unlock.
 pub fn valid(value: &str) -> bool {
     FREE.contains(&value) || Unlock::parse(value).is_some_and(Unlock::live)
