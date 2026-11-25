@@ -127,6 +127,11 @@ fn poses() -> &'static ankiquest_art::Poses {
     })
 }
 
+/// The first pose with art in the fixture's fallback chain, or happy.
+fn card_pose(pose: &str, has: impl Fn(&str) -> bool) -> &str {
+    poses().resolve(pose_of(pose), has).unwrap_or(HAPPY)
+}
+
 /// The art for `pose` of `companion`. `pose` is a name wins store (`celebrate`, [`STORED`]) or
 /// a pose from the fixture (`happy`). A companion without that pose shows
 /// its fallback from the fixture, else its happy pose; one without art shows none.
@@ -141,11 +146,7 @@ pub(crate) fn art(companion: &str, pose: &str) -> Option<Art> {
             .position(|(who, known, _)| *who == owner && *known == pose)
     };
 
-    // Walk the fixture's fallbacks to a pose this companion has.
-    let pose = pose_of(pose);
-    let found = poses()
-        .resolve(pose, |pose| file(pose).is_some())
-        .unwrap_or(HAPPY);
+    let found = card_pose(pose, |pose| file(pose).is_some());
     let look = if companion == crate::companions::COW {
         Look::Cow
     } else {
@@ -1529,6 +1530,25 @@ mod tests {
     fn staged_art_manifest() -> ankiquest_art::Manifest {
         let masters = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(ankiquest_art::MASTERS);
         ankiquest_art::Manifest::read(&masters).unwrap()
+    }
+
+    #[test]
+    fn cards_fall_back_through_the_fixture() {
+        // Use a synthetic set of poses so new art cannot hide a broken fallback.
+        let with = |drawn: &'static [&'static str]| move |pose: &str| drawn.contains(&pose);
+        assert_eq!(card_pose("streak", with(&["streak", "hopeful"])), "streak");
+        assert_eq!(card_pose("streak", with(&["happy", "hopeful"])), "hopeful");
+        assert_eq!(
+            card_pose("streak_hot", with(&["happy", "streak"])),
+            "streak"
+        );
+        assert_eq!(card_pose("winner", with(&["happy", "hopeful"])), "happy");
+        assert_eq!(card_pose("freeze", with(&["freeze", "frozen"])), "freeze");
+        assert_eq!(card_pose("freeze", with(&["happy", "frozen"])), "frozen");
+        assert_eq!(card_pose("celebrate", with(&["happy", "hopeful"])), "happy");
+        assert_eq!(card_pose("celebrate", with(&["hopeful"])), "hopeful");
+        assert_eq!(card_pose("missing", with(&["streak", "happy"])), "happy");
+        assert_eq!(card_pose("frozen", with(&[])), "happy");
     }
 
     #[test]
