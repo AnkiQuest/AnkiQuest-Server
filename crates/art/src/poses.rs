@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn the_core_set_lists_pictures_and_icons() {
-        // hill, 2026-11-21: the core set is the core moods, the moment and
+        // The core set is the core moods, the moment and
         // share-card pictures and the launcher icon moods.
         let poses = fixture();
         assert!(poses.has_core_set());
