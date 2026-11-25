@@ -1,9 +1,9 @@
-# Shared UI package: design note
+# Shared UI package
 
-Status: proposal, nothing implemented. It asks whether the heatmap, moment and share cards,
-companion view and stats should be one TypeScript package used by the server's web pages, the
-desktop add-on's web views and Android WebViews, the way `crates/rules` shares the rules
-(`docs/shared-rules.md`).
+Status: the plan, not implemented yet. The heatmap, stats, moment cards and companion view become
+one TypeScript package used by the server's web pages and the desktop add-on's web views, the way
+`crates/rules` shares the rules (`docs/shared-rules.md`). The Android app stays native: it shares
+the rules, the fixtures and the design tokens, not the views.
 
 ## What each client has today
 
@@ -25,7 +25,7 @@ Only two of the three clients draw in a browser engine. The add-on's deck list a
 Qt WebEngine pages, but its windows are Qt widgets. The Android app has no WebView in its AnkiQuest
 code, and its widgets and notifications cannot host one.
 
-## What would move
+## What moves
 
 A package `ui/` in AnkiQuest-Server (`@ankiquest/ui`, private), next to `web/`:
 
@@ -76,9 +76,9 @@ which is a separate question.
 | Reach | activities only: not widgets, notifications or the share sheet | everywhere |
 | Tests | WebView tests need an emulator | Robolectric and screenshot tests already exist |
 
-The recommendation is that Android stays native and shares the rules (`crates/rules` through
-UniFFI), the fixtures and the design tokens, not the views. A WebView would cover only some screens,
-so the Kotlin views would stay for the rest.
+Android stays native and shares the rules (`crates/rules` through UniFFI), the fixtures and the
+design tokens, not the views. A WebView would cover only some screens, so the Kotlin views would
+stay for the rest.
 
 ## Costs and risks
 
@@ -87,16 +87,16 @@ so the Kotlin views would stay for the rest.
   need a reset under their scope class and a layout test in Anki's WebEngine.
 - **Engine age**: the bundle is held to Anki 23.10's Chromium until the add-on drops it (Anki 24.11
   is proposed in AnkiQuest/AnkiQuest-Desktop#381).
-- **Three screenshot suites** (server Playwright, add-on WebEngine, Android) would change together
-  on every visual change of a shared component.
+- **Two screenshot suites** (server Playwright, add-on WebEngine) change together on every visual
+  change of a shared component; Android's change only with the design tokens.
 - **Coupling**: a component change reaches the add-on only through a release and a pin update, as
   rules and art do. The server's own pages always use `master`.
 - **Moving the add-on's HTML out of Python** changes how its pages are built and tested: data stays
   in Python, layout moves to TypeScript. `board.py` and `heatmap_ui.py` are about 1,000 lines.
-- **Parity rule**: the website would change look where it adopts the clients' heatmap and cards
+- **Parity rule**: the website changes look where it adopts the clients' heatmap and cards
   (the level rule above, the forecast).
 
-## Order, if accepted
+## Order
 
 1. Design tokens: one JSON and CSS file; the server's pages and the add-on read them, Android reads
    the JSON in a Gradle task.
