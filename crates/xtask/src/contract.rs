@@ -1,4 +1,6 @@
-//! Rejects removal or type changes in API examples consumed by Android (#230).
+//! Rejects removal or type changes in API examples consumed by Android (#230):
+//! compares this commit's examples with the base commit's, for the names
+//! Android's `names.json` lists as consumed.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -13,9 +15,6 @@ const CONSUMED: [&str; 3] = ["consumed", "boards", "challenges"];
 /// Where the server keeps its examples, relative to the repository root.
 const SERVER_EXAMPLES: &str = "docs/api/examples";
 
-/// Length of a full hexadecimal git commit SHA.
-const SHA_LEN: usize = 40;
-
 /// A key path; `None` stands for any array element.
 type KeyPath = Vec<Option<String>>;
 
@@ -25,7 +24,8 @@ type Shape = BTreeMap<KeyPath, BTreeSet<&'static str>>;
 /// Parsed command-line flags.
 struct Args {
     server: PathBuf,
-    resources: PathBuf,
+    baseline: PathBuf,
+    catalog: PathBuf,
 }
 
 /// Runs the guard and reports the result as CI expects.
@@ -38,8 +38,8 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
 
-    // A missing or broken catalog, pin or file fails the job.
-    let errors = match check(&args.server, &args.resources) {
+    // A missing or broken catalog or file fails the job.
+    let errors = match check(&args.server, &args.baseline, &args.catalog) {
         Ok(errors) => errors,
         Err(error) => {
             eprintln!("Android API compatibility check failed: {error}");
@@ -59,21 +59,28 @@ pub fn run(args: &[String]) -> ExitCode {
     ExitCode::FAILURE
 }
 
-/// Reads `--android-resources` (required) and `--server-examples`.
+/// Reads `--android-catalog` and `--baseline` (required) and `--server-examples`.
 fn parse(args: &[String]) -> Result<Args, String> {
     let mut server = PathBuf::from(SERVER_EXAMPLES);
-    let mut resources = None;
+    let mut baseline = None;
+    let mut catalog = None;
     let mut iter = args.iter();
     while let Some(flag) = iter.next() {
         let value = iter.next().ok_or(format!("{flag} needs a value"))?;
         match flag.as_str() {
-            "--android-resources" => resources = Some(PathBuf::from(value)),
+            "--android-catalog" => catalog = Some(PathBuf::from(value)),
+            "--baseline" => baseline = Some(PathBuf::from(value)),
             "--server-examples" => server = PathBuf::from(value),
             _ => return Err(format!("unknown argument {flag}")),
         }
     }
-    let resources = resources.ok_or("--android-resources is required")?;
-    Ok(Args { server, resources })
+    let catalog = catalog.ok_or("--android-catalog is required")?;
+    let baseline = baseline.ok_or("--baseline is required")?;
+    Ok(Args {
+        server,
+        baseline,
+        catalog,
+    })
 }
 
 /// The JSON type name of a value.
@@ -207,20 +214,11 @@ fn names(file: &Path) -> Result<BTreeSet<String>, String> {
     Ok(result)
 }
 
-/// Whether the pin is a full lowercase commit SHA.
-fn valid_pin(pin: &str) -> bool {
-    pin.len() == SHA_LEN
-        && pin
-            .chars()
-            .all(|c| c.is_ascii_digit() || matches!(c, 'a'..='f'))
-}
-
-/// Compares one consumed example with the server's copy.
+/// Compares one consumed example with the base commit's.
 fn compare(name: &str, old: &Path, new: &Path) -> Result<Vec<String>, String> {
+    // An example the base commit lacks is new: there is no shape to keep.
     if !old.is_file() {
-        return Ok(vec![format!(
-            "Android consumes {name} but its vendored example is missing"
-        )]);
+        return Ok(Vec::new());
     }
     if !new.is_file() {
         return Ok(vec![format!("Consumed example {name}.json was removed")]);
@@ -233,22 +231,12 @@ fn compare(name: &str, old: &Path, new: &Path) -> Result<Vec<String>, String> {
 }
 
 /// All incompatibilities; a missing catalog is an error.
-fn check(server: &Path, resources: &Path) -> Result<Vec<String>, String> {
-    let examples = resources.join("ankiquest-api");
-    let catalog = examples.join("names.json");
-
-    // The pin proves which server commit the vendored data came from.
-    let pin_file = resources.join("ankiquest-server.sha");
-    let pin = fs::read_to_string(&pin_file).map_err(|e| format!("{}: {e}", pin_file.display()))?;
-    if !valid_pin(pin.trim()) {
-        return Err("Android's ankiquest-server.sha must contain a full commit SHA".to_owned());
-    }
-
-    // Compare every consumed example with the server's current one.
+fn check(server: &Path, baseline: &Path, catalog: &Path) -> Result<Vec<String>, String> {
+    // Compare every consumed example of the base commit with this commit's.
     let mut errors = Vec::new();
-    for name in names(&catalog)? {
+    for name in names(catalog)? {
         let file = format!("{name}.json");
-        errors.extend(compare(&name, &examples.join(&file), &server.join(&file))?);
+        errors.extend(compare(&name, &baseline.join(&file), &server.join(&file))?);
     }
     Ok(errors)
 }
@@ -259,38 +247,37 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    /// A server examples folder and an Android resources folder.
+    /// This commit's examples, the base commit's and Android's catalog.
     struct Fixture {
-        _root: TempDir,
+        root: TempDir,
         server: PathBuf,
-        android: PathBuf,
+        baseline: PathBuf,
     }
 
     impl Fixture {
         fn new() -> Self {
             let root = TempDir::new().unwrap();
             let server = root.path().join("server");
-            let android = root.path().join("android");
+            let baseline = root.path().join("baseline");
             fs::create_dir(&server).unwrap();
-            fs::create_dir_all(android.join("ankiquest-api")).unwrap();
-            fs::write(android.join("ankiquest-server.sha"), "a".repeat(40) + "\n").unwrap();
+            fs::create_dir(&baseline).unwrap();
             Self {
-                _root: root,
+                root,
                 server,
-                android,
+                baseline,
             }
         }
 
-        fn api(&self) -> PathBuf {
-            self.android.join("ankiquest-api")
-        }
-
         fn catalog(&self, groups: Value) {
-            write(&self.api(), "names", &groups);
+            write(self.root.path(), "names", &groups);
         }
 
         fn check(&self) -> Result<Vec<String>, String> {
-            check(&self.server, &self.android)
+            check(
+                &self.server,
+                &self.baseline,
+                &self.root.path().join("names.json"),
+            )
         }
     }
 
@@ -359,7 +346,7 @@ mod tests {
             "not_yet": ["future"]
         }));
         for name in ["profile", "leaderboard", "challenges"] {
-            write(&fixture.api(), name, &json!({"id": 1}));
+            write(&fixture.baseline, name, &json!({"id": 1}));
             write(&fixture.server, name, &json!({"id": 2, "new": true}));
         }
         write(&fixture.server, "new_endpoint", &json!({"anything": []}));
@@ -371,18 +358,14 @@ mod tests {
     }
 
     #[test]
-    fn missing_or_invalid_cannot_pass() {
+    fn new_examples_and_invalid_names() {
         let fixture = Fixture::new();
         fixture.catalog(json!({"consumed": ["profile"]}));
-        let errors = fixture.check().unwrap();
-        assert!(errors[0].contains("vendored example is missing"));
+        write(&fixture.server, "profile", &json!({"id": 1}));
+        assert_eq!(Ok(Vec::new()), fixture.check());
 
         fixture.catalog(json!({"consumed": ["../secret"]}));
         assert!(fixture.check().unwrap_err().contains("invalid"));
-
-        fixture.catalog(json!({"consumed": []}));
-        fs::write(fixture.android.join("ankiquest-server.sha"), "master").unwrap();
-        assert!(fixture.check().unwrap_err().contains("full commit SHA"));
     }
 
     #[test]
@@ -395,10 +378,12 @@ mod tests {
 
     #[test]
     fn flags_are_parsed() {
-        let args = ["--android-resources", "res"].map(String::from);
+        let args = ["--android-catalog", "names.json", "--baseline", "base"].map(String::from);
         let parsed = parse(&args).unwrap();
-        assert_eq!(PathBuf::from("res"), parsed.resources);
+        assert_eq!(PathBuf::from("names.json"), parsed.catalog);
+        assert_eq!(PathBuf::from("base"), parsed.baseline);
         assert_eq!(PathBuf::from(SERVER_EXAMPLES), parsed.server);
         assert!(parse(&[]).is_err());
+        assert!(parse(&args[..2]).is_err());
     }
 }

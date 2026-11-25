@@ -76,20 +76,30 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Test the compatibility guard
         run: cargo test -p ankiquest-xtask contract
+      # Android tests against server master, so the shapes to keep are the
+      # base commit's; `event-base` picks the pull request's, the merge
+      # group's or the push's base. Android's catalog names what it reads.
       - name: Read Android's public consumed-example catalog
         run: |
           git clone --depth 1 --filter=blob:none --sparse --branch master https://github.com/AnkiQuest/AnkiQuest-Android.git android-client
           git -C android-client sparse-checkout set --no-cone \
-            '/AnkiDroid/src/test/resources/ankiquest-api/' '/AnkiDroid/src/test/resources/ankiquest-server.sha' \
-            '/ankiquest-core/src/test/resources/ankiquest-api/' '/ankiquest-core/src/test/resources/ankiquest-server.sha'
+            '/AnkiDroid/src/test/resources/ankiquest-api/names.json' \
+            '/ankiquest-core/src/test/resources/ankiquest-api/names.json'
+      - name: Read the base commit's examples
+        run: |
+          BASE=$(cargo run -q -p ankiquest-xtask -- event-base)
+          git fetch --depth=1 origin "$BASE"
+          mkdir -p "$RUNNER_TEMP/base"
+          git archive "$BASE" docs/api/examples | tar -x -C "$RUNNER_TEMP/base"
       - name: Preserve Android's consumed API shapes
         run: |
-          resources=android-client/AnkiDroid/src/test/resources
-          # Select by the committed module, so a missing catalog or pin still fails the guard.
+          catalog=android-client/AnkiDroid/src/test/resources/ankiquest-api/names.json
+          # Select by the committed module, so a missing catalog still fails the guard.
           if git -C android-client cat-file -e HEAD:ankiquest-core 2>/dev/null; then
-            resources=android-client/ankiquest-core/src/test/resources
+            catalog=android-client/ankiquest-core/src/test/resources/ankiquest-api/names.json
           fi
-          cargo run -p ankiquest-xtask -- android-contract --android-resources "$resources"
+          cargo run -p ankiquest-xtask -- android-contract --android-catalog "$catalog" \
+            --baseline "$RUNNER_TEMP/base/docs/api/examples"
 
   art:
     needs: changes
