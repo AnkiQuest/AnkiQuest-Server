@@ -44,7 +44,7 @@ jobs:
       web: ${{ steps.web.outputs.code }}
     steps:
       - id: code
-        uses: AnkiQuest/AnkiQuest-Dev/.github/actions/code-changed@5ab685e7013b865630f96530ca8c654344738fa8
+        uses: AnkiQuest/AnkiQuest-Dev/.github/actions/code-changed@master
         with:
           docs: |
             **/*.md
@@ -53,7 +53,7 @@ jobs:
             .github/ISSUE_TEMPLATE/**
             .github/pull_request_template.md
       - id: web
-        uses: AnkiQuest/AnkiQuest-Dev/.github/actions/code-changed@5ab685e7013b865630f96530ca8c654344738fa8
+        uses: AnkiQuest/AnkiQuest-Dev/.github/actions/code-changed@master
         with:
           docs: |
             README.md
