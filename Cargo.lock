@@ -66,6 +66,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ankiquest-rules-wasm"
+version = "0.1.0"
+dependencies = [
+ "ankiquest-rules",
+]
+
+[[package]]
 name = "ankiquest-xtask"
 version = "0.1.0"
 dependencies = [

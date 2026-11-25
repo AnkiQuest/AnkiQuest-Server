@@ -10,7 +10,8 @@ crate, the bindings included.
 crates/rules (Rust, in AnkiQuest-Server)
   ├─ server: uses it directly
   ├─ UniFFI → Kotlin + .so per ABI → Android fork and Lite (AAR)
-  └─ UniFFI → Python + native lib per OS → desktop add-on
+  ├─ UniFFI → Python + native lib per OS → desktop add-on, rules Python needs
+  └─ crates/rules-wasm → one .wasm (rules-<N> release) → desktop add-on's web views
 ```
 
 ## What is shared
@@ -27,6 +28,13 @@ Phase 1 is a pilot with one rule: today's day verdict (`tests/fixtures/day_verdi
   `unverified`, `protected`, `short`, `pending`, `unknown`).
 - `meets_minimum(reviews, time_ms, needed_ms)`: whether a day counts toward the streak. Rust only;
   the server uses it for every day it judges.
+
+The first rule in the WebAssembly module is the review heatmap's colour level
+(`intensity_cases` in `tests/fixtures/review_heatmap.json`):
+
+- `heatmap_intensity(count, daily_average) -> u8`: 0 for no reviews, then up to half the reviews
+  per study day, up to the average, up to twice it, and more (4). An average under one counts as
+  one. Exported through UniFFI too.
 
 The crate is pure: no IO, no async, no server code. Its features:
 
@@ -90,5 +98,74 @@ toolchain and four-OS matrix for the same bytes. Artifacts expire after 90 days,
 needs a release (a tag with the artifacts attached) before then; tagging releases is part of
 phase 2. Building from source stays possible, and reproducible, for anyone who wants to check.
 
-Further rules (heatmap, streak moods, card labels, deck names) move into the crate one at a time
-after the pilot, each with its fixture.
+## WebAssembly for web views
+
+`crates/rules-wasm` (`ankiquest-rules-wasm`) builds the crate for `wasm32-unknown-unknown` as one
+module for every operating system and CPU. Like `crates/i18n-wasm` it uses no bindgen: the module
+imports nothing, and a page instantiates it with an empty import object and calls the exports with
+plain numbers. Rules that take or return text will pass UTF-8 through `alloc` and `dealloc`, as
+`crates/i18n-wasm` does.
+
+| Export | Meaning |
+| --- | --- |
+| `abi_version() -> u32` | 1. Changes whenever an export is removed or changes meaning. |
+| `heatmap_intensity(count: u32, daily_average: f64) -> u32` | As above. |
+
+`crates/rules-wasm/build.sh <out>` builds `ankiquest_rules.wasm` and `SHA256SUMS` from a clean
+target directory with the pinned toolchain, the `wasm` profile and no machine paths. The `wasm` job
+of the `Shared rules` workflow builds it twice, fails unless the bytes match, runs the fixture cases
+through it in Node (`crates/rules-wasm/tests/`) and uploads the `ankiquest-rules-wasm` artifact.
+
+### Releases
+
+The `Rules release` workflow (`.github/workflows/rules-release.yml`) runs on `master` pushes that
+touch the crates. When the module's bytes differ from the latest `rules-<N>` release, it publishes
+`rules-<N+1>` with:
+
+- `ankiquest_rules.wasm`
+- `SHA256SUMS`
+- `ankiquest-rules.json`: the pin file a consumer commits at its root, as `ankiquest-art.json` pins
+  an AnkiQuest-Art release: `tag`, `commit` and the SHA-256 of each asset.
+
+A consumer downloads only the assets it needs and checks each against its pin before use. Releases
+never expire, unlike workflow artifacts.
+
+## Which form each client uses
+
+One crate, one set of fixtures, two compiled forms: native libraries through UniFFI, and the
+WebAssembly module.
+
+**Desktop add-on.** Anki's whole interface is Qt WebEngine pages (the deck list, the reviewer), so
+every Anki the add-on supports has a WebAssembly engine; a Python fallback for a missing WebEngine
+is never needed. The deck list is a trusted page whose content security policy only sets
+`frame-ancestors`, so a page can compile a module.
+
+| | WebAssembly in a web view | UniFFI library through `ctypes` |
+| --- | --- | --- |
+| Files to ship | one module, a few hundred bytes so far | one library per OS and CPU; Linux and Windows on arm64 are not built yet |
+| Runs | inside the page, sandboxed; a fault cannot end Anki | in Anki's process |
+| Called from | the page's script, asynchronously | Python, synchronously, any thread |
+| Fits | rules whose result a page draws: heatmap, cards, moods on the Today panel | rules Python acts on: day verdicts for notifications and uploads, deck names in Qt dialogs |
+
+So the add-on uses the module for what its pages draw, starting with the heatmap's colour levels,
+and the UniFFI library where Python needs the answer.
+
+**Android.** The app draws its AnkiQuest views natively, not in a WebView, and its rules run
+outside the UI (widgets, workers, notifications).
+
+| | UniFFI and JNA (JNI) | WebAssembly on the JVM (Chicory) | WebAssembly in a WebView |
+| --- | --- | --- | --- |
+| Bindings | generated Kotlin types | hand-written marshalling | hand-written, plus a JavaScript bridge |
+| Calls | synchronous, native speed | synchronous, interpreted or AOT-compiled | asynchronous, needs a WebView, unavailable to workers and widgets |
+| Size | one `.so` per ABI plus JNA | the runtime jar plus one module | one module |
+| State | built and tested in CI | not tried | not tried |
+
+Android stays on UniFFI: it already builds reproducibly per ABI, the ABI split APKs ship one
+library each, and the generated types keep the Kotlin side free of glue code. Chicory remains the
+fallback if the native libraries or JNA become a size or F-Droid problem; the module would then
+serve Android unchanged.
+
+## Further rules
+
+Streak moods, card labels and deck names move into the crate one at a time, each with its fixture
+and, where a page draws the result, an export in the module.

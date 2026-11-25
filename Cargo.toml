@@ -8,7 +8,7 @@ license = "AGPL-3.0-or-later"
 repository = "https://github.com/AnkiQuest/AnkiQuest-Server"
 
 [workspace]
-members = [".", "crates/art", "crates/i18n", "crates/i18n-wasm", "crates/rules", "crates/xtask"]
+members = [".", "crates/art", "crates/i18n", "crates/i18n-wasm", "crates/rules", "crates/rules-wasm", "crates/xtask"]
 
 [dependencies]
 ankiquest-art = { path = "crates/art" }
