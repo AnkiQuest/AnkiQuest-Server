@@ -1643,8 +1643,9 @@ mod tests {
         assert_eq!(pose(art("aki", "frozen")), Some("frozen"));
         assert_eq!(pose(art("aki", "freeze")), Some("freeze"));
         assert_eq!(pose(art("ankilope", "frozen")), Some("frozen"));
-        // A used freeze is a picture the fixture lists; without one, Ankilope shows frozen.
-        assert_eq!(pose(art("ankilope", "freeze")), Some("frozen"));
+        let manifest = staged_art_manifest();
+        let freeze = poses().resolve("freeze", |pose| manifest.has("ankilope", pose));
+        assert_eq!(pose(art("ankilope", "freeze")), freeze);
     }
 
     #[test]
