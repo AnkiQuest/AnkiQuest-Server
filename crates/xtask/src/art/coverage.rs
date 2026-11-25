@@ -14,7 +14,7 @@
 //! - `--since <fixture>`: fails when an item the given older copy of the
 //!   fixture lacks has no master for some live companion, so a PR that adds
 //!   an item draws it for all of them. Gaps the list already had do not fail
-//!   (hill, 2026-11-21: companions stay live while their core is drawn).
+//!   (companions stay live while their core is drawn).
 //! - `--json`: the matrix for the gallery (AnkiQuest.github.io), described
 //!   in `docs/branding/art-coverage.md`.
 
@@ -894,7 +894,7 @@ mod tests {
 
     #[test]
     fn listing_the_core_set_is_not_an_addition() {
-        // hill, 2026-11-21: listing the pictures and icons the apps already
+        // Listing the pictures and icons the apps already
         // show does not ask for them to be drawn at once; companions stay
         // live meanwhile. A new core mood still needs every master.
         let base = list(&["happy"], &[], "");
