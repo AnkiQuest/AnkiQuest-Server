@@ -1,9 +1,9 @@
 # Publishes the shared rules as a release when a master commit builds bytes
 # the latest release does not have (docs/shared-rules.md). The Shared rules
 # workflow builds and tests everything (each library twice, the fixture
-# cases on every platform); this one names the assets, writes the pin file
-# consumers commit, ankiquest-rules.json, publishes rules-<N> (one more than
-# the highest rules-* tag) and asks AnkiQuest-Sync to update the consumers.
+# cases on every platform); this one names the assets and publishes
+# rules-<N> (one more than the highest rules-* tag) with their SHA256SUMS.
+# Consumers take the newest rules-<N> release when they build.
 name: Rules release
 
 on:
@@ -67,10 +67,10 @@ jobs:
           sha256sum ./* | sed 's| \./| |' | sort -k 2 > "$RUNNER_TEMP/SHA256SUMS"
           cat "$RUNNER_TEMP/SHA256SUMS"
           [ "$(wc -l < "$RUNNER_TEMP/SHA256SUMS")" -eq 7 ]
+          cp "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS
 
       # Releases only new bytes: a change that leaves every asset as it was,
-      # or a rerun, publishes nothing. The pin file's own line differs in
-      # every release, so it is left out of the comparison.
+      # or a rerun, publishes nothing.
       - name: Choose the tag
         id: tag
         env:
@@ -80,27 +80,13 @@ jobs:
             | sed -n 's|.*refs/tags/rules-\([0-9][0-9]*\)$|\1|p' | sort -n | tail -n 1)
           if [ -n "$last" ]; then
             gh release download "rules-$last" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --dir "$RUNNER_TEMP/last"
-            if grep -v ' ankiquest-rules.json$' "$RUNNER_TEMP/last/SHA256SUMS" | sort -k 2 | cmp -s - "$RUNNER_TEMP/SHA256SUMS"; then
+            if sort -k 2 "$RUNNER_TEMP/last/SHA256SUMS" | cmp -s - "$RUNNER_TEMP/SHA256SUMS"; then
               echo "rules-$last has these bytes already"
               echo "tag=" >> "$GITHUB_OUTPUT"
               exit 0
             fi
           fi
           echo "tag=rules-$(( ${last:-0} + 1 ))" >> "$GITHUB_OUTPUT"
-
-      - name: Write the pin file
-        if: steps.tag.outputs.tag != ''
-        env:
-          TAG: ${{ steps.tag.outputs.tag }}
-        working-directory: ${{ runner.temp }}/assets
-        run: |
-          jq -n --arg tag "$TAG" --arg commit "$GITHUB_SHA" --rawfile sums "$RUNNER_TEMP/SHA256SUMS" \
-            '{_about: "The AnkiQuest-Server rules release this repository uses (docs/shared-rules.md in AnkiQuest-Server). AnkiQuest-Sync updates it when a rules release is published; do not edit it by hand.",
-              tag: $tag, commit: $commit,
-              assets: ($sums | split("\n") | map(select(. != "") | split("  ") | {key: .[1], value: .[0]}) | from_entries)}' \
-            > ankiquest-rules.json
-          cat ankiquest-rules.json
-          { cat "$RUNNER_TEMP/SHA256SUMS"; sha256sum ankiquest-rules.json; } > SHA256SUMS
 
       - name: Publish
         if: steps.tag.outputs.tag != ''
@@ -121,12 +107,3 @@ jobs:
           } > "$RUNNER_TEMP/notes.md"
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --latest=false ./*
-
-      - name: Ask AnkiQuest-Sync to update the consumers
-        if: steps.tag.outputs.tag != ''
-        env:
-          GH_TOKEN: ${{ secrets.FORK_SYNC_TOKEN }}
-          TAG: ${{ steps.tag.outputs.tag }}
-        run: |
-          gh api repos/AnkiQuest/AnkiQuest-Sync/dispatches \
-            -f event_type=rules-released -f "client_payload[tag]=$TAG"

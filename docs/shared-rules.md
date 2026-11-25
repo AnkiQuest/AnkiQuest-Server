@@ -88,15 +88,15 @@ Each client replaces its day-verdict code with the bindings and keeps running
 - **Android fork**: add the jniLibs and Kotlin sources, JNA, and swap the Kotlin rule for
   `todayVerdict`. Measure the APK size per ABI before and after.
 - **Lite `:ankiquest-core`** (AnkiQuest-Android#421): the same, inside the module.
-- **Desktop add-on**: ship the five desktop libraries and `ankiquest_rules.py` from the pinned rules
+- **Desktop add-on**: ship the five desktop libraries and `ankiquest_rules.py` from the newest rules
   release, load the one for the running platform, and swap the Python rule. Measure on Anki 24.11
   and the newest Anki on Linux (x86_64 and aarch64), Windows and macOS (arm64 and x86_64), and the
   AnkiWeb package size before and after.
 
-Clients take the bytes from a `rules-<N>` release (below), pinned by SHA-256, not from workflow
+Clients take the bytes from the newest `rules-<N>` release (below), checked by SHA-256, not from workflow
 artifacts, which expire after 90 days; building from source in every client CI would repeat the
 toolchain and platform matrix for the same bytes. Building from source stays possible, and
-reproducible, for anyone who wants to check. The Android libraries are not released yet.
+reproducible, for anyone who wants to check. The Android app does not use the crate today, and its libraries are not released.
 
 ## WebAssembly for web views
 
@@ -129,13 +129,13 @@ any asset's bytes differ from the latest `rules-<N>` release it publishes `rules
   `libankiquest_rules-macos-x86_64.dylib`: the desktop libraries, named after their platform. Next
   to `ankiquest_rules.py` a library must carry its plain name (`libankiquest_rules.so`,
   `ankiquest_rules.dll`, `libankiquest_rules.dylib`), which is what the bindings load.
-- `ankiquest-rules.json`: the pin file a consumer commits at its root, as `ankiquest-art.json` pins
-  an AnkiQuest-Art release: `tag`, `commit` and the SHA-256 of each asset.
-- `SHA256SUMS`: every asset, the pin file included.
+- `SHA256SUMS`: every asset.
 
-It then sends AnkiQuest-Sync a `rules-released` dispatch; Sync's `rules` job opens a
-"chore: use rules-<N>" pull request in every consumer whose pin differs. A consumer downloads only
-the assets it needs and checks each against its pin before use.
+Clients use server `master`, not a pinned commit, so they take the newest `rules-<N>` release when
+they build or package: they list the releases, take the highest N, download the assets they need,
+check each against that release's `SHA256SUMS`, and record the tag in what they build, so a build
+can be traced and rebuilt from the same release. A client that needs reproducible builds from its
+own source alone (an F-Droid build, say) would pin a release instead; none does today.
 
 ## Which form each client uses
 
