@@ -51,7 +51,8 @@ The `Shared rules` workflow (`.github/workflows/rules.yml`) builds, on every pul
 | --- | --- |
 | `ankiquest-rules-bindings` | `kotlin/org/ankiquest/rules/ankiquest_rules.kt`, `python/ankiquest_rules.py` |
 | `ankiquest-rules-android` | `jniLibs/<abi>/libankiquest_rules.so` for arm64-v8a, armeabi-v7a, x86 and x86_64 (API 24, NDK r28c, 16 KB pages), the Kotlin sources, `SHA256SUMS` |
-| `ankiquest-rules-<os>-<arch>` | the library for linux-x86_64, windows-x86_64, macos-arm64 or macos-x86_64, `ankiquest_rules.py`, `SHA256SUMS` |
+| `ankiquest-rules-<os>-<arch>` | the library for linux-x86_64, linux-aarch64, windows-x86_64, macos-arm64 or macos-x86_64, `ankiquest_rules.py`, `SHA256SUMS` |
+| `ankiquest-rules-wasm` | `ankiquest_rules.wasm`, `SHA256SUMS` |
 
 The Kotlin bindings need JNA (`net.java.dev.jna:jna:<version>@aar` on Android). The Python module
 loads the library next to it with `ctypes`; it is not a compiled extension, so one library works
@@ -87,16 +88,15 @@ Each client replaces its day-verdict code with the bindings and keeps running
 - **Android fork**: add the jniLibs and Kotlin sources, JNA, and swap the Kotlin rule for
   `todayVerdict`. Measure the APK size per ABI before and after.
 - **Lite `:ankiquest-core`** (AnkiQuest-Android#421): the same, inside the module.
-- **Desktop add-on**: ship the four libraries and `ankiquest_rules.py` in the package, load the one
-  for the running OS, and swap the Python rule. Measure on Anki 24.11 and the newest Anki on Linux,
-  Windows and macOS (arm64 and x86_64), and the AnkiWeb package size before and after.
+- **Desktop add-on**: ship the five desktop libraries and `ankiquest_rules.py` from the pinned rules
+  release, load the one for the running platform, and swap the Python rule. Measure on Anki 24.11
+  and the newest Anki on Linux (x86_64 and aarch64), Windows and macOS (arm64 and x86_64), and the
+  AnkiWeb package size before and after.
 
-Each client already pins a server commit (`ankiquest-server.sha` on Android). The client's CI
-downloads the artifacts of the `Shared rules` run for that commit on `master` and checks them
-against `SHA256SUMS`; building from source with cargo-ndk in every client CI would repeat the NDK,
-toolchain and four-OS matrix for the same bytes. Artifacts expire after 90 days, so a pinned commit
-needs a release (a tag with the artifacts attached) before then; tagging releases is part of
-phase 2. Building from source stays possible, and reproducible, for anyone who wants to check.
+Clients take the bytes from a `rules-<N>` release (below), pinned by SHA-256, not from workflow
+artifacts, which expire after 90 days; building from source in every client CI would repeat the
+toolchain and platform matrix for the same bytes. Building from source stays possible, and
+reproducible, for anyone who wants to check. The Android libraries are not released yet.
 
 ## WebAssembly for web views
 
@@ -119,16 +119,23 @@ through it in Node (`crates/rules-wasm/tests/`) and uploads the `ankiquest-rules
 ### Releases
 
 The `Rules release` workflow (`.github/workflows/rules-release.yml`) runs on `master` pushes that
-touch the crates. When the module's bytes differ from the latest `rules-<N>` release, it publishes
-`rules-<N+1>` with:
+touch the crates. It calls the `Shared rules` workflow, which builds and tests every form, and when
+any asset's bytes differ from the latest `rules-<N>` release it publishes `rules-<N+1>` with:
 
-- `ankiquest_rules.wasm`
-- `SHA256SUMS`
+- `ankiquest_rules.wasm`: the module.
+- `ankiquest_rules.py`: the Python bindings.
+- `libankiquest_rules-linux-x86_64.so`, `libankiquest_rules-linux-aarch64.so`,
+  `ankiquest_rules-windows-x86_64.dll`, `libankiquest_rules-macos-arm64.dylib`,
+  `libankiquest_rules-macos-x86_64.dylib`: the desktop libraries, named after their platform. Next
+  to `ankiquest_rules.py` a library must carry its plain name (`libankiquest_rules.so`,
+  `ankiquest_rules.dll`, `libankiquest_rules.dylib`), which is what the bindings load.
 - `ankiquest-rules.json`: the pin file a consumer commits at its root, as `ankiquest-art.json` pins
   an AnkiQuest-Art release: `tag`, `commit` and the SHA-256 of each asset.
+- `SHA256SUMS`: every asset, the pin file included.
 
-A consumer downloads only the assets it needs and checks each against its pin before use. Releases
-never expire, unlike workflow artifacts.
+It then sends AnkiQuest-Sync a `rules-released` dispatch; Sync's `rules` job opens a
+"chore: use rules-<N>" pull request in every consumer whose pin differs. A consumer downloads only
+the assets it needs and checks each against its pin before use.
 
 ## Which form each client uses
 
@@ -142,13 +149,14 @@ is never needed. The deck list is a trusted page whose content security policy o
 
 | | WebAssembly in a web view | UniFFI library through `ctypes` |
 | --- | --- | --- |
-| Files to ship | one module, a few hundred bytes so far | one library per OS and CPU; Linux and Windows on arm64 are not built yet |
+| Files to ship | one module, a few hundred bytes so far | one library per OS and CPU; Windows on arm64 is not built |
 | Runs | inside the page, sandboxed; a fault cannot end Anki | in Anki's process |
 | Called from | the page's script, asynchronously | Python, synchronously, any thread |
 | Fits | rules whose result a page draws: heatmap, cards, moods on the Today panel | rules Python acts on: day verdicts for notifications and uploads, deck names in Qt dialogs |
 
 So the add-on uses the module for what its pages draw, starting with the heatmap's colour levels,
-and the UniFFI library where Python needs the answer.
+and the UniFFI libraries, shipped in the add-on for the platforms Anki 24.11 and newer run on, for
+rules Python needs synchronously: day verdicts, and deck names in Qt dialogs.
 
 **Android.** The app draws its AnkiQuest views natively, not in a WebView, and its rules run
 outside the UI (widgets, workers, notifications).
