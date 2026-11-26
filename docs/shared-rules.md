@@ -36,13 +36,18 @@ copy (`AnkiquestOptimizeReminder.kt`, `addon/optimize_reminder.py`), tested agai
 - `preset_scheduler(flags: PresetFlags) -> PresetScheduler` (`sm2`, `fsrs`, `rwkv_curve`,
   `rwkv_instant`): a preset's scheduler from `fsrs`, `rwkvReviewEnabled` and
   `rwkvReviewInstantOrderEnabled`.
-- `answers_start_ms(today, day_cutoff, last_optimized_day)` and `is_answer(revlog_type, ease)`:
-  which revlog entries count as answers since the last optimization.
+- `optimized_at_ms(today, day_cutoff, last_optimized_day) -> Option<i64>`: when Optimize All
+  Presets last ran, in epoch milliseconds: the end of the collection day `lastFsrsOptimize`, with
+  that collection's day boundaries.
+- `is_answer(revlog_type, ease)`: which revlog entries count as answers; those with ids from
+  `optimized_at_ms` are the answers since the last optimization.
 - `optimize_verdict(inputs: OptimizeInputs, state: OptimizeState) -> OptimizeVerdict`: `Off`,
   `NoFsrs`, `Snoozed`, `Dismissed`, `TooSoon`, `TooFewReviews` or `Remind { since, wording }`.
-- `optimize_next(state, event, today, last_optimized_day) -> OptimizeState`: the state after
-  snooze, dismiss, turn off or turn on. `OptimizeState` is `On`, `Off`, `Snoozed { until_day }` or
-  `Dismissed { optimized_day }`, in the setting's JSON with the `serde` feature.
+  `OptimizeInputs` holds `now_ms` and `last_optimized_ms`.
+- `optimize_next(state, event, now_ms, last_optimized_ms) -> OptimizeState`: the state after
+  snooze, dismiss, turn off or turn on. `OptimizeState` is `On`, `Off`, `Snoozed { until_ms }` or
+  `Dismissed { optimized_ms }`, in the setting's JSON with the `serde` feature. Times are epoch
+  milliseconds, so the synced state means the same on every device.
 
 The crate is pure: no IO, no async, no server code. Its features:
 

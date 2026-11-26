@@ -27,7 +27,7 @@
       "updated_at": 1793183340000,
       "value": {
         "kind": "snoozed",
-        "until_day": 437
+        "until_ms": 1793788140000
       }
     },
     "streak_warning_hours": {

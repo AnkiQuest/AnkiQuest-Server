@@ -2,9 +2,9 @@
 //! the `optimize_reminder` row of `tests/fixtures/synced_settings.json`.
 
 use ankiquest_rules::{
-    OPTIMIZE_DAYS, OPTIMIZE_REVIEWS, OPTIMIZE_SNOOZE_DAYS, OptimizeEvent, OptimizeInputs,
+    DAY_MS, OPTIMIZE_DAYS, OPTIMIZE_REVIEWS, OPTIMIZE_SNOOZE_DAYS, OptimizeEvent, OptimizeInputs,
     OptimizeSince, OptimizeState, OptimizeVerdict, OptimizeWording, PresetFlags, PresetScheduler,
-    answers_start_ms, is_answer, optimize_next, optimize_verdict, preset_scheduler,
+    is_answer, optimize_next, optimize_verdict, optimized_at_ms, preset_scheduler,
 };
 use serde_json::{Value, json};
 use std::path::PathBuf;
@@ -31,10 +31,12 @@ fn day(v: &Value) -> i32 {
     i32::try_from(v.as_i64().unwrap()).unwrap()
 }
 
-fn last(case: &Value) -> Option<i32> {
-    case["last_optimized_day"]
-        .as_i64()
-        .map(|n| i32::try_from(n).unwrap())
+fn last(case: &Value) -> Option<i64> {
+    case["last_optimized_ms"].as_i64()
+}
+
+fn now(case: &Value) -> i64 {
+    case["now_ms"].as_i64().unwrap()
 }
 
 fn state(v: &Value) -> OptimizeState {
@@ -65,6 +67,7 @@ fn the_limits_are_the_fixtures() {
         Some(u64::from(OPTIMIZE_REVIEWS))
     );
     assert_eq!(day(&limits["snooze_days"]), OPTIMIZE_SNOOZE_DAYS);
+    assert_eq!(DAY_MS, 86_400_000);
 }
 
 #[test]
@@ -82,14 +85,25 @@ fn schedulers_follow_the_cases() {
 }
 
 #[test]
+fn optimization_times_follow_the_cases() {
+    let fixture = reminder();
+    for case in cases(&fixture, "optimized_at") {
+        let found = optimized_at_ms(
+            day(&case["today"]),
+            case["day_cutoff"].as_i64().unwrap(),
+            case["last_optimized_day"]
+                .as_i64()
+                .map(|n| i32::try_from(n).unwrap()),
+        );
+        assert_eq!(json!(found), case["expected"], "{}", case["name"]);
+    }
+}
+
+#[test]
 fn answers_since_follow_the_cases() {
     let fixture = reminder();
     for case in cases(&fixture, "reviews") {
-        let start = answers_start_ms(
-            day(&case["today"]),
-            case["day_cutoff"].as_i64().unwrap(),
-            last(case),
-        );
+        let start = last(case).unwrap_or(0);
         let counted = case["reviews"]
             .as_array()
             .unwrap()
@@ -110,8 +124,8 @@ fn verdicts_follow_the_cases() {
         let presets: Vec<PresetScheduler> =
             serde_json::from_value(case["presets"].clone()).unwrap();
         let inputs = OptimizeInputs {
-            today: day(&case["today"]),
-            last_optimized_day: last(case),
+            now_ms: now(case),
+            last_optimized_ms: last(case),
             reviews_since: u32::try_from(case["reviews_since"].as_u64().unwrap()).unwrap(),
             presets,
         };
@@ -125,12 +139,7 @@ fn transitions_follow_the_cases() {
     let fixture = reminder();
     for case in cases(&fixture, "transitions") {
         let event: OptimizeEvent = serde_json::from_value(case["event"].clone()).unwrap();
-        let found = optimize_next(
-            state(&case["state"]),
-            event,
-            day(&case["today"]),
-            last(case),
-        );
+        let found = optimize_next(state(&case["state"]), event, now(case), last(case));
         assert_eq!(json!(found), case["expected"], "{}", case["name"]);
     }
 }
@@ -218,10 +227,11 @@ fn a_stored_state_has_the_fixtures_shape() {
     let refused = [
         json!({"kind": "later"}),
         json!({"kind": "snoozed"}),
-        json!({"kind": "snoozed", "until_day": "3"}),
-        json!({"kind": "snoozed", "until_day": 3.5}),
-        json!({"kind": "snoozed", "until_day": 2_147_483_648_i64}),
-        json!({"until_day": 3}),
+        json!({"kind": "snoozed", "until_ms": "3"}),
+        json!({"kind": "snoozed", "until_ms": 3.5}),
+        json!({"kind": "snoozed", "until_ms": 9_223_372_036_854_775_808_u64}),
+        json!({"kind": "snoozed", "until_day": 437}),
+        json!({"until_ms": 3}),
         json!(true),
     ];
     for value in refused {
@@ -231,10 +241,10 @@ fn a_stored_state_has_the_fixtures_shape() {
         );
     }
     for value in [
-        json!({"kind": "snoozed", "until_day": -1}),
-        json!({"kind": "dismissed", "optimized_day": 0}),
+        json!({"kind": "snoozed", "until_ms": -1}),
+        json!({"kind": "dismissed", "optimized_ms": 0}),
     ] {
         assert!(!state(&value).valid(), "{value}");
     }
-    assert!(state(&json!({"kind": "snoozed", "until_day": 0})).valid());
+    assert!(state(&json!({"kind": "snoozed", "until_ms": 0})).valid());
 }

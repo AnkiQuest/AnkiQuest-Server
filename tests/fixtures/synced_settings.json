@@ -1233,7 +1233,7 @@
         "optimize_reminder": {
           "value": {
             "kind": "snoozed",
-            "until_day": 437
+            "until_ms": 1793787800000
           },
           "updated_at": 1793183000000
         }
@@ -1242,7 +1242,7 @@
         "optimize_reminder": {
           "value": {
             "kind": "snoozed",
-            "until_day": 437
+            "until_ms": 1793787800000
           },
           "updated_at": 1793183000000
         }
@@ -1256,7 +1256,7 @@
         "optimize_reminder": {
           "value": {
             "kind": "dismissed",
-            "optimized_day": null
+            "optimized_ms": null
           },
           "updated_at": 1793183000000
         }
@@ -1265,7 +1265,7 @@
         "optimize_reminder": {
           "value": {
             "kind": "dismissed",
-            "optimized_day": null
+            "optimized_ms": null
           },
           "updated_at": 1793183000000
         }
@@ -1293,6 +1293,21 @@
         "optimize_reminder": {
           "value": {
             "kind": "off",
+            "until_ms": 1793787800000
+          },
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a snooze in collection days refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "optimize_reminder": {
+          "value": {
+            "kind": "snoozed",
             "until_day": 437
           },
           "updated_at": 1793183000000
@@ -1301,7 +1316,7 @@
       "refused": true
     },
     {
-      "name": "a snooze without a day refuses the whole change",
+      "name": "a snooze without its time refuses the whole change",
       "now_ms": 1793183400000,
       "stored": {},
       "incoming": {
@@ -1315,7 +1330,7 @@
       "refused": true
     },
     {
-      "name": "a dismissal without its day refuses the whole change",
+      "name": "a dismissal without its time refuses the whole change",
       "now_ms": 1793183400000,
       "stored": {},
       "incoming": {
@@ -1329,14 +1344,14 @@
       "refused": true
     },
     {
-      "name": "a snooze before the collection's first day refuses the whole change",
+      "name": "a snooze before 1970 refuses the whole change",
       "now_ms": 1793183400000,
       "stored": {},
       "incoming": {
         "optimize_reminder": {
           "value": {
             "kind": "snoozed",
-            "until_day": -1
+            "until_ms": -1
           },
           "updated_at": 1793183000000
         }
@@ -1344,14 +1359,14 @@
       "refused": true
     },
     {
-      "name": "a dismissal on day 0, which means never, refuses the whole change",
+      "name": "a dismissal at time 0, where never is null, refuses the whole change",
       "now_ms": 1793183400000,
       "stored": {},
       "incoming": {
         "optimize_reminder": {
           "value": {
             "kind": "dismissed",
-            "optimized_day": 0
+            "optimized_ms": 0
           },
           "updated_at": 1793183000000
         }
@@ -1610,14 +1625,14 @@
       "remote": {
         "value": {
           "kind": "snoozed",
-          "until_day": 437
+          "until_ms": 1793787800000
         },
         "updated_at": 1793183000000
       },
       "expected": {
         "value": {
           "kind": "snoozed",
-          "until_day": 437
+          "until_ms": 1793787800000
         },
         "changed_at": 1793183000000,
         "push": null
@@ -1629,27 +1644,27 @@
       "local": {
         "value": {
           "kind": "dismissed",
-          "optimized_day": 400
+          "optimized_ms": 1786334400000
         },
         "changed_at": 1793183000000
       },
       "remote": {
         "value": {
           "kind": "snoozed",
-          "until_day": 437
+          "until_ms": 1793787800000
         },
         "updated_at": 1793180000000
       },
       "expected": {
         "value": {
           "kind": "dismissed",
-          "optimized_day": 400
+          "optimized_ms": 1786334400000
         },
         "changed_at": 1793183000000,
         "push": {
           "value": {
             "kind": "dismissed",
-            "optimized_day": 400
+            "optimized_ms": 1786334400000
           },
           "updated_at": 1793183000000
         }
@@ -1667,7 +1682,7 @@
       "remote": {
         "value": {
           "kind": "snoozed",
-          "until_day": "437"
+          "until_ms": "1793787800000"
         },
         "updated_at": 1793183000000
       },

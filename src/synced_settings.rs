@@ -56,7 +56,7 @@ impl Kind {
 }
 
 /// A state of the optimize reminder in the form the clients write: a known kind, its fields and
-/// no others, and days a collection has.
+/// no others, and times a client writes (epoch milliseconds).
 fn optimize_reminder(value: &Value) -> bool {
     let Ok(state) = serde_json::from_value::<OptimizeState>(value.clone()) else {
         return false;

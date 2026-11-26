@@ -2,8 +2,11 @@
 //! cases are `tests/fixtures/optimize_reminder.json`; the state is the synced setting
 //! `optimize_reminder` (`tests/fixtures/synced_settings.json`).
 //!
-//! Days are the collection's day numbers (Anki's `sched.today`). `last_optimized_day` is the
-//! collection config key `lastFsrsOptimize`, with 0 or a missing key read as `None` (never).
+//! Times are epoch milliseconds, so the synced state means the same on every device: collections
+//! on different devices can number their days differently. Anki records the last optimization
+//! only as a collection day number (the collection config key `lastFsrsOptimize`, with 0 or a
+//! missing key read as `None`, never); [`optimized_at_ms`] turns it into a time with that
+//! collection's day boundaries.
 
 /// Days since the last optimization before a reminder.
 pub const OPTIMIZE_DAYS: i32 = 30;
@@ -14,6 +17,9 @@ pub const OPTIMIZE_SNOOZE_DAYS: i32 = 7;
 /// The last revlog type that is an answer: learning (0), review (1), relearning (2) and
 /// filtered (3). Manual (4) and rescheduled (5) entries are not answers.
 pub const LAST_ANSWER_TYPE: i32 = 3;
+
+/// A day in milliseconds, for the limits and the snooze.
+pub const DAY_MS: i64 = 86_400_000;
 
 const DAY_SECS: i64 = 86_400;
 const SECOND_MS: i64 = 1_000;
@@ -54,24 +60,25 @@ pub enum OptimizeState {
     On,
     /// Turned off by the settings switch.
     Off,
-    /// Hidden while today is before `until_day`.
+    /// Hidden while now is before `until_ms`.
     Snoozed {
-        until_day: i32,
+        until_ms: i64,
     },
-    /// Hidden until Optimize All Presets runs again: while it last ran on `optimized_day`.
+    /// Hidden until Optimize All Presets runs again: until an optimization a day or more after
+    /// `optimized_ms`, the last one when it was dismissed (`None`: it had never run).
     Dismissed {
-        optimized_day: Option<i32>,
+        optimized_ms: Option<i64>,
     },
 }
 
 impl OptimizeState {
-    /// Whether the days are ones a collection has: `until_day` from 0, and `optimized_day` from
-    /// 1, since 0 is never and stored as `None`.
+    /// Whether the times are ones a client writes: `until_ms` from 0, and `optimized_ms` from 1,
+    /// since never is stored as `None`.
     pub fn valid(&self) -> bool {
         match *self {
             OptimizeState::On | OptimizeState::Off => true,
-            OptimizeState::Snoozed { until_day } => until_day >= 0,
-            OptimizeState::Dismissed { optimized_day } => optimized_day.is_none_or(|day| day > 0),
+            OptimizeState::Snoozed { until_ms } => until_ms >= 0,
+            OptimizeState::Dismissed { optimized_ms } => optimized_ms.is_none_or(|ms| ms > 0),
         }
     }
 }
@@ -121,9 +128,11 @@ pub enum OptimizeWording {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct OptimizeInputs {
-    pub today: i32,
-    pub last_optimized_day: Option<i32>,
-    /// Answers since the last optimization, from [`answers_start_ms`] and [`is_answer`].
+    pub now_ms: i64,
+    /// When Optimize All Presets last ran, from [`optimized_at_ms`]; `None` when it never ran.
+    pub last_optimized_ms: Option<i64>,
+    /// Answers since the last optimization: revlog ids from `last_optimized_ms` (all when
+    /// `None`) that are [`is_answer`].
     pub reviews_since: u32,
     /// Every preset's scheduler.
     pub presets: Vec<PresetScheduler>,
@@ -138,7 +147,7 @@ pub enum OptimizeVerdict {
     NoFsrs,
     Snoozed,
     Dismissed,
-    /// It ran fewer than [`OPTIMIZE_DAYS`] ago.
+    /// It ran less than [`OPTIMIZE_DAYS`] days ago.
     TooSoon,
     /// Fewer than [`OPTIMIZE_REVIEWS`] answers since it ran.
     TooFewReviews,
@@ -164,16 +173,19 @@ pub fn preset_scheduler(flags: PresetFlags) -> PresetScheduler {
     PresetScheduler::Fsrs
 }
 
-/// The first revlog id that counts: the start of the day after the last optimization, or 0
-/// (every answer) when it never ran. `day_cutoff` is Anki's `sched.day_cutoff` in seconds, the
-/// end of today.
+/// When Optimize All Presets last ran, in epoch milliseconds: the end of the collection day
+/// `last_optimized_day`, since Anki records only the day. No answer before the optimization
+/// counts as one after it. `today` is Anki's `sched.today` and `day_cutoff` its
+/// `sched.day_cutoff` in seconds, the end of today. `None` when it never ran.
 #[cfg_attr(feature = "ffi", uniffi::export)]
-pub fn answers_start_ms(today: i32, day_cutoff: i64, last_optimized_day: Option<i32>) -> i64 {
-    let Some(last) = last_optimized_day else {
-        return 0;
-    };
+pub fn optimized_at_ms(
+    today: i32,
+    day_cutoff: i64,
+    last_optimized_day: Option<i32>,
+) -> Option<i64> {
+    let last = last_optimized_day?;
     let days = i64::from(today) - i64::from(last);
-    (day_cutoff - days * DAY_SECS) * SECOND_MS
+    Some((day_cutoff - days * DAY_SECS) * SECOND_MS)
 }
 
 /// Whether a revlog entry is an answer: a button pressed (`ease` > 0) on a learning, review,
@@ -186,8 +198,8 @@ pub fn is_answer(revlog_type: i32, ease: i32) -> bool {
 /// Whether to remind the player now.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn optimize_verdict(inputs: OptimizeInputs, state: OptimizeState) -> OptimizeVerdict {
-    let today = inputs.today;
-    let last = inputs.last_optimized_day;
+    let now = inputs.now_ms;
+    let last = inputs.last_optimized_ms;
     let optimized: Vec<PresetScheduler> = inputs
         .presets
         .into_iter()
@@ -198,15 +210,15 @@ pub fn optimize_verdict(inputs: OptimizeInputs, state: OptimizeState) -> Optimiz
     match state {
         OptimizeState::Off => return OptimizeVerdict::Off,
         _ if optimized.is_empty() => return OptimizeVerdict::NoFsrs,
-        OptimizeState::Snoozed { until_day } if today < until_day => {
+        OptimizeState::Snoozed { until_ms } if now < until_ms => {
             return OptimizeVerdict::Snoozed;
         }
-        OptimizeState::Dismissed { optimized_day } if optimized_day == last => {
+        OptimizeState::Dismissed { optimized_ms } if !optimized_since(optimized_ms, last) => {
             return OptimizeVerdict::Dismissed;
         }
         _ => {}
     }
-    if last.is_some_and(|last| today - last < OPTIMIZE_DAYS) {
+    if last.is_some_and(|last| now.saturating_sub(last) < days_ms(OPTIMIZE_DAYS)) {
         return OptimizeVerdict::TooSoon;
     }
     if inputs.reviews_since < OPTIMIZE_REVIEWS {
@@ -230,24 +242,39 @@ pub fn optimize_verdict(inputs: OptimizeInputs, state: OptimizeState) -> Optimiz
     OptimizeVerdict::Remind { since, wording }
 }
 
+/// Whether Optimize All Presets ran again after `dismissed`, the last run when the reminder was
+/// dismissed. A run counts only from a day later: devices in other time zones put the end of the
+/// same collection day hours apart.
+fn optimized_since(dismissed: Option<i64>, last: Option<i64>) -> bool {
+    match (dismissed, last) {
+        (_, None) => false,
+        (None, Some(_)) => true,
+        (Some(dismissed), Some(last)) => last >= dismissed.saturating_add(DAY_MS),
+    }
+}
+
+fn days_ms(days: i32) -> i64 {
+    i64::from(days) * DAY_MS
+}
+
 /// The state after `event`. While off, snooze and dismiss change nothing; turning on changes
 /// only the off state, so a snooze or dismissal stays.
 #[cfg_attr(feature = "ffi", uniffi::export)]
 pub fn optimize_next(
     state: OptimizeState,
     event: OptimizeEvent,
-    today: i32,
-    last_optimized_day: Option<i32>,
+    now_ms: i64,
+    last_optimized_ms: Option<i64>,
 ) -> OptimizeState {
     match (state, event) {
         (_, OptimizeEvent::TurnOff) => OptimizeState::Off,
         (OptimizeState::Off, OptimizeEvent::TurnOn) => OptimizeState::On,
         (OptimizeState::Off, _) | (_, OptimizeEvent::TurnOn) => state,
         (_, OptimizeEvent::Snooze) => OptimizeState::Snoozed {
-            until_day: today.saturating_add(OPTIMIZE_SNOOZE_DAYS),
+            until_ms: now_ms.saturating_add(days_ms(OPTIMIZE_SNOOZE_DAYS)),
         },
         (_, OptimizeEvent::Dismiss) => OptimizeState::Dismissed {
-            optimized_day: last_optimized_day,
+            optimized_ms: last_optimized_ms,
         },
     }
 }
