@@ -1,51 +1,49 @@
 # Keeping released Android clients compatible
 
-The `android-contract` CI job compares this server's API examples with the
-examples consumed by `AnkiQuest/AnkiQuest-Android@master`. It makes a sparse
-public checkout without a personal access token and runs a small Rust guard
-(`crates/xtask`). It does not run Android code or Gradle.
+Both clients test against this repository's `master`: their CI fetches
+`docs/api/examples/*.json` and `tests/fixtures/*.json` when the tests run,
+and nothing pins or copies them. A server change that breaks a client's
+tests is fixed in the same change, or the client is updated right after.
 
-Android owns the baseline in `AnkiDroid/src/test/resources/`:
+The `android-contract` CI job guards the examples Android reads. It compares
+each of them with the same example at the base commit (the pull request's,
+the merge group's or the push's base, from `xtask event-base`) and runs a
+small Rust guard (`crates/xtask`). It reads Android's catalog from a sparse
+public checkout of `AnkiQuest/AnkiQuest-Android@master`, without a personal
+access token, and does not run Android code or Gradle.
 
-- `ankiquest-server.sha` identifies the full server commit that supplied the
-  vendored data.
-- `ankiquest-api/names.json` lists response names in arrays called `consumed`,
-  `boards`, `challenges`, `unused` and `not_yet`. The first three categories
-  count as consumed; the last two do not.
-- `ankiquest-api/<name>.json` contains that commit's recorded responses.
+Android's `ankiquest-api/names.json` (in its test resources) lists response
+names in arrays called `consumed`, `boards`, `challenges`, `unused` and
+`not_yet`. The first three count as consumed; the last two do not. An
+example Android doesn't list counts as `not_yet` there.
 
-The companion Android work is [Android #203](https://github.com/AnkiQuest/AnkiQuest-Android/issues/203).
-It verifies the vendored files against the pinned commit and proposes newer
-data through a bump PR. Ordinary Android PRs and pushes test their committed
-data instead of silently taking new server data.
-
-The server guard fails if a consumed example disappears, a JSON key path is
+The guard fails if a consumed example disappears, a JSON key path is
 removed, or a type seen at that path is lost. Array elements share a `[*]`
-path, preserving the types and keys represented anywhere in the baseline's
-array. Booleans are distinct from numbers; integer and decimal numbers are
-the same JSON type. Values, new keys, new array variants and new examples
-are allowed. An empty array cannot replace a baseline that exercises member
-fields without losing that coverage.
+path, preserving the types and keys represented anywhere in the base
+commit's array. Booleans are distinct from numbers; integer and decimal
+numbers are the same JSON type. Values, new keys, new array variants and
+new examples are allowed. An empty array cannot replace one that exercises
+member fields without losing that coverage.
 
 This is a guard for recorded response shapes, not a complete API schema or
-a replacement for the real client contract tests. Preserve behavior for
-released apps too: a compatible recording cannot prove that every response
-or optional-field combination is safe.
+a replacement for the clients' contract tests, which run against `master`.
+Preserve behavior for released apps too: a compatible recording cannot
+prove that every response or optional-field combination is safe.
 
-Run the guard locally after checking out Android:
+Run the guard locally against another commit's examples:
 
 ```sh
 cargo test -p ankiquest-xtask contract
+mkdir -p /tmp/base && git archive origin/master docs/api/examples | tar -x -C /tmp/base
 cargo run -p ankiquest-xtask -- android-contract \
-  --android-resources ../AnkiQuest-Android/AnkiDroid/src/test/resources
+  --android-catalog ../AnkiQuest-Android/AnkiDroid/src/test/resources/ankiquest-api/names.json \
+  --baseline /tmp/base/docs/api/examples
 ```
 
-Server PRs changing examples name the Android follow-up or say **picked up
-by bump PR**. To retire a consumed example, first land the Android change
-that stops reading it and updates the catalog, then wait until released
-apps no longer need it before removing the server behavior and recording.
+To retire a consumed example, first land the Android change that stops
+reading it and updates the catalog, then wait until released apps no longer
+need it before removing the server behavior and recording.
 
-The repository owner must make **android-contract** a required check on
-`master`, require PRs and apply those rules to administrators too. A workflow
-file does not change branch protection. This is also tracked in the owner
-actions of Android #203.
+**android-contract** should be a required check on `master`, with pull
+requests required and the rules applied to administrators too. A workflow
+file does not change branch protection.

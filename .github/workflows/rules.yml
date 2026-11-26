@@ -43,12 +43,12 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: read # code-changed lists the pull request's files
     outputs:
       code: ${{ steps.changed.outputs.code }}
     steps:
       - id: changed
-        uses: AnkiQuest/AnkiQuest-Dev/.github/actions/code-changed@5ab685e7013b865630f96530ca8c654344738fa8
+        uses: AnkiQuest/AnkiQuest-Dev/.github/actions/code-changed@master
 
   bindings:
     needs: changes
@@ -59,7 +59,7 @@ jobs:
       run:
         working-directory: crates/rules
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -181,7 +181,7 @@ jobs:
         --remap-path-prefix=${{ github.workspace }}=.
         --remap-path-prefix=/home/runner/.cargo=/cargo
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -220,8 +220,8 @@ jobs:
           build "$RUNNER_TEMP/first"
           build "$RUNNER_TEMP/android/jniLibs"
           cd "$RUNNER_TEMP"
-          (cd first && sha256sum */*.so) > first.sha256
-          (cd android/jniLibs && sha256sum */*.so) > android/SHA256SUMS
+          (cd first && sha256sum -- */*.so) > first.sha256
+          (cd android/jniLibs && sha256sum -- */*.so) > android/SHA256SUMS
           cat android/SHA256SUMS
           diff first.sha256 android/SHA256SUMS
 
@@ -309,24 +309,31 @@ jobs:
       run:
         shell: bash
         working-directory: crates/rules
+    # The matrix values reach the scripts as variables, not as text
+    # expanded into them.
+    env:
+      RULES_TARGET: ${{ matrix.target }}
+      RULES_LIB: ${{ matrix.lib }}
+      RULES_FLAGS: ${{ matrix.flags }}
+      RULES_PLATFORM: ${{ matrix.name }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Install the pinned toolchain
-        run: rustup toolchain install && rustup target add ${{ matrix.target }}
+        run: rustup toolchain install && rustup target add "$RULES_TARGET"
 
       # No machine paths in the library.
       - name: Build twice and compare
         run: |
-          export RUSTFLAGS="${{ matrix.flags }} --remap-path-prefix=$GITHUB_WORKSPACE=. --remap-path-prefix=$HOME/.cargo=/cargo"
+          export RUSTFLAGS="$RULES_FLAGS --remap-path-prefix=$GITHUB_WORKSPACE=. --remap-path-prefix=$HOME/.cargo=/cargo"
           out="$RUNNER_TEMP/desktop"
           build() {
             rm -rf ../../target
-            cargo build --locked -p ankiquest-rules --features ffi --profile bindings --target ${{ matrix.target }}
+            cargo build --locked -p ankiquest-rules --features ffi --profile bindings --target "$RULES_TARGET"
             mkdir -p "$1"
-            cp "../../target/${{ matrix.target }}/bindings/${{ matrix.lib }}" "$1/"
+            cp "../../target/$RULES_TARGET/bindings/$RULES_LIB" "$1/"
           }
           # Windows has sha256sum, macOS shasum.
           hash() {
@@ -338,8 +345,8 @@ jobs:
           }
           build "$RUNNER_TEMP/first"
           build "$out"
-          first=$(cd "$RUNNER_TEMP/first" && hash ${{ matrix.lib }})
-          (cd "$out" && hash ${{ matrix.lib }}) > "$RUNNER_TEMP/SHA256SUMS"
+          first=$(cd "$RUNNER_TEMP/first" && hash "$RULES_LIB")
+          (cd "$out" && hash "$RULES_LIB") > "$RUNNER_TEMP/SHA256SUMS"
           cat "$RUNNER_TEMP/SHA256SUMS"
           [ "$first" = "$(cat "$RUNNER_TEMP/SHA256SUMS")" ]
 
@@ -353,16 +360,16 @@ jobs:
         run: |
           cp bindings/python/ankiquest_rules.py desktop/
           mv SHA256SUMS desktop/
-          bytes=$(wc -c < "desktop/${{ matrix.lib }}" | tr -d ' ')
+          bytes=$(wc -c < "desktop/$RULES_LIB" | tr -d ' ')
           {
             echo "| Platform | Library | Bytes |"
             echo "| --- | --- | ---: |"
-            echo "| ${{ matrix.name }} | ${{ matrix.lib }} | $bytes |"
+            echo "| $RULES_PLATFORM | $RULES_LIB | $bytes |"
             echo
             echo "Byte-identical across two clean builds."
           } | tee -a "$GITHUB_STEP_SUMMARY"
-          if [ "${{ runner.os }}" = Linux ]; then
-            glibc=$(objdump -T "desktop/${{ matrix.lib }}" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+          if [ "$RUNNER_OS" = Linux ]; then
+            glibc=$(objdump -T "desktop/$RULES_LIB" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
             echo "Newest glibc symbol: $glibc" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
 
