@@ -1,5 +1,5 @@
 {
-  "_about": "Today's streak mood, and the companion pose it shows. `today.state` is the day verdict: studied (today counts, or will once unsent reviews arrive), protected, short (reviews short of the minimum), pending (no reviews) or unknown. `time_ms` is today's review time so far and `streak_minutes` the streak minimum, as the day verdict measures them (day_verdicts.json). `frozen_days` counts the heatmap's frozen days in a row ending yesterday (frozen_run). A counted day or a reached goal is fire, by heat: 1-6 streak, 7-29 streak_hot, 30-99 streak_blazing, 100+ streak_legend. Before that, the mood follows the stage of today's progress toward the minimum (`stages`). After a freeze (a protected day, or frozen days): frozen (by its level) in the first stage, thawing in the second, hopeful in the third, almost in the fourth. With a streak and no freeze: sad in the first two stages, hopeful in the third, almost in the fourth. Without a streak: asleep before any review, hopeful after one, almost in the fourth stage. `pose` names a pose from companion_poses.json, not a picture: each companion draws it with its own art, and shows the pose's fallback where it has none (Aki has no frozen_2 or frozen_3 art, so those show her frozen pose). thawing and almost are moods, not poses: thawing shows frozen and almost shows hopeful. The desktop add-on (addon/moods.py, tests/test_streak_moods.py) checks it; the Android app keeps a copy for AnkiquestMood. `pictures` are the streak share pictures, drawn with Aki's art. `flames` is the flame beside the streak number for each mood (AnkiquestMood.flame): lit once today counts, unlit (grey) for a streak today has not counted for yet, icy (blue) while a freeze still shows (frozen or thawing), none without a streak or when nothing is known about today. `messages` is the Today/Home line for a mood (AnkiquestAki.message, moods.mood), first match wins: sad is waiting; frozen_1-3 is freeze; every deck in `decks_due` done (none due, at least one deck) after `reviews` today is celebrate; cards due in the next deck (`focus_due`) is review; fire is streak; otherwise welcome. thawing and almost have no line of their own and follow the later rules, as hopeful does. Review is a kind, not a line: clients show no line for it. The kinds are the add-on's names; Android's AnkiquestAki.Message calls celebrate COMPLETE and freeze PROTECTED. `picture_style` is shared by every streak picture: `ink` is the text colour, `number` the streak number colour and `hero` the companion art size in px.",
+  "_about": "Today's streak mood, and the companion pose it shows. `today.state` is the day verdict: studied (today counts, or will once unsent reviews arrive), protected, short (reviews short of the minimum), pending (no reviews) or unknown. `time_ms` is today's review time so far and `streak_minutes` the streak minimum, as the day verdict measures them (day_verdicts.json). `frozen_days` counts the heatmap's frozen days in a row ending yesterday (frozen_run). `days_away` counts the heatmap's days without reviews in a row ending yesterday (away_run). `freezes` is the freezes the player has left (0 with freezes off) and `day_left_ms` the time until today's study day ends (`day_ends_at` minus now), null when the client does not know it. A counted day or a reached goal is fire, by heat: 1-6 streak, 7-29 streak_hot, 30-99 streak_blazing, 100+ streak_legend. Before that, the mood follows the stage of today's progress toward the minimum (`stages`). After a used freeze (frozen days, or a protected day after them): frozen (by its level) in the first stage, thawing in the second, hopeful in the third, almost in the fourth. A freeze in effect is freeze: today protected with no frozen day before it, in the first stage; or a streak, no reviews today, a freeze left and the day ending within `freeze_window_ms` (the freeze takes effect tonight). With a streak and no freeze in effect: sad in the first two stages, hopeful in the third, almost in the fourth. Without a streak: before any review, by `days_away` the last `away_levels` entry it reaches (neglected from 2 days, abandoned from 7, dead from 30), else asleep; hopeful after a review, almost in the fourth stage. `pose` names a pose from companion_poses.json, not a picture: each companion draws it with its own art, and shows the pose's fallback where it has none (a companion without frozen_3 art shows its frozen_2, and without that its frozen). A mood may also name a picture from companion_poses.json, which falls back the same way: freeze shows the freeze picture (the companion in a blanket), which falls back to frozen where it is not drawn. thawing and almost are moods, not poses: thawing shows frozen and almost shows hopeful. Frozen days 1-3 keep their poses: frozen (day 1), frozen_2 and frozen_3; an ice block is day 2 or 3, never day 1. `freeze_used` is the picture of the first open after a used freeze, not a mood. The desktop add-on (addon/moods.py, tests/test_streak_moods.py) checks it; the Android app keeps a copy for AnkiquestMood. `pictures` are the streak share pictures, drawn with Aki's art. `flames` is the flame beside the streak number for each mood (AnkiquestMood.flame): lit once today counts, unlit (grey) for a streak today has not counted for yet, icy (blue) while a freeze is in effect or still shows (freeze, frozen or thawing), none without a streak or when nothing is known about today. `messages` is the Today/Home line for a mood (AnkiquestAki.message, moods.mood), first match wins: sad is waiting; freeze and frozen_1-3 are freeze; every deck in `decks_due` done (none due, at least one deck) after `reviews` today is celebrate; cards due in the next deck (`focus_due`) is review; fire is streak; otherwise welcome. thawing and almost have no line of their own and follow the later rules, as hopeful does; neglected, abandoned and dead follow them as asleep does. Review is a kind, not a line: clients show no line for it. The kinds are the add-on's names; Android's AnkiquestAki.Message calls celebrate COMPLETE and freeze PROTECTED. `picture_style` is shared by every streak picture: `ink` is the text colour, `number` the streak number colour and `hero` the companion art size in px.",
   "stages": {
     "_about": "A stage starts once time_ms reaches from_percent of streak_minutes; compare in whole numbers (time_ms * 100 >= from_percent * streak_minutes * 60000) so no rounding moves a boundary. Without a minimum (streak_minutes 0) the day counts at the first review, so before it the stage is started.",
     "starts": [
@@ -108,6 +108,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -124,6 +127,9 @@
         "streak_minutes": 0,
         "streak": 0,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -140,6 +146,9 @@
         "streak_minutes": 0,
         "streak": 1,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -156,6 +165,9 @@
         "streak_minutes": 20,
         "streak": 64,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -172,6 +184,9 @@
         "streak_minutes": 20,
         "streak": 365,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -188,6 +203,9 @@
         "streak_minutes": 20,
         "streak": 0,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -204,6 +222,9 @@
         "streak_minutes": 20,
         "streak": 64,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -220,6 +241,9 @@
         "streak_minutes": 20,
         "streak": 0,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -236,6 +260,9 @@
         "streak_minutes": 20,
         "streak": 1,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -252,6 +279,9 @@
         "streak_minutes": 20,
         "streak": 6,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -268,6 +298,9 @@
         "streak_minutes": 20,
         "streak": 7,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -284,6 +317,9 @@
         "streak_minutes": 20,
         "streak": 29,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -300,6 +336,9 @@
         "streak_minutes": 20,
         "streak": 30,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -316,6 +355,9 @@
         "streak_minutes": 20,
         "streak": 99,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -332,6 +374,9 @@
         "streak_minutes": 20,
         "streak": 100,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -348,6 +393,9 @@
         "streak_minutes": 20,
         "streak": 365,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -364,6 +412,9 @@
         "streak_minutes": 20,
         "streak": 64,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": true
       },
       "expected": {
@@ -380,6 +431,9 @@
         "streak_minutes": 20,
         "streak": 64,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": true
       },
       "expected": {
@@ -396,6 +450,9 @@
         "streak_minutes": 20,
         "streak": 8,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": true
       },
       "expected": {
@@ -404,7 +461,7 @@
       }
     },
     {
-      "name": "a protected day alone",
+      "name": "a protected day alone is a freeze in effect",
       "today": {
         "state": "protected",
         "reviews": 0,
@@ -412,11 +469,14 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
-        "mood": "frozen_1",
-        "pose": "frozen"
+        "mood": "freeze",
+        "pose": "freeze"
       }
     },
     {
@@ -428,6 +488,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 1,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -444,6 +507,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 2,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -460,6 +526,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 3,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -476,6 +545,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 4,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -492,6 +564,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 2,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -508,6 +583,9 @@
         "streak_minutes": 20,
         "streak": 0,
         "frozen_days": 1,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -524,6 +602,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 2,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -540,6 +621,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 1,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -556,6 +640,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 1,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -572,6 +659,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 3,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -588,6 +678,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 1,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -604,6 +697,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 3,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -620,6 +716,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 1,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -636,6 +735,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 1,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -652,6 +754,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 1,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -668,6 +773,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 1,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -684,6 +792,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 1,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -700,6 +811,9 @@
         "streak_minutes": 20,
         "streak": 10,
         "frozen_days": 2,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -716,6 +830,9 @@
         "streak_minutes": 20,
         "streak": 64,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -732,6 +849,9 @@
         "streak_minutes": 20,
         "streak": 64,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -748,6 +868,9 @@
         "streak_minutes": 20,
         "streak": 64,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -764,6 +887,9 @@
         "streak_minutes": 20,
         "streak": 64,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -780,6 +906,9 @@
         "streak_minutes": 20,
         "streak": 64,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -796,6 +925,9 @@
         "streak_minutes": 20,
         "streak": 64,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -812,6 +944,9 @@
         "streak_minutes": 20,
         "streak": 64,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -828,6 +963,9 @@
         "streak_minutes": 20,
         "streak": 0,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -844,6 +982,9 @@
         "streak_minutes": 20,
         "streak": 0,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -860,6 +1001,9 @@
         "streak_minutes": 20,
         "streak": 0,
         "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
@@ -876,11 +1020,375 @@
         "streak_minutes": 20,
         "streak": 11,
         "frozen_days": 2,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 43200000,
         "goal_reached": false
       },
       "expected": {
         "mood": "fire",
         "pose": "streak_hot"
+      }
+    },
+    {
+      "name": "a freeze takes effect tonight",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 1,
+        "day_left_ms": 7200000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "freeze",
+        "pose": "freeze"
+      }
+    },
+    {
+      "name": "a freeze takes effect tonight in the last minute",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 2,
+        "day_left_ms": 60000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "freeze",
+        "pose": "freeze"
+      }
+    },
+    {
+      "name": "more than two hours left is still sad",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 1,
+        "day_left_ms": 7200001,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "sad",
+        "pose": "sad"
+      }
+    },
+    {
+      "name": "no freeze left near the day's end is sad",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 3600000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "sad",
+        "pose": "sad"
+      }
+    },
+    {
+      "name": "an unknown day end is sad",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 1,
+        "day_left_ms": null,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "sad",
+        "pose": "sad"
+      }
+    },
+    {
+      "name": "a review near the day's end is sad, not a freeze",
+      "today": {
+        "state": "short",
+        "reviews": 1,
+        "time_ms": 30000,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 1,
+        "day_left_ms": 3600000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "sad",
+        "pose": "sad"
+      }
+    },
+    {
+      "name": "without a streak no freeze takes effect",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 0,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 1,
+        "day_left_ms": 3600000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "asleep",
+        "pose": "asleep"
+      }
+    },
+    {
+      "name": "frozen days come before a freeze taking effect",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 1,
+        "days_away": 0,
+        "freezes": 1,
+        "day_left_ms": 3600000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "frozen_1",
+        "pose": "frozen"
+      }
+    },
+    {
+      "name": "a protected day is a freeze in effect",
+      "today": {
+        "state": "protected",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 1,
+        "day_left_ms": 3600000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "freeze",
+        "pose": "freeze"
+      }
+    },
+    {
+      "name": "one day away is asleep",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 0,
+        "frozen_days": 0,
+        "days_away": 1,
+        "freezes": 0,
+        "day_left_ms": 43200000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "asleep",
+        "pose": "asleep"
+      }
+    },
+    {
+      "name": "two days away is neglected",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 0,
+        "frozen_days": 0,
+        "days_away": 2,
+        "freezes": 0,
+        "day_left_ms": 43200000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "neglected",
+        "pose": "neglected"
+      }
+    },
+    {
+      "name": "six days away is neglected",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 0,
+        "frozen_days": 0,
+        "days_away": 6,
+        "freezes": 0,
+        "day_left_ms": 43200000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "neglected",
+        "pose": "neglected"
+      }
+    },
+    {
+      "name": "seven days away is abandoned",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 0,
+        "frozen_days": 0,
+        "days_away": 7,
+        "freezes": 0,
+        "day_left_ms": 43200000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "abandoned",
+        "pose": "abandoned"
+      }
+    },
+    {
+      "name": "twenty-nine days away is abandoned",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 0,
+        "frozen_days": 0,
+        "days_away": 29,
+        "freezes": 0,
+        "day_left_ms": 43200000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "abandoned",
+        "pose": "abandoned"
+      }
+    },
+    {
+      "name": "thirty days away is dead",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 0,
+        "frozen_days": 0,
+        "days_away": 30,
+        "freezes": 0,
+        "day_left_ms": 43200000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "dead",
+        "pose": "dead"
+      }
+    },
+    {
+      "name": "a year away is dead",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 0,
+        "frozen_days": 0,
+        "days_away": 365,
+        "freezes": 0,
+        "day_left_ms": 43200000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "dead",
+        "pose": "dead"
+      }
+    },
+    {
+      "name": "a review after a long time away is hopeful",
+      "today": {
+        "state": "short",
+        "reviews": 1,
+        "time_ms": 30000,
+        "streak_minutes": 20,
+        "streak": 0,
+        "frozen_days": 0,
+        "days_away": 30,
+        "freezes": 0,
+        "day_left_ms": 43200000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "hopeful",
+        "pose": "hopeful"
+      }
+    },
+    {
+      "name": "a counted day after a long time away burns",
+      "today": {
+        "state": "studied",
+        "reviews": 20,
+        "time_ms": 1200000,
+        "streak_minutes": 20,
+        "streak": 1,
+        "frozen_days": 0,
+        "days_away": 30,
+        "freezes": 0,
+        "day_left_ms": 43200000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "fire",
+        "pose": "streak"
+      }
+    },
+    {
+      "name": "nothing known after a long time away is unknown",
+      "today": {
+        "state": "unknown",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 0,
+        "frozen_days": 0,
+        "days_away": 30,
+        "freezes": 0,
+        "day_left_ms": 43200000,
+        "goal_reached": false
+      },
+      "expected": {
+        "mood": "unknown",
+        "pose": "face"
       }
     }
   ],
@@ -1075,6 +1583,211 @@
       "expected": 0
     }
   ],
+  "away_run": [
+    {
+      "name": "no heatmap",
+      "heatmap": null,
+      "expected": 0
+    },
+    {
+      "name": "studied yesterday",
+      "heatmap": [
+        {
+          "frozen": false,
+          "state": "met"
+        },
+        {
+          "frozen": false,
+          "state": "met"
+        },
+        {
+          "frozen": false,
+          "state": "none"
+        }
+      ],
+      "expected": 0
+    },
+    {
+      "name": "one day away",
+      "heatmap": [
+        {
+          "frozen": false,
+          "state": "met"
+        },
+        {
+          "frozen": false,
+          "state": "none"
+        },
+        {
+          "frozen": false,
+          "state": "none"
+        }
+      ],
+      "expected": 1
+    },
+    {
+      "name": "three days away",
+      "heatmap": [
+        {
+          "frozen": false,
+          "state": "short"
+        },
+        {
+          "frozen": false,
+          "state": "none"
+        },
+        {
+          "frozen": false,
+          "state": "none"
+        },
+        {
+          "frozen": false,
+          "state": "none"
+        },
+        {
+          "frozen": false,
+          "state": "none"
+        }
+      ],
+      "expected": 3
+    },
+    {
+      "name": "a short day ends the run",
+      "heatmap": [
+        {
+          "frozen": false,
+          "state": "met"
+        },
+        {
+          "frozen": false,
+          "state": "none"
+        },
+        {
+          "frozen": false,
+          "state": "short"
+        },
+        {
+          "frozen": false,
+          "state": "none"
+        },
+        {
+          "frozen": false,
+          "state": "none"
+        }
+      ],
+      "expected": 1
+    },
+    {
+      "name": "a frozen day ends the run",
+      "heatmap": [
+        {
+          "frozen": false,
+          "state": "met"
+        },
+        {
+          "frozen": true,
+          "state": "frozen"
+        },
+        {
+          "frozen": false,
+          "state": "none"
+        },
+        {
+          "frozen": false,
+          "state": "none"
+        },
+        {
+          "frozen": false,
+          "state": "none"
+        }
+      ],
+      "expected": 2
+    },
+    {
+      "name": "no study day in the heatmap is not away",
+      "heatmap": [
+        {
+          "frozen": false,
+          "state": "none"
+        },
+        {
+          "frozen": false,
+          "state": "none"
+        },
+        {
+          "frozen": false,
+          "state": "none"
+        },
+        {
+          "frozen": false,
+          "state": "none"
+        }
+      ],
+      "expected": 0
+    },
+    {
+      "name": "today's own cell is not before today",
+      "heatmap": [
+        {
+          "frozen": false,
+          "state": "met"
+        },
+        {
+          "frozen": false,
+          "state": "met"
+        },
+        {
+          "frozen": false,
+          "state": "met"
+        }
+      ],
+      "expected": 0
+    }
+  ],
+  "freeze_window_ms": 7200000,
+  "freeze_used": {
+    "_about": "freeze_used is a picture, not a mood: the companion in a colder blanket, shown once, at the first open of a study day whose yesterday was a frozen day (a freeze was used). Later opens that day show the mood's pose. `opened_today` says whether the app was already opened in this study day.",
+    "cases": [
+      {
+        "name": "first open after a used freeze",
+        "frozen_days": 1,
+        "opened_today": false,
+        "expected": true
+      },
+      {
+        "name": "first open on the third frozen day",
+        "frozen_days": 3,
+        "opened_today": false,
+        "expected": true
+      },
+      {
+        "name": "a second open the same day",
+        "frozen_days": 1,
+        "opened_today": true,
+        "expected": false
+      },
+      {
+        "name": "no freeze used yesterday",
+        "frozen_days": 0,
+        "opened_today": false,
+        "expected": false
+      }
+    ]
+  },
+  "away_levels": [
+    {
+      "mood": "neglected",
+      "from_days": 2
+    },
+    {
+      "mood": "abandoned",
+      "from_days": 7
+    },
+    {
+      "mood": "dead",
+      "from_days": 30
+    }
+  ],
   "picture_style": {
     "ink": "#FFFFFF",
     "number": "#FFD54F",
@@ -1162,8 +1875,24 @@
       "flame": "none"
     },
     {
+      "mood": "neglected",
+      "flame": "none"
+    },
+    {
+      "mood": "abandoned",
+      "flame": "none"
+    },
+    {
+      "mood": "dead",
+      "flame": "none"
+    },
+    {
       "mood": "sad",
       "flame": "unlit"
+    },
+    {
+      "mood": "freeze",
+      "flame": "icy"
     },
     {
       "mood": "hopeful",
@@ -1387,6 +2116,54 @@
       ],
       "focus_due": 0,
       "expected": "celebrate"
+    },
+    {
+      "name": "a freeze in effect with cards due",
+      "mood": "freeze",
+      "reviews": 0,
+      "decks_due": [
+        12
+      ],
+      "focus_due": 12,
+      "expected": "freeze"
+    },
+    {
+      "name": "a freeze in effect with every deck done",
+      "mood": "freeze",
+      "reviews": 0,
+      "decks_due": [
+        0
+      ],
+      "focus_due": 0,
+      "expected": "freeze"
+    },
+    {
+      "name": "cards due after days away",
+      "mood": "neglected",
+      "reviews": 0,
+      "decks_due": [
+        7
+      ],
+      "focus_due": 7,
+      "expected": "review"
+    },
+    {
+      "name": "every deck done after a long time away",
+      "mood": "abandoned",
+      "reviews": 0,
+      "decks_due": [
+        0
+      ],
+      "focus_due": 0,
+      "expected": "welcome"
+    },
+    {
+      "name": "no decks after a month away",
+      "mood": "dead",
+      "reviews": 0,
+      "decks_due": [],
+      "focus_due": 0,
+      "expected": "welcome"
     }
   ]
 }
