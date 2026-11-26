@@ -51,6 +51,8 @@ pub(crate) struct App {
     pub(crate) store: Mutex<Store>,
     pub(crate) players: RwLock<HashMap<String, Player>>,
     pub(crate) standings: StandingCache,
+    /// Whole profiles, cached on the same keys as the standings: every poll asks for one.
+    pub(crate) profiles: StandingCache,
     pub(crate) heartbeat: worker::Heartbeat,
     pub(crate) rank_weeks: crate::boards::RankWeeks,
     /// Crash reports each client address sent in the last hour.
@@ -175,7 +177,54 @@ impl App {
     }
 
     pub(crate) fn profile(&self, user: &str) -> Option<Profile> {
-        self.preview(user, &[])
+        self.cached_profile(user).map(|profile| (*profile).clone())
+    }
+
+    /// A player's whole profile — the standing plus the heatmap, achievements and full
+    /// history — cached on the same keys as [`Self::standing`], because every poll asks
+    /// for it and recomputing walks the player's whole review history.
+    pub(crate) fn cached_profile(&self, user: &str) -> Option<Arc<Profile>> {
+        let now = now_ms();
+        let players = self.players.read().unwrap();
+        let player = players.get(user)?;
+        let key = (
+            player.revision,
+            game::review_weighting(),
+            game::streak_rule_version(),
+            player.clock_history.day(now),
+            now.div_euclid(3_600_000),
+        );
+        if let Some(cached) = self.profiles.0.lock().unwrap().get(user)
+            && cached.key == key
+            && (!cached.recent || now - cached.computed_at < STANDING_TTL_MS)
+        {
+            return Some(cached.profile.clone());
+        }
+        let recent = player
+            .reviews
+            .last()
+            .is_some_and(|r| r.id > now - 3_600_000);
+        let profile = Arc::new(game::compute_observed(
+            user,
+            &self.display(user),
+            &player.reviews,
+            &player.observed,
+            &player.clock_history,
+            &self.week,
+            now,
+            &player.freeze_policy,
+        ));
+        drop(players);
+        self.profiles.0.lock().unwrap().insert(
+            user.to_string(),
+            CachedStanding {
+                key,
+                computed_at: now,
+                recent,
+                profile: profile.clone(),
+            },
+        );
+        Some(profile)
     }
 
     pub(crate) fn preview(&self, user: &str, pending: &[Review]) -> Option<Profile> {
@@ -252,6 +301,7 @@ impl App {
 
     pub(crate) fn forget_standing(&self, user: &str) {
         self.standings.0.lock().unwrap().remove(user);
+        self.profiles.0.lock().unwrap().remove(user);
     }
 
     pub(crate) fn standings_among(&self, users: &BTreeSet<String>) -> Vec<Arc<Profile>> {
@@ -520,6 +570,30 @@ mod tests {
         assert!(
             !Arc::ptr_eq(&first, &second),
             "new reviews replace the cached standing"
+        );
+        assert!(second.today.reviews > first.today.reviews);
+        cleanup(app, path);
+    }
+
+    #[test]
+    fn profiles_are_cached_until_the_player_changes() {
+        let _clock = FixedClock::at(STUDY_TIME);
+        let (app, path) = fixture();
+        with_reviews(&app, "cerro", 5);
+        let first = app.cached_profile("cerro").unwrap();
+        assert!(
+            !first.heatmap.is_empty() && !first.achievements.is_empty(),
+            "the cached profile keeps everything a poll answers with"
+        );
+        assert!(
+            Arc::ptr_eq(&first, &app.cached_profile("cerro").unwrap()),
+            "a second poll is served from the cache"
+        );
+        with_reviews(&app, "cerro", 9);
+        let second = app.cached_profile("cerro").unwrap();
+        assert!(
+            !Arc::ptr_eq(&first, &second),
+            "new reviews recompute the profile"
         );
         assert!(second.today.reviews > first.today.reviews);
         cleanup(app, path);

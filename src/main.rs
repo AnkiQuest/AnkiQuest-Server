@@ -224,6 +224,7 @@ async fn main() -> Result<(), Error> {
         accounts,
         players: RwLock::new(players),
         standings: Default::default(),
+        profiles: Default::default(),
         heartbeat: Default::default(),
         rank_weeks: Default::default(),
         crash_reports: Default::default(),

@@ -95,6 +95,7 @@ pub(crate) fn app_from(store: Store, config: Config) -> App {
         store: Mutex::new(store),
         players: RwLock::new(HashMap::new()),
         standings: Default::default(),
+        profiles: Default::default(),
         heartbeat: Default::default(),
         rank_weeks: Default::default(),
         crash_reports: Default::default(),
