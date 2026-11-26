@@ -5,6 +5,13 @@ use crate::notifications::{INBOX_AGE_MS, Outgoing, insert_notification};
 use crate::store::{Error, Store};
 use crate::web_util::failed_for;
 use crate::worker::push_destination;
+
+/// A switch in the `player_settings` table, read by [`Store::player_setting`].
+enum PlayerSetting {
+    Nudges,
+    FriendNudges,
+    Celebrations,
+}
 use axum::extract::{Path as UrlPath, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
@@ -533,24 +540,31 @@ impl Store {
     }
 
     /// A `player_settings` switch, or `default` before the player saved any.
-    fn player_setting(&self, user: &str, column: &str, default: bool) -> Result<bool, Error> {
-        Ok(self
-            .conn
-            .query_row(
-                &format!("select {column} from player_settings where user = ?1"),
-                [user],
-                |r| r.get(0),
-            )
-            .optional()?
-            .unwrap_or(default))
+    /// The statements are written out, not built from a column name: no caller
+    /// can hand the query a name it does not name itself.
+    fn player_setting(&self, user: &str, setting: PlayerSetting) -> Result<Option<bool>, Error> {
+        let sql = match setting {
+            PlayerSetting::Nudges => "select nudges from player_settings where user = ?1",
+            PlayerSetting::FriendNudges => {
+                "select friend_nudges from player_settings where user = ?1"
+            }
+            PlayerSetting::Celebrations => {
+                "select celebrations from player_settings where user = ?1"
+            }
+        };
+        Ok(self.conn.query_row(sql, [user], |r| r.get(0)).optional()?)
     }
 
     pub fn nudges_enabled(&self, user: &str) -> Result<bool, Error> {
-        self.player_setting(user, "nudges", false)
+        Ok(self
+            .player_setting(user, PlayerSetting::Nudges)?
+            .unwrap_or(false))
     }
 
     pub fn friend_nudges_receiving(&self, user: &str) -> Result<bool, Error> {
-        self.player_setting(user, "friend_nudges", false)
+        Ok(self
+            .player_setting(user, PlayerSetting::FriendNudges)?
+            .unwrap_or(false))
     }
 
     pub fn friend_nudge_muted(&self, recipient: &str, sender: &str) -> Result<bool, Error> {
@@ -613,7 +627,9 @@ impl Store {
     }
 
     pub fn celebrations_enabled(&self, user: &str) -> Result<bool, Error> {
-        self.player_setting(user, "celebrations", true)
+        Ok(self
+            .player_setting(user, PlayerSetting::Celebrations)?
+            .unwrap_or(true))
     }
 
     pub fn set_celebrations(&mut self, user: &str, enabled: bool) -> Result<(), Error> {
