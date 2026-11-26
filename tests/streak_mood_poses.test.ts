@@ -9,7 +9,7 @@ import {test} from "node:test";
 const fixtures = path.resolve(import.meta.dirname, "fixtures");
 const art = path.resolve(import.meta.dirname, "..", "art");
 
-type Poses = {core: string[]; extensions: Record<string, string>};
+type Poses = {core: string[]; extensions: Record<string, string>; pictures: Record<string, string>};
 type Moods = {moods: {name: string; expected: {mood: string; pose: string}}[]};
 
 const read = <T>(name: string): T => JSON.parse(fs.readFileSync(path.join(fixtures, name), "utf8")) as T;
@@ -21,7 +21,8 @@ function core(pose: string): string | null {
   const seen = new Set<string>();
   let current = pose;
   while (!poses.core.includes(current)) {
-    const next = poses.extensions[current];
+    // A mood may name a picture; pictures fall back like extensions
+    const next = poses.extensions[current] ?? poses.pictures[current];
     if (next === undefined || seen.has(current)) {
       return null;
     }
@@ -31,7 +32,7 @@ function core(pose: string): string | null {
   return current;
 }
 
-test("every streak mood names a companion pose", () => {
+test("every streak mood names a companion pose or picture", () => {
   for (const mood of moods.moods) {
     assert.notEqual(core(mood.expected.pose), null, mood.name);
   }
@@ -84,5 +85,54 @@ test("the stage cases follow the stage starts", () => {
     const reached = starts.filter((start) => minutes > 0 && time * PERCENT >= start.from_percent * minutes * MINUTE_MS);
     const stage = reached.at(-1)?.stage ?? starts[0].stage;
     assert.equal(stage, expected, `${time} ms of ${minutes} minutes`);
+  }
+});
+
+type Away = {
+  away_levels: {mood: string; from_days: number}[];
+  away_run: {name: string; heatmap: {state: string}[] | null; expected: number}[];
+};
+
+const NONE = "none";
+
+test("the away levels rise and show the neglected poses", () => {
+  // neglected, abandoned and dead are levels of one mood family: each later level starts later
+  // and every one ends at the neglected core pose.
+  const {away_levels: levels} = read<Away>("streak_moods.json");
+  const shows = new Map(moods.moods.map(({expected}) => [expected.mood, expected.pose]));
+  for (const [index, level] of levels.entries()) {
+    assert.ok(index === 0 || level.from_days > levels[index - 1].from_days, level.mood);
+    assert.equal(core(shows.get(level.mood) ?? ""), "neglected", level.mood);
+  }
+});
+
+test("the away run counts days without reviews after the last study day", () => {
+  // Today's own cell is not before today; a run that reaches the start of the heatmap has no
+  // study day before it, so it is a new player, not one away.
+  for (const {name, heatmap, expected} of read<Away>("streak_moods.json").away_run) {
+    const before = (heatmap ?? []).slice(0, -1);
+    const last = before.findLastIndex((day) => day.state !== NONE);
+    const away = last < 0 ? 0 : before.length - 1 - last;
+    assert.equal(away, expected, name);
+  }
+});
+
+test("a freeze in effect shows the freeze picture, falling back to frozen", () => {
+  const shows = new Map(moods.moods.map(({expected}) => [expected.mood, expected.pose]));
+  assert.equal(shows.get("freeze"), "freeze");
+  assert.equal(core("freeze"), "frozen");
+});
+
+type FreezeUsed = {
+  freeze_used: {cases: {name: string; frozen_days: number; opened_today: boolean; expected: boolean}[]};
+};
+
+test("freeze_used shows at the first open after a used freeze", () => {
+  // A picture, not a mood: only the first open of a day after a frozen day shows it.
+  const {freeze_used: used} = read<FreezeUsed>("streak_moods.json");
+  assert.ok(!moods.moods.some(({expected}) => expected.mood === "freeze_used"), "freeze_used is not a mood");
+  assert.ok("freeze_used" in poses.pictures, "freeze_used is a picture");
+  for (const {name, frozen_days: frozen, opened_today: opened, expected} of used.cases) {
+    assert.equal(frozen > 0 && !opened, expected, name);
   }
 });
