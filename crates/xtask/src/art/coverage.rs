@@ -803,7 +803,10 @@ mod tests {
             let status = status(&root(), find(&cast, "anki_tan"), &poses, pose);
             assert_ne!(Status::Missing, status, "{pose}");
         }
-        assert!(master(find(&cast, "anki_tan"), "icon").is_some());
+        // #151: art-11 ships her no `icon` master; her face, the fallback the icons'
+        // chain names, is the icon she shows, so the status path is what the guard checks.
+        let icon = status(&root(), find(&cast, "anki_tan"), &poses, "icon");
+        assert_ne!(Status::Missing, icon);
     }
 
     #[test]
