@@ -6,10 +6,17 @@
 //! `docs/shared-rules.md`.
 
 mod day;
+mod optimize;
 
 pub use day::{
     DayLabel, DayVerdict, MINUTE_MS, PendingReview, ServerDay, ServerToday, StreakState,
     TodayVerdict, meets_minimum, today_verdict,
+};
+pub use optimize::{
+    LAST_ANSWER_TYPE, OPTIMIZE_DAYS, OPTIMIZE_REVIEWS, OPTIMIZE_SNOOZE_DAYS, OptimizeEvent,
+    OptimizeInputs, OptimizeSince, OptimizeState, OptimizeVerdict, OptimizeWording, PresetFlags,
+    PresetScheduler, answers_start_ms, is_answer, optimize_next, optimize_verdict,
+    preset_scheduler,
 };
 
 #[cfg(feature = "ffi")]

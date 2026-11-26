@@ -15,7 +15,7 @@ crates/rules (Rust, in AnkiQuest-Server)
 
 ## What is shared
 
-Phase 1 is a pilot with one rule: today's day verdict (`tests/fixtures/day_verdicts.json`).
+The pilot rule is today's day verdict (`tests/fixtures/day_verdicts.json`).
 
 - `today_verdict(server: ServerDay, pending: Vec<PendingReview>, now_ms: i64) -> DayVerdict`:
   what the server's profile said about today, with the reviews the client has not uploaded. A
@@ -27,6 +27,22 @@ Phase 1 is a pilot with one rule: today's day verdict (`tests/fixtures/day_verdi
   `unverified`, `protected`, `short`, `pending`, `unknown`).
 - `meets_minimum(reviews, time_ms, needed_ms)`: whether a day counts toward the streak. Rust only;
   the server uses it for every day it judges.
+
+The optimize reminder (`tests/fixtures/optimize_reminder.json`): when to remind the player to run
+Anki's Optimize All Presets. The server only validates its state, the synced setting
+`optimize_reminder`; the clients compute the rule. Until they use the bindings, each keeps its own
+copy (`AnkiquestOptimizeReminder.kt`, `addon/optimize_reminder.py`), tested against the same cases.
+
+- `preset_scheduler(flags: PresetFlags) -> PresetScheduler` (`sm2`, `fsrs`, `rwkv_curve`,
+  `rwkv_instant`): a preset's scheduler from `fsrs`, `rwkvReviewEnabled` and
+  `rwkvReviewInstantOrderEnabled`.
+- `answers_start_ms(today, day_cutoff, last_optimized_day)` and `is_answer(revlog_type, ease)`:
+  which revlog entries count as answers since the last optimization.
+- `optimize_verdict(inputs: OptimizeInputs, state: OptimizeState) -> OptimizeVerdict`: `Off`,
+  `NoFsrs`, `Snoozed`, `Dismissed`, `TooSoon`, `TooFewReviews` or `Remind { since, wording }`.
+- `optimize_next(state, event, today, last_optimized_day) -> OptimizeState`: the state after
+  snooze, dismiss, turn off or turn on. `OptimizeState` is `On`, `Off`, `Snoozed { until_day }` or
+  `Dismissed { optimized_day }`, in the setting's JSON with the `serde` feature.
 
 The crate is pure: no IO, no async, no server code. Its features:
 

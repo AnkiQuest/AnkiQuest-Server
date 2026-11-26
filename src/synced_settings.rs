@@ -9,6 +9,7 @@ use crate::access::require_owner;
 use crate::app::{App, now_ms};
 use crate::store::Error;
 use crate::web_util::store_error;
+use ankiquest_rules::OptimizeState;
 use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::get;
@@ -34,8 +35,13 @@ const SCHEMA: &str = include_str!("../tests/fixtures/synced_settings.json");
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Kind {
     Bool,
-    Int { min: i64, max: i64 },
+    Int {
+        min: i64,
+        max: i64,
+    },
     Countdowns(crate::countdowns::Limits),
+    /// The optimize reminder's state, exactly as crates/rules writes it.
+    OptimizeReminder,
 }
 
 impl Kind {
@@ -44,8 +50,18 @@ impl Kind {
             Kind::Bool => value.is_boolean(),
             Kind::Int { min, max } => value.as_i64().is_some_and(|n| (*min..=*max).contains(&n)),
             Kind::Countdowns(limits) => limits.accepts(value),
+            Kind::OptimizeReminder => optimize_reminder(value),
         }
     }
+}
+
+/// A state of the optimize reminder in the form the clients write: a known kind, its fields and
+/// no others, and days a collection has.
+fn optimize_reminder(value: &Value) -> bool {
+    let Ok(state) = serde_json::from_value::<OptimizeState>(value.clone()) else {
+        return false;
+    };
+    state.valid() && serde_json::to_value(state).is_ok_and(|written| written == *value)
 }
 
 #[derive(Debug, Deserialize)]

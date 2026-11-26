@@ -60,6 +60,7 @@ dependencies = [
 name = "ankiquest-rules"
 version = "0.1.0"
 dependencies = [
+ "ankiquest-rules",
  "serde",
  "serde_json",
  "uniffi",

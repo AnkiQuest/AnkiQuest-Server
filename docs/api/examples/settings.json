@@ -23,6 +23,13 @@
       "updated_at": 1793183340000,
       "value": false
     },
+    "optimize_reminder": {
+      "updated_at": 1793183340000,
+      "value": {
+        "kind": "snoozed",
+        "until_day": 437
+      }
+    },
     "streak_warning_hours": {
       "updated_at": 1793183340000,
       "value": 4

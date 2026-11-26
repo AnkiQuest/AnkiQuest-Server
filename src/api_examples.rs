@@ -324,6 +324,23 @@ async fn examples_match_the_handlers() {
         .await,
     ));
 
+    // The optimize reminder snoozed on one device, so every device waits until that day.
+    examples.push((
+        "settings_optimize_reminder",
+        f.call(
+            "PUT",
+            "/api/settings/hill",
+            Some("hill-secret"),
+            json!({"settings": {
+                "optimize_reminder": {
+                    "value": {"kind": "snoozed", "until_day": 437},
+                    "updated_at": STUDY_TIME - 60_000
+                }
+            }}),
+        )
+        .await,
+    ));
+
     f.call(
         "PUT",
         "/api/goal/hill",
