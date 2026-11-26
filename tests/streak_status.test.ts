@@ -38,7 +38,7 @@ const scaffold = html.match(/<body\b[^>]*>([\s\S]*?)<script>/)![1];
       });
       const lite = await page.locator('.board .streak').evaluateAll((elements: HTMLElement[]) => elements.map(element => ({state:element.dataset.streakState,label:element.getAttribute('aria-label')!})));
       assert.deepEqual(lite.map(item=>item.state), ['studied','studied']);
-      assert(lite[0]!.label.includes(locale==='es-ES'?'Estudió hoy · tiempo desconocido':'Studied today · time not known'));
+      assert(lite[0]!.label.includes(locale==='es-ES'?'Estudiado hoy · tiempo desconocido':'Studied today · time not known'));
       assert.deepEqual(await page.locator('.board .observed-xp').allTextContents(), [locale==='es-ES'?'Observado':'Observed']);
       checks++;
       // Right after the weekly reset, a player whose day began before it still adds to last week.

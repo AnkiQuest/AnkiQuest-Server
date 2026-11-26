@@ -48,7 +48,7 @@ An account without a password (signed up with a provider) has to sign in with th
 A name is never removed or renamed. New names are added as their features land. A server without this endpoint (`404`) has none of them. Clients ignore names they don't know. `version` changes only if the shape of this answer changes.
 
 Real responses for the endpoints the Android app uses are in [api/examples](api/examples/README.md).
-The [Android compatibility guard](android-contract.md) preserves consumed example shapes while Android updates its pinned test data through bump PRs.
+Both clients test against these examples on `master`. The [Android compatibility guard](android-contract.md) keeps the shapes of the examples Android reads.
 
 ## account settings
 

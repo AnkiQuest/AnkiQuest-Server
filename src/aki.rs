@@ -81,8 +81,7 @@ mod tests {
             assert_eq!(response.status(), StatusCode::OK);
             assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
         }
-        // #61: Anki-tan's pictures, exported at web size from her masters or the ones their
-        // fallbacks reach: she has no happy or streak master yet, so those show hopeful.
+        // #61: Anki-tan's pictures are available at their existing public paths.
         for name in ["welcome", "review", "happy", "streak", "frozen", "face-192"] {
             let path = format!("/anki-tan/{name}.png");
             assert!(public_asset(&path), "{path}");
@@ -96,7 +95,22 @@ mod tests {
                 .unwrap()
                 .1
         };
-        assert_eq!(bytes("/anki-tan/happy.png"), bytes("/anki-tan/streak.png"));
+        let masters = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(ankiquest_art::MASTERS);
+        let manifest = ankiquest_art::Manifest::read(&masters).unwrap();
+        const WEB_SIZE: u32 = 320;
+        for pose in ["happy", "streak"] {
+            let master = manifest
+                .master("anki_tan", pose)
+                .or_else(|| manifest.master("anki_tan", "hopeful"))
+                .unwrap();
+            let image = ankiquest_art::load(&masters.join(&master.file)).unwrap();
+            let png = ankiquest_art::encode(&ankiquest_art::fit(image, WEB_SIZE)).unwrap();
+            assert!(
+                bytes(&format!("/anki-tan/{pose}.png")) == png.as_slice(),
+                "{pose} must show the staged {} picture",
+                master.pose
+            );
+        }
         assert_ne!(bytes("/anki-tan/happy.png"), bytes("/anki-tan/frozen.png"));
         assert!(!public_asset("/ankilope/config.json"));
         assert!(!public_asset("/ankilope/winner.png"));
