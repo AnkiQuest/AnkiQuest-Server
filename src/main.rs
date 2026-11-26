@@ -77,6 +77,48 @@ use std::sync::{Arc, Mutex, RwLock};
 use store::{Error, Store};
 use web_util::store_error;
 
+/// One log line for every request the server refuses or fails: a 4xx answer is a warning,
+/// a 5xx an error, with the method and path but never the query, which carries sign-in
+/// secrets. What succeeded stays silent, so the log shows what to look at: input the
+/// server rejected, store and invariant failures, and bugs that answered 500. Tests ask
+/// the same question of [`rejection_line`] directly instead, because the suite shares
+/// one pending-entry buffer its own rejections would fill.
+async fn log_rejections(
+    method: axum::http::Method,
+    uri: axum::http::Uri,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let response = next.run(request).await;
+    if let Some((level, message)) = rejection_line(&method, &uri, response.status().as_u16()) {
+        #[cfg(not(test))]
+        match level {
+            "error" => log_error!("{message}"),
+            _ => log_warning!("{message}"),
+        }
+        #[cfg(test)]
+        let _ = (level, message);
+    }
+    response
+}
+
+/// The level and line one answer records, or none when it served. The line names the
+/// method and the path, and never the query, which carries sign-in secrets.
+fn rejection_line(
+    method: &axum::http::Method,
+    uri: &axum::http::Uri,
+    status: u16,
+) -> Option<(&'static str, String)> {
+    if status < 400 {
+        return None;
+    }
+    let level = if status >= 500 { "error" } else { "warning" };
+    Some((
+        level,
+        format!("{} {} answered {}", method, uri.path(), status),
+    ))
+}
+
 async fn index() -> Html<&'static str> {
     Html(web!("index.html"))
 }
@@ -341,5 +383,37 @@ fn router(app: Arc<App>) -> Router {
             app.clone(),
             access::gate,
         ))
+        .layer(axum::middleware::from_fn(log_rejections))
         .with_state(app)
+}
+
+#[cfg(test)]
+mod rejection_log_tests {
+    use super::rejection_line;
+    use axum::http::Method;
+    use axum::http::Uri;
+
+    #[test]
+    fn refusals_answer_one_line_without_the_query() {
+        let login: Uri = "/login".parse().unwrap();
+        assert!(
+            rejection_line(&Method::GET, &login, 200).is_none(),
+            "served pages stay silent"
+        );
+        assert!(
+            rejection_line(&Method::GET, &login, 302).is_none(),
+            "redirects stay silent"
+        );
+        let refused: Uri = "/api/decks/alice?token=secret".parse().unwrap();
+        let (level, line) = rejection_line(&Method::GET, &refused, 401).unwrap();
+        assert_eq!(level, "warning");
+        assert_eq!(
+            line, "GET /api/decks/alice answered 401",
+            "no query, which holds secrets"
+        );
+        let failed: Uri = "/api/study/hill".parse().unwrap();
+        let (level, line) = rejection_line(&Method::POST, &failed, 500).unwrap();
+        assert_eq!(level, "error");
+        assert_eq!(line, "POST /api/study/hill answered 500");
+    }
 }
