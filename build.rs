@@ -102,7 +102,6 @@ fn main() -> Result<(), Error> {
         "crates/art",
         "crates/i18n",
         "crates/i18n-wasm",
-        "tests/fixtures/companion_poses.json",
         "Cargo.lock",
     ] {
         println!("cargo::rerun-if-changed={watched}");

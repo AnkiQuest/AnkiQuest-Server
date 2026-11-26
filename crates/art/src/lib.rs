@@ -1,6 +1,7 @@
 //! Companion art shared by the server's build script and the repository
-//! tools: the pose list with its fallbacks (`tests/fixtures/companion_poses.json`)
-//! and the downscaler every exported copy of a master goes through.
+//! tools: the pose list with its fallbacks (the pinned release's `poses.json`,
+//! staged into [`MASTERS`]) and the downscaler every exported copy of a master
+//! goes through.
 //!
 //! Masters are the PNGs in the pinned AnkiQuest-Art release, staged into [`MASTERS`], found
 //! by companion and pose through its `manifest.json` ([`Manifest`]). Its
@@ -20,8 +21,8 @@ mod poses;
 pub use manifest::{Manifest, Master, Shared};
 pub use poses::{Kind, Poses};
 
-/// The pose fixture, relative to the repository root.
-pub const POSES: &str = "tests/fixtures/companion_poses.json";
+/// The pose list of the staged AnkiQuest-Art release, relative to the repository root.
+pub const POSES: &str = "art/poses.json";
 
 /// The folder that holds the masters, relative to the repository root: the
 /// staged AnkiQuest-Art release, `<companion>/<pose>.png` below it. Every tool

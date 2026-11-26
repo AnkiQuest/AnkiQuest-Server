@@ -1,18 +1,19 @@
 // streak_moods.json names a companion pose for each mood; both clients draw it with the
-// chosen companion's art. These checks keep those names in companion_poses.json, so a
-// client can always fall back to a core pose.
+// chosen companion's art. These checks keep those names in the staged release's
+// art/poses.json (tests/tools/stage-art.mjs), so a client can always fall back to a core pose.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import {test} from "node:test";
 
 const fixtures = path.resolve(import.meta.dirname, "fixtures");
+const art = path.resolve(import.meta.dirname, "..", "art");
 
 type Poses = {core: string[]; extensions: Record<string, string>};
 type Moods = {moods: {name: string; expected: {mood: string; pose: string}}[]};
 
 const read = <T>(name: string): T => JSON.parse(fs.readFileSync(path.join(fixtures, name), "utf8")) as T;
-const poses = read<Poses>("companion_poses.json");
+const poses: Poses = JSON.parse(fs.readFileSync(path.join(art, "poses.json"), "utf8"));
 const moods = read<Moods>("streak_moods.json");
 
 /** The pose a companion without art for `pose` ends at: its core pose, or null if the chain breaks. */

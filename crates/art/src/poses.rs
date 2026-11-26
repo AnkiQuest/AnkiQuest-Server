@@ -1,4 +1,4 @@
-//! The pose list from `tests/fixtures/companion_poses.json`: the core moods,
+//! The pose list from the staged AnkiQuest-Art release's `poses.json`: the core moods,
 //! the moment and share-card pictures and the launcher icon moods every live
 //! companion needs, and the extensions. Every item but a core mood names the
 //! item a companion without its master shows instead.
@@ -40,8 +40,9 @@ impl Kind {
 }
 
 /// Core moods that show another core mood until their master is drawn:
-/// mood, then the mood shown instead. AnkiQuest-Art's pose list gives these
-/// as `core_fallbacks`; the fixture does not have them yet.
+/// mood, then the mood shown instead. The release's pose list also carries
+/// these as `core_fallbacks`, which parse keeps ignoring; the two agree. Read
+/// them from the file once a change must take effect without a rebuild.
 const CORE_FALLBACKS: [(&str, &str); 2] = [("happy", "hopeful"), ("streak", "hopeful")];
 
 /// The whole list: each item's kind, and each fallback.
@@ -183,7 +184,7 @@ mod tests {
     use super::*;
 
     fn fixture() -> Poses {
-        Poses::parse(include_str!("../../../tests/fixtures/companion_poses.json")).unwrap()
+        Poses::parse(include_str!("../../../art/poses.json")).unwrap()
     }
 
     #[test]
