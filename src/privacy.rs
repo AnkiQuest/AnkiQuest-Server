@@ -459,22 +459,22 @@ pub fn forget(conn: &Connection, user: &str) -> rusqlite::Result<Vec<(String, us
         "update groups set created_by = '' where created_by = ?1",
         [user],
     )?;
-    let created = "select id from community_challenges where creator = ?1";
-    for table in [
-        "community_members",
-        "community_deferred_goals",
-        "community_weekly_goals",
+    // The statements are written out, not built from a table name, so no future
+    // caller can hand the query a name it does not name itself.
+    for sql in [
+        "delete from community_members where challenge in
+         (select id from community_challenges where creator = ?1)",
+        "delete from community_deferred_goals where challenge in
+         (select id from community_challenges where creator = ?1)",
+        "delete from community_weekly_goals where challenge in
+         (select id from community_challenges where creator = ?1)",
+        "delete from notifications where challenge_id in
+         (select id from community_challenges where creator = ?1)",
+        "update community_weekly_suggestions set challenge = null where challenge in
+         (select id from community_challenges where creator = ?1)",
     ] {
-        transaction.execute(
-            &format!("delete from {table} where challenge in ({created})"),
-            [user],
-        )?;
+        transaction.execute(sql, [user])?;
     }
-    transaction.execute(
-        &format!("delete from notifications where challenge_id in ({created})"),
-        [user],
-    )?;
-    transaction.execute(&format!("update community_weekly_suggestions set challenge = null where challenge in ({created})"), [user])?;
     let challenges = transaction.execute(
         "delete from community_challenges where creator = ?1",
         [user],
