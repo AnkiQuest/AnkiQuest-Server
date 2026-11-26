@@ -43,6 +43,8 @@ mod migrations;
 mod notifications;
 mod oauth;
 mod observations;
+#[cfg(test)]
+mod optimize_reminder;
 mod privacy;
 mod reciprocity;
 mod reminders;
