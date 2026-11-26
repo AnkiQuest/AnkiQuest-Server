@@ -8,7 +8,7 @@ these additions preserve bearer authentication and the existing notification arr
 `GET /api/capabilities` needs no sign-in, also on a private site, and may be cached for five minutes (`Cache-Control: max-age=300`). It answers what this server supports, so a client can turn a feature on when the server has it instead of waiting for a deploy:
 
 ```json
-{ "version": 1, "features": ["activity", "app_sign_in", "companion_art", "companion_milestones", "companion_unlocks", "cookie_session", "countdowns", "deck_share", "devices", "global_leaderboard_hide", "goal_backlog_days", "group_invites", "messages", "mute", "observed_reviews", "reactions", "review_ease", "review_offsets", "settings_sync", "share_cards", "share_moments", "share_undo_send", "upload_first", "wins"], "public_url": "https://anki.example.test" }
+{ "version": 1, "features": ["activity", "app_sign_in", "companion_art", "companion_milestones", "companion_packs", "companion_unlocks", "cookie_session", "countdowns", "deck_share", "devices", "global_leaderboard_hide", "goal_backlog_days", "group_invites", "messages", "mute", "observed_reviews", "reactions", "review_ease", "review_offsets", "settings_sync", "share_cards", "share_moments", "share_undo_send", "upload_first", "wins"], "public_url": "https://anki.example.test" }
 ```
 
 `public_url` is the server's main address, without a trailing slash, and is present only when the server has `public_url` configured. A client that saved another address for the same server (an old address that proxies to it) may move to this one: it checks that its saved token works there with one signed-in request that needs it, such as `GET /api/devices/{user}` (the profile also answers without a token), and only then saves the new address and moves anything it keeps per address. Clients only move to an `https` address, keep the saved one when the check fails or they are offline, and ignore the field otherwise.
@@ -19,6 +19,7 @@ these additions preserve bearer authentication and the existing notification arr
 | `app_sign_in` | `POST /api/sign-in/{user}` `{"action": "browser", "provider", "purpose": "link" \| "reauth"}` gives an address to link a provider or sign in with it again in a browser (see `docs/server.md`, sign in with Google, GitHub or GitLab) |
 | `companion_art` | the inbox leaves out a companion's unlock moment unless the request names that companion in `X-AnkiQuest-Companion-Art` (below, study companion) |
 | `companion_milestones` | the server grants companions at milestones and answers `progress` in `GET /api/unlocks/{user}`; Ankilope is locked too (below, study companion) |
+| `companion_packs` | players upload companion packs and show one to their friends, `/api/packs/{user}` (see [companion-packs.md](companion-packs.md)) |
 | `companion_unlocks` | `/api/unlocks/{user}` and the companion `cow` (below, study companion) |
 | `countdowns` | the synced setting `countdowns`, a player's events and exams (below, synced settings). Older servers keep it as an unknown key only up to 1024 bytes |
 | `cookie_session` | the web dashboard works with the session cookie alone when the native app hands it only `{user}`, no token |
@@ -120,6 +121,10 @@ When the server grants an unlock it records a moment with the event key `compani
 A client shows only companions it has art for. It names them in the header `X-AnkiQuest-Companion-Art`, comma-separated, such as `X-AnkiQuest-Companion-Art: aki, ankilope, cow`, and sends it with every request (servers with `companion_art`). `GET /api/notifications/{user}` and `GET /api/activity/{user}`, including its counts, leave out the player's own `companion:{companion}` moments for any companion the header does not name. A request without the header comes from a client released before it, which draws Aki and Ankilope: it gets no moment about the cow. The row stays in the inbox, unfetched and unread, for clients that name the companion: `POST /api/activity/{user}/read` with `through` leaves out the moments the request's header leaves out. When more than three unlocks arrive at once they share one "N new unlocks" row with `topic` `companion` and no win; it is listed only for a client that names every unlock players can earn. Names the server does not know are ignored. Push notifications, friends' shares of the moment and `GET /api/wins/{user}` are unchanged: they show the server's own share card or text, not the client's art.
 
 The cow has no art yet (#88). Until it has, clients and the server draw it with Ankilope's art turned purple: CSS `hue-rotate(250deg)`, or the same colour matrix applied to the image.
+
+### shared companion packs
+
+A player can upload a companion pack they imported and show it to their friends instead of an official companion. Upload, visibility, fetching a friend's pack by hash, limits, reports and removal are in [companion-packs.md](companion-packs.md). Examples: `pack_upload.json`, `pack_visibility.json`, `packs.json`, `packs_friends.json`.
 
 ## synced settings
 

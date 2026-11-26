@@ -317,6 +317,8 @@ pub const USAGE: &str = "usage: ankiquest [config.json] admin <command>
                                   leave the configuration; also accounts with only a token
   grant-freeze <user> <date>...   protect a player's streak on these days (YYYY-MM-DD)
   revoke-freeze <user> <date>...  take that protection away again
+  pack-remove <sha256>            remove an uploaded companion pack from every player who has
+                                  it, for good: the same pack cannot be uploaded again
   streak-minutes <user> <minutes|default>
                                   give one player their own streak minimum from their
                                   next Anki day on; default goes back to the server's";
@@ -333,6 +335,7 @@ pub enum Command {
     SignIns,
     GrantFreeze(String, Vec<String>, bool),
     PlayerStreakMinutes(String, Option<u32>),
+    PackRemove(String),
     RemovePlayer(String),
     GroupAdd(i64, Players),
     GroupRemove(i64, Vec<String>),
@@ -406,6 +409,7 @@ pub fn parse(args: &[String]) -> Result<Command, Error> {
         ["reset", key] => Command::Reset(key_of(key)),
         ["sql", query] => Command::Sql(query.to_string()),
         ["remove-player", user] => Command::RemovePlayer(user.to_string()),
+        ["pack-remove", sha256] => Command::PackRemove(sha256.to_string()),
         ["group-add", group, users @ ..] if !users.is_empty() => {
             Command::GroupAdd(group_id(group)?, players(users))
         }
@@ -610,6 +614,17 @@ pub fn run(
 it works straight away and is shown only now. tell them to change it under Settings.
 other devices stay signed in.
 "
+            )
+        }
+        Command::PackRemove(sha256) => {
+            let owners = crate::packs::remove(conn, &sha256, now_ms)?;
+            admin_log(
+                conn,
+                now_ms,
+                format!("admin removed companion pack {sha256}"),
+            )?;
+            format!(
+                "removed companion pack {sha256} from {owners} player(s); it cannot be uploaded again\n"
             )
         }
         Command::GrantFreeze(user, dates, granted) => {

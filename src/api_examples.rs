@@ -1357,6 +1357,52 @@ async fn examples_match_the_handlers() {
     drop(converted.app);
     std::fs::remove_dir_all(&converted.path).unwrap();
 
+    // Friend uploads a companion pack and shows it to friends; hill, a friend, sees it. The
+    // hash depends on libwebp's output, so it is replaced like a secret.
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/packs/friend")
+        .header("authorization", "Bearer friend-secret")
+        .body(Body::from(crate::packs::sample_pack("mochi", 40)))
+        .unwrap();
+    let response = crate::test_support::route(&f.app, request).await;
+    assert!(response.status().is_success());
+    let uploaded: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 1 << 20).await.unwrap()).unwrap();
+    let sha = uploaded["sha256"].as_str().unwrap().to_string();
+    f.keep_secret(&uploaded["sha256"], "example-pack");
+    examples.push(("pack_upload", uploaded));
+    examples.push((
+        "pack_visibility",
+        f.call(
+            "PUT",
+            &format!("/api/packs/friend/{sha}"),
+            Some("friend-secret"),
+            json!({"visibility": "friends"}),
+        )
+        .await,
+    ));
+    examples.push((
+        "packs",
+        f.call(
+            "GET",
+            "/api/packs/friend",
+            Some("friend-secret"),
+            Value::Null,
+        )
+        .await,
+    ));
+    examples.push((
+        "packs_friends",
+        f.call(
+            "GET",
+            "/api/packs/hill/friends",
+            Some("hill-secret"),
+            Value::Null,
+        )
+        .await,
+    ));
+
     // A player on AnkiQuest Lite, which reads stock AnkiDroid: two answered cards, one of them
     // seen before, and a day's count with a card no state covers. On a server of its own, so the
     // examples above keep only exact review rows.

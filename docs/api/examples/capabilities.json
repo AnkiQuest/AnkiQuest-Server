@@ -4,6 +4,7 @@
     "app_sign_in",
     "companion_art",
     "companion_milestones",
+    "companion_packs",
     "companion_unlocks",
     "cookie_session",
     "countdowns",
