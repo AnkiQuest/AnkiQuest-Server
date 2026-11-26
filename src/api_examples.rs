@@ -324,6 +324,25 @@ async fn examples_match_the_handlers() {
         .await,
     ));
 
+    // The optimize reminder snoozed for a week on one device, so every device waits until then.
+    let snoozed_at = STUDY_TIME - 60_000;
+    let snooze_ms = i64::from(ankiquest_rules::OPTIMIZE_SNOOZE_DAYS) * ankiquest_rules::DAY_MS;
+    examples.push((
+        "settings_optimize_reminder",
+        f.call(
+            "PUT",
+            "/api/settings/hill",
+            Some("hill-secret"),
+            json!({"settings": {
+                "optimize_reminder": {
+                    "value": {"kind": "snoozed", "until_ms": snoozed_at + snooze_ms},
+                    "updated_at": snoozed_at
+                }
+            }}),
+        )
+        .await,
+    ));
+
     f.call(
         "PUT",
         "/api/goal/hill",

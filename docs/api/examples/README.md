@@ -44,6 +44,7 @@ Random values are replaced, numbered in order of appearance: device tokens by `e
 | `settings.json` | `GET /api/settings/{user}` |
 | `settings_save.json` | `PUT /api/settings/{user}`, with a key the server does not know and keeps |
 | `settings_countdowns.json` | `PUT /api/settings/{user}` with a `countdowns` list: an exam with a deck and an event without |
+| `settings_optimize_reminder.json` | `PUT /api/settings/{user}` with the optimize reminder snoozed |
 | `streak_freezes.json` | `GET /api/streak-freezes/{user}` |
 | `challenges.json` | `GET /api/community/challenges/{user}`: an invitation for the player, a goal in progress, one reached, one ended early, and the weekly suggestion |
 | `challenge_create.json` | `POST /api/community/challenges/{user}` with a `request_id` |

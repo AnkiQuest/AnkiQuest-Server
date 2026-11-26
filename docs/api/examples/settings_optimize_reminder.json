@@ -1,0 +1,38 @@
+{
+  "settings": {
+    "countdowns": {
+      "updated_at": 1793183340000,
+      "value": [
+        {
+          "date": "2026-11-09",
+          "deck": "Spanish::A1",
+          "name": "Spanish exam"
+        },
+        {
+          "date": "2026-12-01",
+          "deck": null,
+          "name": "Driving theory"
+        }
+      ]
+    },
+    "future_setting": {
+      "updated_at": 1793183340000,
+      "value": true
+    },
+    "notify_rank": {
+      "updated_at": 1793183340000,
+      "value": false
+    },
+    "optimize_reminder": {
+      "updated_at": 1793183340000,
+      "value": {
+        "kind": "snoozed",
+        "until_ms": 1793788140000
+      }
+    },
+    "streak_warning_hours": {
+      "updated_at": 1793183340000,
+      "value": 4
+    }
+  }
+}

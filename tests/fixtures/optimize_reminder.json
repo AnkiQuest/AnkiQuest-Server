@@ -1,0 +1,114 @@
+{
+  "_about": "When to remind the player to run Anki's Optimize All Presets, and what the reminder says. Both clients compute it from the collection and the reminder's state; the server only keeps the state. Times are epoch milliseconds, so the state means the same on every device: collections on different devices can number their days differently, so the state never holds a collection day. Inputs: `now_ms` is the time now; `last_optimized_ms` is when Optimize All Presets last ran, by the `optimized_at` cases, or null when it never ran; `reviews_since` is the count from the `reviews` cases; `presets` holds the scheduler of every preset, by the `schedulers` cases; `state` is the reminder's state: the synced setting `optimize_reminder` (tests/fixtures/synced_settings.json), one for all the player's devices, in these objects. `optimized_at`: Anki records the last optimization only as a day: the collection config key `lastFsrsOptimize`, the collection day number Optimize All Presets last ran (Anki 24.11 and later, and the Android backend; only Optimize All Presets sets it, not Optimize Current Preset), with 0 or a missing key read as null (never). Its time is the end of that day, (day_cutoff - (today - last_optimized_day) * 86400) * 1000, where `today` is Anki's sched.today and `day_cutoff` its sched.day_cutoff in seconds, the end of today; so no answer before the optimization counts as one after it. `schedulers`: a preset's scheduler from the collection config key `fsrs` and the preset's legacy deck config keys `rwkvReviewEnabled` and `rwkvReviewInstantOrderEnabled` (missing means false): with FSRS off every preset is `sm2`, since Optimize All Presets needs FSRS; else `rwkv_instant` when rwkvReviewInstantOrderEnabled, else `rwkv_curve` when rwkvReviewEnabled, else `fsrs`. `reviews`: answers (ease > 0, type 0 to 3: learning, review, relearning, filtered; manual 4 and rescheduled 5 are not answers) whose revlog id is at least last_optimized_ms; every answer when it never ran. Each client counts them in its own revlog. `cases`: the verdict, from the first rule that holds: `off` when the state is off; `no_fsrs` when no preset is fsrs, rwkv_curve or rwkv_instant; `snoozed` while now_ms < until_ms; `dismissed` until Optimize All Presets runs again: while last_optimized_ms is null, or the state's optimized_ms is not null and last_optimized_ms < optimized_ms + 86400000 (a run counts only from a day later, since devices in other time zones put the end of the same collection day hours apart); `too_soon` when it ran and now_ms - last_optimized_ms < limits.days days; `too_few_reviews` when reviews_since < limits.reviews; else `remind`. A dismissal ends once Optimize All Presets runs again; a snooze ends at until_ms. A day is 86400000 ms. A reminder says `since` (`stale`, or `never` when it never ran) and `scheduler`: `fsrs` when every non-sm2 preset is fsrs, `rwkv` when none is, `mixed` otherwise. `transitions`: what each action does to the state. snooze sets until_ms to now_ms + limits.snooze_days days; dismiss records last_optimized_ms as optimized_ms; turn_off and turn_on are the settings switch. While off, snooze and dismiss change nothing; turn_on from any state other than off changes nothing. `wording`: the English text, in display order: title, the `since` line, the `scheduler` line, `where`, then the buttons open (opens deck options for the current deck), snooze and dismiss; `setting` and `setting_summary` are the switch. Each client translates it. The rule is crates/rules (src/optimize.rs), tested against these cases by crates/rules/tests/optimize_reminder.rs. Until the clients use its bindings, the desktop add-on (addon/optimize_reminder.py) and the Android app (AnkiquestOptimizeReminder.kt) keep copies tested against these cases.",
+  "limits": {"days": 30, "reviews": 1000, "snooze_days": 7},
+  "wording": {
+    "title": "Time to optimize your presets",
+    "stale": "You last ran Optimize All Presets at least 30 days and 1,000 reviews ago.",
+    "never": "You have at least 1,000 reviews and haven't run Optimize All Presets yet.",
+    "fsrs": "It fits each preset's FSRS parameters to your review history.",
+    "rwkv": "Your presets use RWKV-Curve or RWKV-Instant: it fits only their FSRS fallback. RWKV itself isn't trained by it.",
+    "mixed": "It fits the parameters of your FSRS presets to your review history. For RWKV-Curve and RWKV-Instant presets it fits only the FSRS fallback; RWKV itself isn't trained by it.",
+    "where": "Optimize All Presets is in the FSRS section of deck options.",
+    "open": "Open deck options",
+    "snooze": "Remind me in a week",
+    "dismiss": "Dismiss",
+    "setting": "Remind me to optimize presets",
+    "setting_summary": "When Optimize All Presets last ran at least 30 days and 1,000 reviews ago"
+  },
+  "schedulers": [
+    {"name": "FSRS off", "fsrs": false, "rwkvReviewEnabled": false, "rwkvReviewInstantOrderEnabled": false, "expected": "sm2"},
+    {"name": "FSRS off leaves RWKV presets on SM-2", "fsrs": false, "rwkvReviewEnabled": true, "rwkvReviewInstantOrderEnabled": true, "expected": "sm2"},
+    {"name": "FSRS", "fsrs": true, "rwkvReviewEnabled": false, "rwkvReviewInstantOrderEnabled": false, "expected": "fsrs"},
+    {"name": "RWKV-Curve", "fsrs": true, "rwkvReviewEnabled": true, "rwkvReviewInstantOrderEnabled": false, "expected": "rwkv_curve"},
+    {"name": "RWKV-Instant with FSRS due dates", "fsrs": true, "rwkvReviewEnabled": false, "rwkvReviewInstantOrderEnabled": true, "expected": "rwkv_instant"},
+    {"name": "RWKV-Instant with RWKV-Curve due dates", "fsrs": true, "rwkvReviewEnabled": true, "rwkvReviewInstantOrderEnabled": true, "expected": "rwkv_instant"}
+  ],
+  "optimized_at": [
+    {"name": "the end of the day it ran", "today": 500, "day_cutoff": 1794974400, "last_optimized_day": 400, "expected": 1786334400000},
+    {"name": "today: the end of today", "today": 500, "day_cutoff": 1794974400, "last_optimized_day": 500, "expected": 1794974400000},
+    {"name": "yesterday", "today": 500, "day_cutoff": 1794974400, "last_optimized_day": 499, "expected": 1794888000000},
+    {"name": "never", "today": 500, "day_cutoff": 1794974400, "last_optimized_day": null, "expected": null}
+  ],
+  "reviews": [
+    {
+      "name": "answers since the last optimization",
+      "last_optimized_ms": 1794801600000,
+      "reviews": [
+        {"id": 1794801599000, "type": 1, "ease": 3},
+        {"id": 1794801600000, "type": 1, "ease": 3},
+        {"id": 1794880000000, "type": 0, "ease": 1},
+        {"id": 1794900000000, "type": 2, "ease": 2},
+        {"id": 1794910000000, "type": 3, "ease": 4},
+        {"id": 1794920000000, "type": 4, "ease": 0},
+        {"id": 1794930000000, "type": 5, "ease": 0},
+        {"id": 1794940000000, "type": 1, "ease": 0}
+      ],
+      "expected": 4
+    },
+    {
+      "name": "every answer when it never ran",
+      "last_optimized_ms": null,
+      "reviews": [
+        {"id": 1794801599000, "type": 1, "ease": 3},
+        {"id": 1794801600000, "type": 1, "ease": 3},
+        {"id": 1794880000000, "type": 0, "ease": 1},
+        {"id": 1794900000000, "type": 2, "ease": 2},
+        {"id": 1794910000000, "type": 3, "ease": 4},
+        {"id": 1794920000000, "type": 4, "ease": 0},
+        {"id": 1794930000000, "type": 5, "ease": 0},
+        {"id": 1794940000000, "type": 1, "ease": 0}
+      ],
+      "expected": 5
+    },
+    {
+      "name": "none on the day it ran",
+      "last_optimized_ms": 1794974400000,
+      "reviews": [
+        {"id": 1794900000000, "type": 1, "ease": 3},
+        {"id": 1794910000000, "type": 1, "ease": 3}
+      ],
+      "expected": 0
+    }
+  ],
+  "cases": [
+    {"name": "FSRS presets 30 days and 1,000 reviews after optimizing", "now_ms": 1788926400000, "last_optimized_ms": 1786334400000, "reviews_since": 1000, "presets": ["fsrs", "fsrs"], "state": {"kind": "on"}, "expected": {"verdict": "remind", "since": "stale", "scheduler": "fsrs"}},
+    {"name": "a millisecond short of 30 days is too soon", "now_ms": 1788926399999, "last_optimized_ms": 1786334400000, "reviews_since": 5000, "presets": ["fsrs"], "state": {"kind": "on"}, "expected": {"verdict": "too_soon"}},
+    {"name": "999 reviews are too few", "now_ms": 1794974400000, "last_optimized_ms": 1786334400000, "reviews_since": 999, "presets": ["fsrs"], "state": {"kind": "on"}, "expected": {"verdict": "too_few_reviews"}},
+    {"name": "a clock moved back is too soon", "now_ms": 1785470400000, "last_optimized_ms": 1786334400000, "reviews_since": 2000, "presets": ["fsrs"], "state": {"kind": "on"}, "expected": {"verdict": "too_soon"}},
+    {"name": "never optimized with 1,000 reviews", "now_ms": 1786352400000, "last_optimized_ms": null, "reviews_since": 1000, "presets": ["fsrs"], "state": {"kind": "on"}, "expected": {"verdict": "remind", "since": "never", "scheduler": "fsrs"}},
+    {"name": "never optimized with 999 reviews", "now_ms": 1786352400000, "last_optimized_ms": null, "reviews_since": 999, "presets": ["fsrs"], "state": {"kind": "on"}, "expected": {"verdict": "too_few_reviews"}},
+    {"name": "RWKV-Curve presets only get the FSRS fallback", "now_ms": 1788926400000, "last_optimized_ms": 1786334400000, "reviews_since": 1500, "presets": ["rwkv_curve"], "state": {"kind": "on"}, "expected": {"verdict": "remind", "since": "stale", "scheduler": "rwkv"}},
+    {"name": "RWKV-Instant presets only get the FSRS fallback", "now_ms": 1788926400000, "last_optimized_ms": 1786334400000, "reviews_since": 1500, "presets": ["rwkv_instant", "rwkv_curve"], "state": {"kind": "on"}, "expected": {"verdict": "remind", "since": "stale", "scheduler": "rwkv"}},
+    {"name": "RWKV-Curve presets, never optimized", "now_ms": 1786352400000, "last_optimized_ms": null, "reviews_since": 1000, "presets": ["rwkv_curve"], "state": {"kind": "on"}, "expected": {"verdict": "remind", "since": "never", "scheduler": "rwkv"}},
+    {"name": "FSRS and RWKV-Curve presets", "now_ms": 1788926400000, "last_optimized_ms": 1786334400000, "reviews_since": 1500, "presets": ["fsrs", "rwkv_curve"], "state": {"kind": "on"}, "expected": {"verdict": "remind", "since": "stale", "scheduler": "mixed"}},
+    {"name": "FSRS and RWKV-Instant presets, never optimized", "now_ms": 1786352400000, "last_optimized_ms": null, "reviews_since": 3000, "presets": ["rwkv_instant", "fsrs"], "state": {"kind": "on"}, "expected": {"verdict": "remind", "since": "never", "scheduler": "mixed"}},
+    {"name": "SM-2 presets have nothing to optimize", "now_ms": 1786352400000, "last_optimized_ms": null, "reviews_since": 9000, "presets": ["sm2", "sm2"], "state": {"kind": "on"}, "expected": {"verdict": "no_fsrs"}},
+    {"name": "turned off", "now_ms": 1788926400000, "last_optimized_ms": 1786334400000, "reviews_since": 1500, "presets": ["fsrs"], "state": {"kind": "off"}, "expected": {"verdict": "off"}},
+    {"name": "turned off before nothing to optimize", "now_ms": 1788926400000, "last_optimized_ms": null, "reviews_since": 1500, "presets": ["sm2"], "state": {"kind": "off"}, "expected": {"verdict": "off"}},
+    {"name": "nothing to optimize before a snooze", "now_ms": 1788926400000, "last_optimized_ms": 1786334400000, "reviews_since": 1500, "presets": ["sm2"], "state": {"kind": "snoozed", "until_ms": 1789358400000}, "expected": {"verdict": "no_fsrs"}},
+    {"name": "snoozed a millisecond before it ends", "now_ms": 1789358399999, "last_optimized_ms": 1786334400000, "reviews_since": 1500, "presets": ["fsrs"], "state": {"kind": "snoozed", "until_ms": 1789358400000}, "expected": {"verdict": "snoozed"}},
+    {"name": "the snooze ends at its time", "now_ms": 1789358400000, "last_optimized_ms": 1786334400000, "reviews_since": 1500, "presets": ["fsrs"], "state": {"kind": "snoozed", "until_ms": 1789358400000}, "expected": {"verdict": "remind", "since": "stale", "scheduler": "fsrs"}},
+    {"name": "an ended snooze still waits for the limits", "now_ms": 1789358400000, "last_optimized_ms": 1787198400000, "reviews_since": 1500, "presets": ["fsrs"], "state": {"kind": "snoozed", "until_ms": 1789358400000}, "expected": {"verdict": "too_soon"}},
+    {"name": "dismissed until the next optimization", "now_ms": 1829534400000, "last_optimized_ms": 1786334400000, "reviews_since": 9000, "presets": ["fsrs"], "state": {"kind": "dismissed", "optimized_ms": 1786334400000}, "expected": {"verdict": "dismissed"}},
+    {"name": "a dismissal while never optimized", "now_ms": 1829534400000, "last_optimized_ms": null, "reviews_since": 9000, "presets": ["fsrs"], "state": {"kind": "dismissed", "optimized_ms": null}, "expected": {"verdict": "dismissed"}},
+    {"name": "a device in a later time zone puts the same optimization later", "now_ms": 1829534400000, "last_optimized_ms": 1786352400000, "reviews_since": 9000, "presets": ["fsrs"], "state": {"kind": "dismissed", "optimized_ms": 1786334400000}, "expected": {"verdict": "dismissed"}},
+    {"name": "a device in an earlier time zone puts the same optimization earlier", "now_ms": 1829534400000, "last_optimized_ms": 1786316400000, "reviews_since": 9000, "presets": ["fsrs"], "state": {"kind": "dismissed", "optimized_ms": 1786334400000}, "expected": {"verdict": "dismissed"}},
+    {"name": "an optimization the next day ends a dismissal", "now_ms": 1789012800000, "last_optimized_ms": 1786420800000, "reviews_since": 1200, "presets": ["fsrs"], "state": {"kind": "dismissed", "optimized_ms": 1786334400000}, "expected": {"verdict": "remind", "since": "stale", "scheduler": "fsrs"}},
+    {"name": "optimizing again ends a dismissal", "now_ms": 1793246400000, "last_optimized_ms": 1789790400000, "reviews_since": 1200, "presets": ["fsrs"], "state": {"kind": "dismissed", "optimized_ms": 1786334400000}, "expected": {"verdict": "remind", "since": "stale", "scheduler": "fsrs"}},
+    {"name": "the first optimization ends a dismissal", "now_ms": 1790654400000, "last_optimized_ms": 1789790400000, "reviews_since": 1200, "presets": ["fsrs"], "state": {"kind": "dismissed", "optimized_ms": null}, "expected": {"verdict": "too_soon"}}
+  ],
+  "transitions": [
+    {"name": "snooze for a week", "state": {"kind": "on"}, "event": "snooze", "now_ms": 1788933600000, "last_optimized_ms": 1786334400000, "expected": {"kind": "snoozed", "until_ms": 1789538400000}},
+    {"name": "snooze again from now", "state": {"kind": "snoozed", "until_ms": 1789538400000}, "event": "snooze", "now_ms": 1789797600000, "last_optimized_ms": 1786334400000, "expected": {"kind": "snoozed", "until_ms": 1790402400000}},
+    {"name": "dismiss records the last optimization", "state": {"kind": "on"}, "event": "dismiss", "now_ms": 1788933600000, "last_optimized_ms": 1786334400000, "expected": {"kind": "dismissed", "optimized_ms": 1786334400000}},
+    {"name": "dismiss before any optimization", "state": {"kind": "on"}, "event": "dismiss", "now_ms": 1788933600000, "last_optimized_ms": null, "expected": {"kind": "dismissed", "optimized_ms": null}},
+    {"name": "dismiss a snoozed reminder", "state": {"kind": "snoozed", "until_ms": 1789538400000}, "event": "dismiss", "now_ms": 1789538400000, "last_optimized_ms": 1786334400000, "expected": {"kind": "dismissed", "optimized_ms": 1786334400000}},
+    {"name": "snooze a dismissed reminder", "state": {"kind": "dismissed", "optimized_ms": 1786334400000}, "event": "snooze", "now_ms": 1793253600000, "last_optimized_ms": 1789790400000, "expected": {"kind": "snoozed", "until_ms": 1793858400000}},
+    {"name": "turn off while snoozed", "state": {"kind": "snoozed", "until_ms": 1789538400000}, "event": "turn_off", "now_ms": 1788933600000, "last_optimized_ms": 1786334400000, "expected": {"kind": "off"}},
+    {"name": "turn off while dismissed", "state": {"kind": "dismissed", "optimized_ms": 1786334400000}, "event": "turn_off", "now_ms": 1788933600000, "last_optimized_ms": 1786334400000, "expected": {"kind": "off"}},
+    {"name": "turn on", "state": {"kind": "off"}, "event": "turn_on", "now_ms": 1788933600000, "last_optimized_ms": 1786334400000, "expected": {"kind": "on"}},
+    {"name": "turn on keeps a snooze", "state": {"kind": "snoozed", "until_ms": 1789538400000}, "event": "turn_on", "now_ms": 1788933600000, "last_optimized_ms": 1786334400000, "expected": {"kind": "snoozed", "until_ms": 1789538400000}},
+    {"name": "snooze while off", "state": {"kind": "off"}, "event": "snooze", "now_ms": 1788933600000, "last_optimized_ms": 1786334400000, "expected": {"kind": "off"}},
+    {"name": "dismiss while off", "state": {"kind": "off"}, "event": "dismiss", "now_ms": 1788933600000, "last_optimized_ms": 1786334400000, "expected": {"kind": "off"}}
+  ]
+}

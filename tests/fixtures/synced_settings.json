@@ -89,6 +89,15 @@
       "default": [],
       "desktop": "countdowns",
       "android": "ankiquestCountdowns"
+    },
+    {
+      "key": "optimize_reminder",
+      "type": "optimize_reminder",
+      "default": {
+        "kind": "on"
+      },
+      "desktop": "optimize_reminder",
+      "android": "ankiquestOptimizeReminder"
     }
   ],
   "server_merge": [
@@ -1208,6 +1217,173 @@
         }
       },
       "refused": true
+    },
+    {
+      "name": "an optimize reminder state is stored",
+      "now_ms": 1793183400000,
+      "stored": {
+        "optimize_reminder": {
+          "value": {
+            "kind": "on"
+          },
+          "updated_at": 1793170000000
+        }
+      },
+      "incoming": {
+        "optimize_reminder": {
+          "value": {
+            "kind": "snoozed",
+            "until_ms": 1793787800000
+          },
+          "updated_at": 1793183000000
+        }
+      },
+      "expected": {
+        "optimize_reminder": {
+          "value": {
+            "kind": "snoozed",
+            "until_ms": 1793787800000
+          },
+          "updated_at": 1793183000000
+        }
+      }
+    },
+    {
+      "name": "a dismissal before any optimization is stored",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "optimize_reminder": {
+          "value": {
+            "kind": "dismissed",
+            "optimized_ms": null
+          },
+          "updated_at": 1793183000000
+        }
+      },
+      "expected": {
+        "optimize_reminder": {
+          "value": {
+            "kind": "dismissed",
+            "optimized_ms": null
+          },
+          "updated_at": 1793183000000
+        }
+      }
+    },
+    {
+      "name": "an optimize reminder state of another kind refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "optimize_reminder": {
+          "value": {
+            "kind": "later"
+          },
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "an optimize reminder state with another field refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "optimize_reminder": {
+          "value": {
+            "kind": "off",
+            "until_ms": 1793787800000
+          },
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a snooze in collection days refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "optimize_reminder": {
+          "value": {
+            "kind": "snoozed",
+            "until_day": 437
+          },
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a snooze without its time refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "optimize_reminder": {
+          "value": {
+            "kind": "snoozed"
+          },
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a dismissal without its time refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "optimize_reminder": {
+          "value": {
+            "kind": "dismissed"
+          },
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a snooze before 1970 refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "optimize_reminder": {
+          "value": {
+            "kind": "snoozed",
+            "until_ms": -1
+          },
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a dismissal at time 0, where never is null, refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "optimize_reminder": {
+          "value": {
+            "kind": "dismissed",
+            "optimized_ms": 0
+          },
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "an optimize reminder state that is not an object refuses the whole change",
+      "now_ms": 1793183400000,
+      "stored": {},
+      "incoming": {
+        "optimize_reminder": {
+          "value": true,
+          "updated_at": 1793183000000
+        }
+      },
+      "refused": true
     }
   ],
   "client_merge": [
@@ -1433,6 +1609,87 @@
             "deck": null
           }
         ],
+        "changed_at": 1793180000000,
+        "push": null
+      }
+    },
+    {
+      "name": "a snooze from another device is applied",
+      "key": "optimize_reminder",
+      "local": {
+        "value": {
+          "kind": "on"
+        },
+        "changed_at": 0
+      },
+      "remote": {
+        "value": {
+          "kind": "snoozed",
+          "until_ms": 1793787800000
+        },
+        "updated_at": 1793183000000
+      },
+      "expected": {
+        "value": {
+          "kind": "snoozed",
+          "until_ms": 1793787800000
+        },
+        "changed_at": 1793183000000,
+        "push": null
+      }
+    },
+    {
+      "name": "a newer dismissal here is sent",
+      "key": "optimize_reminder",
+      "local": {
+        "value": {
+          "kind": "dismissed",
+          "optimized_ms": 1786334400000
+        },
+        "changed_at": 1793183000000
+      },
+      "remote": {
+        "value": {
+          "kind": "snoozed",
+          "until_ms": 1793787800000
+        },
+        "updated_at": 1793180000000
+      },
+      "expected": {
+        "value": {
+          "kind": "dismissed",
+          "optimized_ms": 1786334400000
+        },
+        "changed_at": 1793183000000,
+        "push": {
+          "value": {
+            "kind": "dismissed",
+            "optimized_ms": 1786334400000
+          },
+          "updated_at": 1793183000000
+        }
+      }
+    },
+    {
+      "name": "an optimize reminder state the client cannot use is ignored and the local one stays",
+      "key": "optimize_reminder",
+      "local": {
+        "value": {
+          "kind": "off"
+        },
+        "changed_at": 1793180000000
+      },
+      "remote": {
+        "value": {
+          "kind": "snoozed",
+          "until_ms": "1793787800000"
+        },
+        "updated_at": 1793183000000
+      },
+      "expected": {
+        "value": {
+          "kind": "off"
+        },
         "changed_at": 1793180000000,
         "push": null
       }

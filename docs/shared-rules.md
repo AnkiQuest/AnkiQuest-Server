@@ -15,7 +15,7 @@ crates/rules (Rust, in AnkiQuest-Server)
 
 ## What is shared
 
-Phase 1 is a pilot with one rule: today's day verdict (`tests/fixtures/day_verdicts.json`).
+The pilot rule is today's day verdict (`tests/fixtures/day_verdicts.json`).
 
 - `today_verdict(server: ServerDay, pending: Vec<PendingReview>, now_ms: i64) -> DayVerdict`:
   what the server's profile said about today, with the reviews the client has not uploaded. A
@@ -27,6 +27,27 @@ Phase 1 is a pilot with one rule: today's day verdict (`tests/fixtures/day_verdi
   `unverified`, `protected`, `short`, `pending`, `unknown`).
 - `meets_minimum(reviews, time_ms, needed_ms)`: whether a day counts toward the streak. Rust only;
   the server uses it for every day it judges.
+
+The optimize reminder (`tests/fixtures/optimize_reminder.json`): when to remind the player to run
+Anki's Optimize All Presets. The server only validates its state, the synced setting
+`optimize_reminder`; the clients compute the rule. Until they use the bindings, each keeps its own
+copy (`AnkiquestOptimizeReminder.kt`, `addon/optimize_reminder.py`), tested against the same cases.
+
+- `preset_scheduler(flags: PresetFlags) -> PresetScheduler` (`sm2`, `fsrs`, `rwkv_curve`,
+  `rwkv_instant`): a preset's scheduler from `fsrs`, `rwkvReviewEnabled` and
+  `rwkvReviewInstantOrderEnabled`.
+- `optimized_at_ms(today, day_cutoff, last_optimized_day) -> Option<i64>`: when Optimize All
+  Presets last ran, in epoch milliseconds: the end of the collection day `lastFsrsOptimize`, with
+  that collection's day boundaries.
+- `is_answer(revlog_type, ease)`: which revlog entries count as answers; those with ids from
+  `optimized_at_ms` are the answers since the last optimization.
+- `optimize_verdict(inputs: OptimizeInputs, state: OptimizeState) -> OptimizeVerdict`: `Off`,
+  `NoFsrs`, `Snoozed`, `Dismissed`, `TooSoon`, `TooFewReviews` or `Remind { since, wording }`.
+  `OptimizeInputs` holds `now_ms` and `last_optimized_ms`.
+- `optimize_next(state, event, now_ms, last_optimized_ms) -> OptimizeState`: the state after
+  snooze, dismiss, turn off or turn on. `OptimizeState` is `On`, `Off`, `Snoozed { until_ms }` or
+  `Dismissed { optimized_ms }`, in the setting's JSON with the `serde` feature. Times are epoch
+  milliseconds, so the synced state means the same on every device.
 
 The crate is pure: no IO, no async, no server code. Its features:
 
