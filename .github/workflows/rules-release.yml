@@ -47,8 +47,9 @@ jobs:
           pattern: ankiquest-rules-*
           path: ${{ runner.temp }}/artifacts
 
-      # One file per asset: the module, the Python bindings, and each
-      # desktop library named after its platform.
+      # One file per asset: the module, the Python and Kotlin bindings, each
+      # desktop library named after its platform and each Android library
+      # named after its ABI.
       - name: Name the assets
         working-directory: ${{ runner.temp }}/artifacts
         run: |
@@ -56,6 +57,10 @@ jobs:
           mkdir -p "$assets"
           cp ankiquest-rules-wasm/ankiquest_rules.wasm "$assets/"
           cp ankiquest-rules-bindings/python/ankiquest_rules.py "$assets/"
+          cp ankiquest-rules-bindings/kotlin/org/ankiquest/rules/ankiquest_rules.kt "$assets/"
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            cp "ankiquest-rules-android/jniLibs/$abi/libankiquest_rules.so" "$assets/libankiquest_rules-android-$abi.so"
+          done
           for platform in linux-x86_64 linux-aarch64 windows-x86_64 macos-arm64 macos-x86_64; do
             for lib in ankiquest-rules-$platform/*ankiquest_rules.*; do
               case "$lib" in *.py) continue ;; esac
@@ -66,7 +71,7 @@ jobs:
           cd "$assets"
           sha256sum ./* | sed 's| \./| |' | sort -k 2 > "$RUNNER_TEMP/SHA256SUMS"
           cat "$RUNNER_TEMP/SHA256SUMS"
-          [ "$(wc -l < "$RUNNER_TEMP/SHA256SUMS")" -eq 7 ]
+          [ "$(wc -l < "$RUNNER_TEMP/SHA256SUMS")" -eq 12 ]
           cp "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS
 
       # Releases only new bytes: a change that leaves every asset as it was,
@@ -97,7 +102,7 @@ jobs:
         run: |
           {
             echo "The shared rules, built from AnkiQuest-Server $GITHUB_SHA: the WebAssembly module,"
-            echo "the Python bindings and the desktop libraries."
+            echo "the Python and Kotlin bindings, the desktop libraries and the Android libraries."
             echo
             echo "SHA-256 of each asset:"
             echo

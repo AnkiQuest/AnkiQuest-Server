@@ -59,9 +59,9 @@ loads the library next to it with `ctypes`; it is not a compiled extension, so o
 with every Python version, Anki's bundled one included. CI runs it on Python 3.9 (Anki 24.11) and
 3.13 on all three operating systems, and the Kotlin on the JVM, against the fixture cases.
 
-There is no AAR yet: it needs the Android Gradle plugin and SDK here, and the clients compile the
-Kotlin sources with their own Kotlin version anyway. The jniLibs and sources go into the client's
-`src/main` directories as they are.
+There is no AAR: the Android app compiles the Kotlin sources with its own Kotlin version, with
+warnings as errors, and packs the libraries as its own `jniLibs`. The JVM check here compiles the
+bindings with warnings as errors too, so a UniFFI update that adds a warning fails here first.
 
 ## Reproducible builds
 
@@ -85,8 +85,9 @@ symbols; they do not depend on the target.
 Each client replaces its day-verdict code with the bindings and keeps running
 `day_verdicts.json` against them:
 
-- **Android fork**: add the jniLibs and Kotlin sources, JNA, and swap the Kotlin rule for
-  `todayVerdict`. Measure the APK size per ABI before and after.
+- **Android fork**: take the Kotlin sources and the four Android libraries from the newest rules
+  release at build time, add JNA, and swap each Kotlin rule for its binding, starting with the
+  optimize reminder. Measure the APK size per ABI before and after.
 - **Lite `:ankiquest-core`** (AnkiQuest-Android#421): the same, inside the module.
 - **Desktop add-on**: ship the five desktop libraries and `ankiquest_rules.py` from the newest rules
   release, load the one for the running platform, and swap the Python rule. Measure on Anki 24.11
@@ -96,7 +97,7 @@ Each client replaces its day-verdict code with the bindings and keeps running
 Clients take the bytes from the newest `rules-<N>` release (below), checked by SHA-256, not from workflow
 artifacts, which expire after 90 days; building from source in every client CI would repeat the
 toolchain and platform matrix for the same bytes. Building from source stays possible, and
-reproducible, for anyone who wants to check. The Android app does not use the crate today, and its libraries are not released.
+reproducible, for anyone who wants to check.
 
 ## WebAssembly for web views
 
@@ -124,6 +125,10 @@ any asset's bytes differ from the latest `rules-<N>` release it publishes `rules
 
 - `ankiquest_rules.wasm`: the module.
 - `ankiquest_rules.py`: the Python bindings.
+- `ankiquest_rules.kt`: the Kotlin bindings (package `org.ankiquest.rules`).
+- `libankiquest_rules-android-arm64-v8a.so`, `libankiquest_rules-android-armeabi-v7a.so`,
+  `libankiquest_rules-android-x86.so`, `libankiquest_rules-android-x86_64.so`: the Android
+  libraries, named after their ABI. In an APK each is `lib/<abi>/libankiquest_rules.so`.
 - `libankiquest_rules-linux-x86_64.so`, `libankiquest_rules-linux-aarch64.so`,
   `ankiquest_rules-windows-x86_64.dll`, `libankiquest_rules-macos-arm64.dylib`,
   `libankiquest_rules-macos-x86_64.dylib`: the desktop libraries, named after their platform. Next
@@ -136,6 +141,9 @@ they build or package: they list the releases, take the highest N, download the 
 check each against that release's `SHA256SUMS`, and record the tag in what they build, so a build
 can be traced and rebuilt from the same release. A client that needs reproducible builds from its
 own source alone (an F-Droid build, say) would pin a release instead; none does today.
+
+The Android app's JVM unit tests (Robolectric) run the Kotlin bindings against the desktop library
+of the machine they run on, from the same release, so the fixture cases test the crate there too.
 
 ## Which form each client uses
 

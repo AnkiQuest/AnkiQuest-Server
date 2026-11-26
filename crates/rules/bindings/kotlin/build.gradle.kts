@@ -14,8 +14,12 @@ sourceSets.main {
     kotlin.srcDir(providers.gradleProperty("bindings"))
 }
 
+// The Android app compiles the bindings with warnings as errors; so does this check.
 kotlin {
     jvmToolchain(21)
+    compilerOptions {
+        allWarningsAsErrors = true
+    }
 }
 
 application {
