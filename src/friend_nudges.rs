@@ -7,6 +7,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 #[derive(Debug, Serialize)]
@@ -31,6 +32,72 @@ fn key(sender: &str, day: i64) -> String {
 
 fn sent(store: &Store, sender: &str, recipient: &str, day: i64) -> Result<bool, Error> {
     store.is_seen(recipient, &key(sender, day))
+}
+
+/// The three nudge choices for each of `friends`, in order — whether they are enabled to nudge
+/// `sender`, whether `sender` nudged them this `day`, and whether `sender` muted them — read
+/// with one statement per table instead of one per friend.
+fn settings_for(
+    store: &Store,
+    sender: &str,
+    friends: &[String],
+    day: i64,
+) -> Result<Vec<(bool, bool, bool)>, Error> {
+    if friends.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = friends.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+    let receiving: HashSet<String> = {
+        let sql = format!(
+            "select user from player_settings where friend_nudges and user in ({placeholders})"
+        );
+        let mut statement = store.conn.prepare(&sql)?;
+        statement
+            .query_map(rusqlite::params_from_iter(friends), |row| {
+                row.get::<_, String>(0)
+            })?
+            .collect::<Result<HashSet<_>, _>>()?
+    };
+    let blocked: HashSet<String> = {
+        let mut statement = store
+            .conn
+            .prepare("select recipient from friend_nudge_muted_senders where sender = ?1")?;
+        statement
+            .query_map([sender], |row| row.get::<_, String>(0))?
+            .collect::<Result<HashSet<_>, _>>()?
+    };
+    let muted: HashSet<String> = {
+        let mut statement = store
+            .conn
+            .prepare("select recipient from muted_people where sender = ?1")?;
+        statement
+            .query_map([sender], |row| row.get::<_, String>(0))?
+            .collect::<Result<HashSet<_>, _>>()?
+    };
+    let muted_by_me: HashSet<String> = {
+        let mut statement = store
+            .conn
+            .prepare("select sender from friend_nudge_muted_senders where recipient = ?1")?;
+        statement
+            .query_map([sender], |row| row.get::<_, String>(0))?
+            .collect::<Result<HashSet<_>, _>>()?
+    };
+    let sent_today: HashSet<String> = {
+        let mut statement = store.conn.prepare("select user from seen where key = ?1")?;
+        statement
+            .query_map([key(sender, day).as_str()], |row| row.get::<_, String>(0))?
+            .collect::<Result<HashSet<_>, _>>()?
+    };
+    Ok(friends
+        .iter()
+        .map(|friend| {
+            (
+                receiving.contains(friend) && !blocked.contains(friend) && !muted.contains(friend),
+                sent_today.contains(friend),
+                muted_by_me.contains(friend),
+            )
+        })
+        .collect())
 }
 
 fn send(
@@ -72,18 +139,16 @@ async fn settings(
     require_owner(&app, &user, &headers)?;
     let store = app.store.lock().unwrap();
     let day = store.clock(&user).map_err(store_error)?.day(now_ms());
+    let recipients = crate::shares::friends(&app, &store.conn, &user).map_err(store_error)?;
+    let choices = settings_for(&store, &user, &recipients, day).map_err(store_error)?;
     let mut friends = Vec::new();
-    for recipient in crate::shares::friends(&app, &store.conn, &user).map_err(store_error)? {
+    for (recipient, (enabled, sent_today, muted_by_me)) in recipients.iter().zip(choices) {
         friends.push(Friend {
-            display: app.display(&recipient),
-            enabled: store
-                .friend_nudges_enabled(&recipient, &user)
-                .map_err(store_error)?,
-            sent_today: sent(&store, &user, &recipient, day).map_err(store_error)?,
-            muted_by_me: store
-                .friend_nudge_muted(&user, &recipient)
-                .map_err(store_error)?,
-            user: recipient,
+            display: app.display(recipient),
+            enabled,
+            sent_today,
+            muted_by_me,
+            user: recipient.clone(),
         });
     }
     friends.sort_by(|a, b| a.display.cmp(&b.display).then(a.user.cmp(&b.user)));
@@ -412,5 +477,44 @@ mod tests {
             StatusCode::OK,
         );
         cleanup(store, path);
+    }
+
+    #[test]
+    fn nudges_for_friends_answers_what_the_single_queries_do() {
+        let (mut store, path) = crate::test_support::temporary_store();
+        let day = 20_000;
+        store.set_friend_nudges("ana", true).unwrap();
+        store.set_friend_nudges("bobby", false).unwrap();
+        store.set_friend_nudges("cerro", true).unwrap();
+        store.set_friend_nudges("hill", true).unwrap();
+        // bobby and cerro no longer take nudges from hill; hill muted bobby.
+        store.set_friend_nudge_muted("bobby", "hill", true).unwrap();
+        store.set_friend_nudge_muted("cerro", "hill", true).unwrap();
+        store.set_friend_nudge_muted("hill", "bobby", true).unwrap();
+        store
+            .conn
+            .execute(
+                "insert or ignore into muted_people (recipient, sender, created_at) values (?1, ?2, ?3)",
+                rusqlite::params!["cerro", "hill", 0],
+            )
+            .unwrap();
+        store.mark_seen("ana", &key("hill", day)).unwrap();
+
+        let friends = vec!["ana".to_string(), "bobby".to_string(), "cerro".to_string()];
+        let batched = settings_for(&store, "hill", &friends, day).unwrap();
+        for (friend, batched) in friends.iter().zip(batched) {
+            let single = (
+                store.friend_nudges_enabled(friend, "hill").unwrap(),
+                sent(&store, "hill", friend, day).unwrap(),
+                store.friend_nudge_muted("hill", friend).unwrap(),
+            );
+            assert_eq!(batched, single, "{friend}");
+        }
+        assert!(
+            settings_for(&store, "hill", &[], day).unwrap().is_empty(),
+            "no friends answers nothing"
+        );
+        let config: crate::config::Config = serde_json::from_value(serde_json::json!({})).unwrap();
+        cleanup(crate::test_support::app_from(store, config), path);
     }
 }
