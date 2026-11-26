@@ -182,8 +182,7 @@ struct Companion {
 }
 
 /// The command's arguments.
-const USAGE: &str =
-    "usage: xtask art-coverage [--missing | --json | --since <poses.json>]";
+const USAGE: &str = "usage: xtask art-coverage [--missing | --json | --since <poses.json>]";
 
 /// Runs the report or the check.
 pub fn run(args: &[String]) -> ExitCode {

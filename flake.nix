@@ -25,7 +25,7 @@
       CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER = "${pkgs.buildPackages.lld}/bin/wasm-ld";
     };
     # The AnkiQuest-Art release ankiquest-art.json pins (AnkiQuest-Sync
-    # bumps it): the package's build unpacks its masters and manifest into
+    # bumps it): the package's build stages its masters, manifest and poses into
     # art/, where build.rs reads them through crates/art's MASTERS. No
     # submodule; the flake's source has never the masters, so the pin's
     # hashes select the fixed-output fetches.
@@ -58,6 +58,7 @@
             mkdir -p art
             ${pkgs.unzip}/bin/unzip -qo ${artAsset pkgs "masters.zip"} -d art
             cp ${artAsset pkgs "manifest.json"} art/manifest.json
+            cp ${artAsset pkgs "poses.json"} art/poses.json
           '';
           doCheck = false;
           meta.mainProgram = "ankiquest";

@@ -109,6 +109,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       # The companion art masters: the pinned AnkiQuest-Art release,
@@ -123,8 +124,9 @@ jobs:
         run: cargo run -p ankiquest-xtask -- art-coverage --missing | tee -a "$GITHUB_STEP_SUMMARY"
 
       # An item (core mood, picture, icon or extension) added to
-      # the release's poses.json needs a master for every live companion. Comparing with the base commit's release keeps existing
-      # gaps from failing. `event-base` picks the pull request's, the
+      # the release's poses.json needs a master for every live companion.
+      # Comparing with the base release keeps existing gaps from failing.
+      # `event-base` picks the pull request's, the
       # merge group's or the push's base.
       - name: Check added poses are drawn
         env:
