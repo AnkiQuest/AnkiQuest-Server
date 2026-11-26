@@ -1,0 +1,14 @@
+[package]
+name = "ankiquest-rules-wasm"
+version = "0.1.0"
+authors = ["hill <hill@hilll.dev>"]
+edition = "2024"
+rust-version = "1.88"
+license = "AGPL-3.0-or-later"
+description = "ankiquest-rules for web views, as a WebAssembly module without bindgen or imports"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ankiquest-rules = { path = "../rules" }
