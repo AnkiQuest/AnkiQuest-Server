@@ -985,8 +985,16 @@ mod tests {
         cleanup(app, path);
     }
 
-    /// A new account that studied `count` cards ten minutes ago, and its device token.
+    /// A new account with a public profile, chosen at sign-up, that studied `count` cards ten
+    /// minutes ago, and its device token.
     fn account(app: &App, user: &str, count: i64) -> String {
+        let token = unanswered(app, user, count);
+        crate::social::choose_visibility(&app.store.lock().unwrap().conn, user, true).unwrap();
+        token
+    }
+
+    /// [`account`] for a player who did not answer "Public profile" at sign-up.
+    fn unanswered(app: &App, user: &str, count: i64) -> String {
         let display = format!("{}{}", user[..1].to_uppercase(), &user[1..]);
         crate::accounts::create(&app.store.lock().unwrap().conn, user, &display, "", 0).unwrap();
         app.accounts.insert(user, &display);
@@ -1000,15 +1008,7 @@ mod tests {
     }
 
     fn make_private(app: &App, user: &str) {
-        app.store
-            .lock()
-            .unwrap()
-            .conn
-            .execute(
-                "insert into visibility (user, public) values (?1, 0)",
-                [user],
-            )
-            .unwrap();
+        crate::social::choose_visibility(&app.store.lock().unwrap().conn, user, false).unwrap();
     }
 
     async fn get(
@@ -1138,6 +1138,7 @@ mod tests {
         let ana = account(&app, "ana", 4);
         account(&app, "bobby", 50);
         let carla = account(&app, "carla", 500);
+        let dora = unanswered(&app, "dora", 900);
         let assert_summary = |stranger: &serde_json::Value| {
             let fields: BTreeSet<&str> = stranger
                 .as_object()
@@ -1166,7 +1167,12 @@ mod tests {
         assert_eq!(
             users(&board),
             ["carla", "bobby", "ana"],
-            "profiles are public and listed until their player says otherwise"
+            "public profiles are listed until their player says otherwise; dora's is private"
+        );
+        assert_eq!(
+            get(&app, "/api/decks/dora", Some(&dora)).await.1["global_leaderboard"],
+            false,
+            "a private profile is off the global board until its player turns it on"
         );
         assert_summary(row(&board, "bobby"));
         assert_eq!(row(&board, "ana")["shown"], true);
@@ -1204,7 +1210,7 @@ mod tests {
         assert_eq!(
             get(&app, "/api/profile/carla", Some(&ana)).await.0,
             StatusCode::OK,
-            "a profile nobody made private is public"
+            "a profile its player made public at sign-up is public"
         );
 
         // Carla turns it off through the settings the app reads.

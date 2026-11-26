@@ -24,6 +24,7 @@ const STEPS: &[Step] = &[
     quest_companions,
     group_invitations,
     review_ease,
+    private_by_default,
 ];
 
 /// Brings the database up to the latest step, then turns foreign keys on for the connection.
@@ -297,11 +298,37 @@ fn review_ease(conn: &Connection) -> Result<(), Error> {
     add_column(conn, "reviews", "ease", "integer")
 }
 
+/// New profiles are private until their player makes them public. Accounts that never chose
+/// were public by the old default and stay so (`old_default`), until they choose; their
+/// conquest labels keep reaching friends only. Players from before accounts need no row: they
+/// stay public by [`crate::social::Visibility::from_row`].
+fn private_by_default(conn: &Connection) -> Result<(), Error> {
+    add_column(
+        conn,
+        "visibility",
+        "old_default",
+        "integer not null default 0 check (old_default = 0 or public = 1)",
+    )?;
+    conn.execute(
+        "insert or ignore into visibility (user, public, old_default) select user, 1, 1 from accounts",
+        [],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::store::Store;
     use crate::test_support::cleanup;
+
+    /// The `user_version` of a database that has had every step before `step`.
+    fn step_index(step: Step) -> usize {
+        STEPS
+            .iter()
+            .position(|known| std::ptr::fn_addr_eq(*known, step))
+            .unwrap()
+    }
 
     fn version(conn: &Connection) -> usize {
         conn.query_row("pragma user_version", [], |r| r.get::<_, i64>(0))
@@ -622,7 +649,7 @@ mod tests {
                  insert into reviews (user, id, cid, last_ivl, ivl, time_ms, kind)
                      values ('hill', 1, 10, 3, -600, 5000, 1);
                  pragma user_version = {};",
-                STEPS.len() - 1
+                step_index(review_ease)
             ))
             .unwrap();
         }
@@ -632,6 +659,47 @@ mod tests {
         assert_eq!(reviews.len(), 1);
         assert_eq!(reviews[0].ivl, Some(-600));
         assert_eq!(reviews[0].ease, None);
+        cleanup(store, dir);
+    }
+
+    #[test]
+    fn accounts_that_never_chose_keep_public_profiles_and_new_ones_start_private() {
+        use crate::social::{Visibility, visibility_in};
+        let dir = temp_dir("private-by-default");
+        drop(Store::open(&dir).unwrap());
+        {
+            // A database from when profiles were public by default: Ana and Bo never chose,
+            // Cy made hers private, Di made his public. Cerro is a configured player.
+            let conn = Connection::open(dir.join("ankiquest.db")).unwrap();
+            conn.execute_batch(&format!(
+                "alter table visibility drop column old_default;
+                 insert into accounts (user, display, password_hash, created_at) values
+                     ('ana', 'Ana', '', 0), ('bo', 'Bo', '', 0), ('cy', 'Cy', '', 0), ('di', 'Di', '', 0);
+                 insert into visibility (user, public) values ('cy', 0), ('di', 1);
+                 pragma user_version = {};",
+                step_index(private_by_default)
+            ))
+            .unwrap();
+        }
+        let store = Store::open(&dir).unwrap();
+        assert_eq!(version(&store.conn), STEPS.len());
+        let profile = |user: &str| visibility_in(&store.conn, user).unwrap();
+        assert_eq!(profile("ana"), Visibility::PublicByOldDefault);
+        assert_eq!(profile("bo"), Visibility::PublicByOldDefault);
+        assert_eq!(profile("cy"), Visibility::Private, "a choice stays");
+        assert_eq!(profile("di"), Visibility::Public, "a choice stays");
+        assert_eq!(
+            profile("cerro"),
+            Visibility::Public,
+            "configured players need no row"
+        );
+        assert!(store.global_leaderboard("ana").unwrap(), "still listed");
+        assert!(!store.global_leaderboard("cy").unwrap());
+
+        // An account created after the step starts private.
+        crate::accounts::create(&store.conn, "eva", "Eva", "", 0).unwrap();
+        assert_eq!(profile("eva"), Visibility::Private);
+        assert!(!store.global_leaderboard("eva").unwrap());
         cleanup(store, dir);
     }
 
