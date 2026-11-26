@@ -1,5 +1,5 @@
 //! Reports which companion art exists: every item of
-//! `tests/fixtures/companion_poses.json` (core moods, pictures, icons and
+//! the staged release's `art/poses.json` (core moods, pictures, icons and
 //! extensions) for each companion. Read-only.
 //!
 //! An item's master is the file the staged AnkiQuest-Art release's manifest
@@ -182,8 +182,7 @@ struct Companion {
 }
 
 /// The command's arguments.
-const USAGE: &str =
-    "usage: xtask art-coverage [--missing | --json | --since <companion_poses.json>]";
+const USAGE: &str = "usage: xtask art-coverage [--missing | --json | --since <poses.json>]";
 
 /// Runs the report or the check.
 pub fn run(args: &[String]) -> ExitCode {

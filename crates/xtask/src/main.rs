@@ -1,7 +1,7 @@
 //! Repository tools, run with `cargo run -p ankiquest-xtask -- <command>`.
 //!
 //! - `android-contract --android-catalog <names.json> --baseline <dir> [--server-examples <dir>]`
-//! - `art-coverage [--missing | --json | --since <companion_poses.json>]`
+//! - `art-coverage [--missing | --json | --since <poses.json>]`
 //! - `event-base`
 
 mod art;
@@ -14,7 +14,7 @@ use std::process::ExitCode;
 
 const USAGE: &str = "usage: xtask android-contract --android-catalog <names.json> \
 --baseline <dir> [--server-examples <dir>]\n       \
-xtask art-coverage [--missing | --json | --since <companion_poses.json>]\n       \
+xtask art-coverage [--missing | --json | --since <poses.json>]\n       \
 xtask event-base";
 
 fn main() -> ExitCode {

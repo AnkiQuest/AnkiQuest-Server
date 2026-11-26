@@ -109,6 +109,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       # The companion art masters: the pinned AnkiQuest-Art release,
@@ -123,15 +124,25 @@ jobs:
         run: cargo run -p ankiquest-xtask -- art-coverage --missing | tee -a "$GITHUB_STEP_SUMMARY"
 
       # An item (core mood, picture, icon or extension) added to
-      # companion_poses.json needs a master for every live companion. Comparing with the base commit's list keeps existing
-      # gaps from failing. `event-base` picks the pull request's, the
+      # the release's poses.json needs a master for every live companion.
+      # Comparing with the base release keeps existing gaps from failing.
+      # `event-base` picks the pull request's, the
       # merge group's or the push's base.
       - name: Check added poses are drawn
+        env:
+          BASE_ART: ${{ runner.temp }}/base-art.json
+          BASE_POSES: ${{ runner.temp }}/base-poses.json
         run: |
           BASE=$(cargo run -q -p ankiquest-xtask -- event-base)
-          git fetch --depth=1 origin "$BASE"
-          git show "$BASE:tests/fixtures/companion_poses.json" > "$RUNNER_TEMP/base-poses.json"
-          cargo run -p ankiquest-xtask -- art-coverage --since "$RUNNER_TEMP/base-poses.json"
+          # The pose list lives in the pinned AnkiQuest-Art release now: the base's
+          # list comes from the base commit's pin, checked by the same tool that
+          # stages the release.
+          git show "$BASE:ankiquest-art.json" > "$BASE_ART"
+          node --input-type=module -e 'import fs from "node:fs";
+            import { asset } from "./tests/tools/stage-art.mjs";
+            const pin = JSON.parse(fs.readFileSync(process.env.BASE_ART, "utf8"));
+            fs.writeFileSync(process.env.BASE_POSES, await asset(pin, "poses.json"));'
+          cargo run -p ankiquest-xtask -- art-coverage --since "$BASE_POSES"
 
   web:
     needs: changes

@@ -122,8 +122,8 @@ impl Art {
 fn poses() -> &'static ankiquest_art::Poses {
     static PARSED: OnceLock<ankiquest_art::Poses> = OnceLock::new();
     PARSED.get_or_init(|| {
-        ankiquest_art::Poses::parse(include_str!("../tests/fixtures/companion_poses.json"))
-            .expect("the pose fixture parses")
+        ankiquest_art::Poses::parse(include_str!("../art/poses.json"))
+            .expect("the release's pose list parses")
     })
 }
 
