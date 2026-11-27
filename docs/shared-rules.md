@@ -50,7 +50,7 @@ The `Shared rules` workflow (`.github/workflows/rules.yml`) builds, on every pul
 | Artifact | Contents |
 | --- | --- |
 | `ankiquest-rules-bindings` | `kotlin/org/ankiquest/rules/ankiquest_rules.kt`, `python/ankiquest_rules.py` |
-| `ankiquest-rules-android` | `jniLibs/<abi>/libankiquest_rules.so` for arm64-v8a, armeabi-v7a, x86 and x86_64 (API 24, NDK r28c, 16 KB pages), the Kotlin sources, `SHA256SUMS` |
+| `ankiquest-rules-android` | `libankiquest_rules-android-<abi>.so` for arm64-v8a, armeabi-v7a, x86 and x86_64 (API 24, NDK r28c, 16 KB pages), `ankiquest_rules.kt`, `SHA256SUMS`: the output of `crates/rules/build-android.sh` |
 | `ankiquest-rules-<os>-<arch>` | the library for linux-x86_64, linux-aarch64, windows-x86_64, macos-arm64 or macos-x86_64, `ankiquest_rules.py`, `SHA256SUMS` |
 | `ankiquest-rules-wasm` | `ankiquest_rules.wasm`, `SHA256SUMS` |
 
@@ -76,6 +76,12 @@ CI:
   derives the macOS UUID from the contents. `--remap-path-prefix` removes the checkout and Cargo
   paths.
 - CI builds every library twice from a clean target directory and fails unless the hashes match.
+  The Android libraries and Kotlin bindings come from `crates/rules/build-android.sh <out>`, which
+  writes them under their release names with a `SHA256SUMS`; CI runs it a second time from another
+  folder with another `CARGO_HOME`, so the bytes depend on neither. It needs the Android targets of
+  the pinned toolchain, NDK r28c in `ANDROID_NDK_HOME` and cargo-ndk 4.1.2, and checks the last two.
+  Its output folder is what the Android app's build takes as `ANKIQUEST_RULES_DIR`; the app's
+  F-Droid build runs it at the commit of the release the app records.
 
 Bindings are generated from an unstripped debug build, since stripping removes the UniFFI metadata
 symbols; they do not depend on the target.
@@ -159,9 +165,9 @@ from `master`. Clients cache what they verified by SHA-256 and use it offline wi
 again.
 
 The F-Droid build of the Android app builds the libraries and the Kotlin bindings from this
-repository's source at the commit of the release the app records, with the commands of the
-`bindings` and `android` jobs, so it needs neither the release's libraries nor the attestation.
-Its recipe is in AnkiQuest-Android's `docs/fdroid/`.
+repository's source with `crates/rules/build-android.sh`, at the tag of the release the app
+records, so it needs neither the release's libraries nor the attestation. Its recipe is in
+AnkiQuest-Android's `docs/fdroid/`.
 
 The Android app's JVM unit tests (Robolectric) run the Kotlin bindings against the desktop library
 of the machine they run on, from the same release, so the fixture cases test the crate there too.
