@@ -136,3 +136,57 @@ test("freeze_used shows at the first open after a used freeze", () => {
     assert.equal(frozen > 0 && !opened, expected, name);
   }
 });
+
+type Night = {
+  night: {
+    default_usual: string;
+    recent_days: number;
+    min_days: number;
+    usual_cases: {name: string; rollover_hour: number; first_reviews: string[]; expected: string}[];
+  };
+  moods: {
+    name: string;
+    today: {state: string; streak: number; goal_reached: boolean};
+    night: {now: string; rollover_hour: number; first_reviews: string[]; yesterday: string};
+    expected: {mood: string};
+  }[];
+};
+
+const DAY_MINUTES = 24 * 60;
+const HOUR_MINUTES = 60;
+
+/** Minutes after the study day's rollover for a local HH:MM time. */
+function afterRollover(time: string, rolloverHour: number): number {
+  const [hours, minutes] = time.split(":").map(Number);
+  return (((hours * HOUR_MINUTES + minutes - rolloverHour * HOUR_MINUTES) % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
+}
+
+/** The usual first study time, in minutes after rollover, as the fixture defines it. */
+function usual(night: Night["night"], firstReviews: string[], rolloverHour: number): number {
+  const recent = firstReviews.slice(-night.recent_days).map((time) => afterRollover(time, rolloverHour));
+  if (recent.length < night.min_days) {
+    return afterRollover(night.default_usual, rolloverHour);
+  }
+  recent.sort((a, b) => a - b);
+  return recent[Math.floor((recent.length - 1) / 2)];
+}
+
+test("the usual first study time follows the night rule", () => {
+  const {night} = read<Night>("streak_moods.json");
+  for (const {name, rollover_hour: rollover, first_reviews: first, expected} of night.usual_cases) {
+    assert.equal(usual(night, first, rollover), afterRollover(expected, rollover), name);
+  }
+});
+
+test("a streak sleeps only in the night window after a counted day", () => {
+  // With a streak, asleep means the night rule applied: pending, before the usual time, comfortable.
+  const fixture = read<Night>("streak_moods.json");
+  for (const {name, today, night, expected} of fixture.moods) {
+    const window =
+      today.state === "pending" &&
+      afterRollover(night.now, night.rollover_hour) < usual(fixture.night, night.first_reviews, night.rollover_hour);
+    const comfortable = today.streak > 0 && night.yesterday === "counted";
+    const sleeps = window && comfortable && !today.goal_reached;
+    assert.equal(sleeps, today.streak > 0 && expected.mood === "asleep", name);
+  }
+});

@@ -1,5 +1,5 @@
 {
-  "_about": "Today's streak mood, and the companion pose it shows. `today.state` is the day verdict: studied (today counts, or will once unsent reviews arrive), protected, short (reviews short of the minimum), pending (no reviews) or unknown. `time_ms` is today's review time so far and `streak_minutes` the streak minimum, as the day verdict measures them (day_verdicts.json). `frozen_days` counts the heatmap's frozen days in a row ending yesterday (frozen_run). `days_away` counts the heatmap's days without reviews in a row ending yesterday (away_run). `freezes` is the freezes the player has left (0 with freezes off) and `day_left_ms` the time until today's study day ends (`day_ends_at` minus now), null when the client does not know it. A counted day or a reached goal is fire, by heat: 1-6 streak, 7-29 streak_hot, 30-99 streak_blazing, 100+ streak_legend. Before that, the mood follows the stage of today's progress toward the minimum (`stages`). After a used freeze (frozen days, or a protected day after them): frozen (by its level) in the first stage, thawing in the second, hopeful in the third, almost in the fourth. A freeze in effect is freeze: today protected with no frozen day before it, in the first stage; or a streak, no reviews today, a freeze left and the day ending within `freeze_window_ms` (the freeze takes effect tonight). With a streak and no freeze in effect: sad in the first two stages, hopeful in the third, almost in the fourth. Without a streak: before any review, by `days_away` the last `away_levels` entry it reaches (neglected from 2 days, abandoned from 7, dead from 30), else asleep; hopeful after a review, almost in the fourth stage. `pose` names a pose from the pinned AnkiQuest-Art release's poses.json, not a picture: each companion draws it with its own art, and shows the pose's fallback where it has none (a companion without frozen_3 art shows its frozen_2, and without that its frozen). A mood may also name a picture from the pinned AnkiQuest-Art release's poses.json, which falls back the same way: freeze shows the freeze picture (the companion in a blanket), which falls back to frozen where it is not drawn. thawing and almost are moods, not poses: thawing shows frozen and almost shows hopeful. Frozen days 1-3 keep their poses: frozen (day 1), frozen_2 and frozen_3; an ice block is day 2 or 3, never day 1. `freeze_used` is the picture of the first open after a used freeze, not a mood. The desktop add-on (addon/moods.py, tests/test_streak_moods.py) checks it; the Android app keeps a copy for AnkiquestMood. `pictures` are the streak share pictures, drawn with Aki's art. `flames` is the flame beside the streak number for each mood (AnkiquestMood.flame): lit once today counts, unlit (grey) for a streak today has not counted for yet, icy (blue) while a freeze is in effect or still shows (freeze, frozen or thawing), none without a streak or when nothing is known about today. `messages` is the Today/Home line for a mood (AnkiquestAki.message, moods.mood), first match wins: sad is waiting; freeze and frozen_1-3 are freeze; every deck in `decks_due` done (none due, at least one deck) after `reviews` today is celebrate; cards due in the next deck (`focus_due`) is review; fire is streak; otherwise welcome. thawing and almost have no line of their own and follow the later rules, as hopeful does; neglected, abandoned and dead follow them as asleep does. Review is a kind, not a line: clients show no line for it. The kinds are the add-on's names; Android's AnkiquestAki.Message calls celebrate COMPLETE and freeze PROTECTED. `picture_style` is shared by every streak picture: `ink` is the text colour, `number` the streak number colour and `hero` the companion art size in px.",
+  "_about": "Today's streak mood, and the companion pose it shows. `today.state` is the day verdict: studied (today counts, or will once unsent reviews arrive), protected, short (reviews short of the minimum), pending (no reviews) or unknown. `time_ms` is today's review time so far and `streak_minutes` the streak minimum, as the day verdict measures them (day_verdicts.json). `frozen_days` counts the heatmap's frozen days in a row ending yesterday (frozen_run). `days_away` counts the heatmap's days without reviews in a row ending yesterday (away_run). `freezes` is the freezes the player has left (0 with freezes off) and `day_left_ms` the time until today's study day ends (`day_ends_at` minus now), null when the client does not know it. A counted day or a reached goal is fire, by heat: 1-6 streak, 7-29 streak_hot, 30-99 streak_blazing, 100+ streak_legend. At night (`night`): asleep while the player sleeps and was studying, before the rules below. Before that, the mood follows the stage of today's progress toward the minimum (`stages`). After a used freeze (frozen days, or a protected day after them): frozen (by its level) in the first stage, thawing in the second, hopeful in the third, almost in the fourth. A freeze in effect is freeze: today protected with no frozen day before it, in the first stage; or a streak, no reviews today, a freeze left and the day ending within `freeze_window_ms` (the freeze takes effect tonight). With a streak and no freeze in effect: sad in the first two stages, hopeful in the third, almost in the fourth. Without a streak: before any review, by `days_away` the last `away_levels` entry it reaches (neglected from 2 days, abandoned from 7, dead from 30), else asleep; hopeful after a review, almost in the fourth stage. `pose` names a pose from the pinned AnkiQuest-Art release's poses.json, not a picture: each companion draws it with its own art, and shows the pose's fallback where it has none (a companion without frozen_3 art shows its frozen_2, and without that its frozen). A mood may also name a picture from the pinned AnkiQuest-Art release's poses.json, which falls back the same way: freeze shows the freeze picture (the companion in a blanket), which falls back to frozen where it is not drawn. thawing and almost are moods, not poses: thawing shows frozen and almost shows hopeful. Frozen days 1-3 keep their poses: frozen (day 1), frozen_2 and frozen_3; an ice block is day 2 or 3, never day 1. `freeze_used` is the picture of the first open after a used freeze, not a mood. The desktop add-on (addon/moods.py, tests/test_streak_moods.py) checks it; the Android app keeps a copy for AnkiquestMood. `pictures` are the streak share pictures, drawn with Aki's art. `flames` is the flame beside the streak number for each mood (AnkiquestMood.flame): lit once today counts, unlit (grey) for a streak today has not counted for yet, icy (blue) while a freeze is in effect or still shows (freeze, frozen or thawing), none without a streak or when nothing is known about today. `messages` is the Today/Home line for a mood (AnkiquestAki.message, moods.mood), first match wins: sad is waiting; freeze and frozen_1-3 are freeze; every deck in `decks_due` done (none due, at least one deck) after `reviews` today is celebrate; cards due in the next deck (`focus_due`) is review; fire is streak; otherwise welcome. thawing and almost have no line of their own and follow the later rules, as hopeful does; neglected, abandoned and dead follow them as asleep does. Review is a kind, not a line: clients show no line for it. The kinds are the add-on's names; Android's AnkiquestAki.Message calls celebrate COMPLETE and freeze PROTECTED. `picture_style` is shared by every streak picture: `ink` is the text colour, `number` the streak number colour and `hero` the companion art size in px.",
   "stages": {
     "_about": "A stage starts once time_ms reaches from_percent of streak_minutes; compare in whole numbers (time_ms * 100 >= from_percent * streak_minutes * 60000) so no rounding moves a boundary. Without a minimum (streak_minutes 0) the day counts at the first review, so before it the stage is started.",
     "starts": [
@@ -116,6 +116,12 @@
       "expected": {
         "mood": "unknown",
         "pose": "face"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -135,6 +141,12 @@
       "expected": {
         "mood": "asleep",
         "pose": "asleep"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
       }
     },
     {
@@ -154,6 +166,12 @@
       "expected": {
         "mood": "sad",
         "pose": "sad"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -173,6 +191,12 @@
       "expected": {
         "mood": "sad",
         "pose": "sad"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -192,6 +216,12 @@
       "expected": {
         "mood": "sad",
         "pose": "sad"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -211,6 +241,12 @@
       "expected": {
         "mood": "hopeful",
         "pose": "hopeful"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
       }
     },
     {
@@ -230,6 +266,12 @@
       "expected": {
         "mood": "sad",
         "pose": "sad"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -249,6 +291,12 @@
       "expected": {
         "mood": "fire",
         "pose": "streak"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
       }
     },
     {
@@ -268,6 +316,12 @@
       "expected": {
         "mood": "fire",
         "pose": "streak"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -287,6 +341,12 @@
       "expected": {
         "mood": "fire",
         "pose": "streak"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -306,6 +366,12 @@
       "expected": {
         "mood": "fire",
         "pose": "streak_hot"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -325,6 +391,12 @@
       "expected": {
         "mood": "fire",
         "pose": "streak_hot"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -344,6 +416,12 @@
       "expected": {
         "mood": "fire",
         "pose": "streak_blazing"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -363,6 +441,12 @@
       "expected": {
         "mood": "fire",
         "pose": "streak_blazing"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -382,6 +466,12 @@
       "expected": {
         "mood": "fire",
         "pose": "streak_legend"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -401,6 +491,12 @@
       "expected": {
         "mood": "fire",
         "pose": "streak_legend"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -420,6 +516,12 @@
       "expected": {
         "mood": "fire",
         "pose": "streak_blazing"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -439,6 +541,12 @@
       "expected": {
         "mood": "fire",
         "pose": "streak_blazing"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -458,6 +566,12 @@
       "expected": {
         "mood": "fire",
         "pose": "streak_hot"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -477,6 +591,12 @@
       "expected": {
         "mood": "freeze",
         "pose": "freeze"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -496,6 +616,12 @@
       "expected": {
         "mood": "frozen_1",
         "pose": "frozen"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -515,6 +641,12 @@
       "expected": {
         "mood": "frozen_2",
         "pose": "frozen_2"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -534,6 +666,12 @@
       "expected": {
         "mood": "frozen_3",
         "pose": "frozen_3"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -553,6 +691,12 @@
       "expected": {
         "mood": "frozen_3",
         "pose": "frozen_3"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -572,6 +716,12 @@
       "expected": {
         "mood": "frozen_2",
         "pose": "frozen_2"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -591,6 +741,12 @@
       "expected": {
         "mood": "frozen_1",
         "pose": "frozen"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -610,6 +766,12 @@
       "expected": {
         "mood": "hopeful",
         "pose": "hopeful"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -629,6 +791,12 @@
       "expected": {
         "mood": "frozen_1",
         "pose": "frozen"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -648,6 +816,12 @@
       "expected": {
         "mood": "frozen_1",
         "pose": "frozen"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -667,6 +841,12 @@
       "expected": {
         "mood": "frozen_3",
         "pose": "frozen_3"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -686,6 +866,12 @@
       "expected": {
         "mood": "thawing",
         "pose": "frozen"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -705,6 +891,12 @@
       "expected": {
         "mood": "thawing",
         "pose": "frozen"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -724,6 +916,12 @@
       "expected": {
         "mood": "thawing",
         "pose": "frozen"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -743,6 +941,12 @@
       "expected": {
         "mood": "hopeful",
         "pose": "hopeful"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -762,6 +966,12 @@
       "expected": {
         "mood": "hopeful",
         "pose": "hopeful"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -781,6 +991,12 @@
       "expected": {
         "mood": "almost",
         "pose": "hopeful"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -800,6 +1016,12 @@
       "expected": {
         "mood": "almost",
         "pose": "hopeful"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -819,6 +1041,12 @@
       "expected": {
         "mood": "thawing",
         "pose": "frozen"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -838,6 +1066,12 @@
       "expected": {
         "mood": "sad",
         "pose": "sad"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -857,6 +1091,12 @@
       "expected": {
         "mood": "sad",
         "pose": "sad"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -876,6 +1116,12 @@
       "expected": {
         "mood": "sad",
         "pose": "sad"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -895,6 +1141,12 @@
       "expected": {
         "mood": "hopeful",
         "pose": "hopeful"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -914,6 +1166,12 @@
       "expected": {
         "mood": "hopeful",
         "pose": "hopeful"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -933,6 +1191,12 @@
       "expected": {
         "mood": "almost",
         "pose": "hopeful"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -952,6 +1216,12 @@
       "expected": {
         "mood": "almost",
         "pose": "hopeful"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -971,6 +1241,12 @@
       "expected": {
         "mood": "hopeful",
         "pose": "hopeful"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
       }
     },
     {
@@ -990,6 +1266,12 @@
       "expected": {
         "mood": "hopeful",
         "pose": "hopeful"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
       }
     },
     {
@@ -1009,6 +1291,12 @@
       "expected": {
         "mood": "almost",
         "pose": "hopeful"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
       }
     },
     {
@@ -1028,6 +1316,12 @@
       "expected": {
         "mood": "fire",
         "pose": "streak_hot"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -1047,6 +1341,12 @@
       "expected": {
         "mood": "freeze",
         "pose": "freeze"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -1066,6 +1366,12 @@
       "expected": {
         "mood": "freeze",
         "pose": "freeze"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -1085,6 +1391,12 @@
       "expected": {
         "mood": "sad",
         "pose": "sad"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -1104,6 +1416,12 @@
       "expected": {
         "mood": "sad",
         "pose": "sad"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -1123,6 +1441,12 @@
       "expected": {
         "mood": "sad",
         "pose": "sad"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -1142,6 +1466,12 @@
       "expected": {
         "mood": "sad",
         "pose": "sad"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -1161,6 +1491,12 @@
       "expected": {
         "mood": "asleep",
         "pose": "asleep"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
       }
     },
     {
@@ -1180,6 +1516,12 @@
       "expected": {
         "mood": "frozen_1",
         "pose": "frozen"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "protected"
       }
     },
     {
@@ -1199,6 +1541,12 @@
       "expected": {
         "mood": "freeze",
         "pose": "freeze"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
       }
     },
     {
@@ -1218,6 +1566,12 @@
       "expected": {
         "mood": "asleep",
         "pose": "asleep"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
       }
     },
     {
@@ -1237,6 +1591,12 @@
       "expected": {
         "mood": "neglected",
         "pose": "neglected"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
       }
     },
     {
@@ -1256,6 +1616,12 @@
       "expected": {
         "mood": "neglected",
         "pose": "neglected"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
       }
     },
     {
@@ -1275,6 +1641,12 @@
       "expected": {
         "mood": "abandoned",
         "pose": "abandoned"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
       }
     },
     {
@@ -1294,6 +1666,12 @@
       "expected": {
         "mood": "abandoned",
         "pose": "abandoned"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
       }
     },
     {
@@ -1313,6 +1691,12 @@
       "expected": {
         "mood": "dead",
         "pose": "dead"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
       }
     },
     {
@@ -1332,6 +1716,12 @@
       "expected": {
         "mood": "dead",
         "pose": "dead"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
       }
     },
     {
@@ -1351,6 +1741,12 @@
       "expected": {
         "mood": "hopeful",
         "pose": "hopeful"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
       }
     },
     {
@@ -1370,6 +1766,12 @@
       "expected": {
         "mood": "fire",
         "pose": "streak"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
       }
     },
     {
@@ -1389,6 +1791,678 @@
       "expected": {
         "mood": "unknown",
         "pose": "face"
+      },
+      "night": {
+        "now": "12:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "missed"
+      }
+    },
+    {
+      "name": "asleep at night after a counted day",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "06:00",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "counted"
+      },
+      "expected": {
+        "mood": "asleep",
+        "pose": "asleep"
+      }
+    },
+    {
+      "name": "asleep from the rollover",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "04:00",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "counted"
+      },
+      "expected": {
+        "mood": "asleep",
+        "pose": "asleep"
+      }
+    },
+    {
+      "name": "awake at the usual first study time",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "09:00",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "counted"
+      },
+      "expected": {
+        "mood": "sad",
+        "pose": "sad"
+      }
+    },
+    {
+      "name": "awake after the usual first study time",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "10:30",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "counted"
+      },
+      "expected": {
+        "mood": "sad",
+        "pose": "sad"
+      }
+    },
+    {
+      "name": "before the rollover is the previous study day's evening",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "03:59",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "counted"
+      },
+      "expected": {
+        "mood": "sad",
+        "pose": "sad"
+      }
+    },
+    {
+      "name": "the first study before the usual time wakes the companion",
+      "today": {
+        "state": "short",
+        "reviews": 3,
+        "time_ms": 60000,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "06:00",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "counted"
+      },
+      "expected": {
+        "mood": "sad",
+        "pose": "sad"
+      }
+    },
+    {
+      "name": "a reached goal at night burns",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": true
+      },
+      "night": {
+        "now": "06:00",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "counted"
+      },
+      "expected": {
+        "mood": "fire",
+        "pose": "streak_hot"
+      }
+    },
+    {
+      "name": "nothing known at night is unknown",
+      "today": {
+        "state": "unknown",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "06:00",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "counted"
+      },
+      "expected": {
+        "mood": "unknown",
+        "pose": "face"
+      }
+    },
+    {
+      "name": "a missed day keeps the streak waiting at night",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "06:00",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "missed"
+      },
+      "expected": {
+        "mood": "sad",
+        "pose": "sad"
+      }
+    },
+    {
+      "name": "an unknown yesterday keeps the streak waiting at night",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "06:00",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "unknown"
+      },
+      "expected": {
+        "mood": "sad",
+        "pose": "sad"
+      }
+    },
+    {
+      "name": "a frozen day keeps the companion frozen at night",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 1,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "06:00",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "protected"
+      },
+      "expected": {
+        "mood": "frozen_1",
+        "pose": "frozen"
+      }
+    },
+    {
+      "name": "three frozen days stay frozen at night",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 3,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "06:00",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "protected"
+      },
+      "expected": {
+        "mood": "frozen_3",
+        "pose": "frozen_3"
+      }
+    },
+    {
+      "name": "days away keep the companion neglected at night",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 0,
+        "frozen_days": 0,
+        "days_away": 3,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "06:00",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "missed"
+      },
+      "expected": {
+        "mood": "neglected",
+        "pose": "neglected"
+      }
+    },
+    {
+      "name": "a long time away stays abandoned at night",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 0,
+        "frozen_days": 0,
+        "days_away": 10,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "06:00",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "missed"
+      },
+      "expected": {
+        "mood": "abandoned",
+        "pose": "abandoned"
+      }
+    },
+    {
+      "name": "a month away stays dead at night",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 0,
+        "frozen_days": 0,
+        "days_away": 40,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "06:00",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "missed"
+      },
+      "expected": {
+        "mood": "dead",
+        "pose": "dead"
+      }
+    },
+    {
+      "name": "no streak and no review is asleep as by day",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 0,
+        "frozen_days": 0,
+        "days_away": 1,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "06:00",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "missed"
+      },
+      "expected": {
+        "mood": "asleep",
+        "pose": "asleep"
+      }
+    },
+    {
+      "name": "fewer than three studied days use the default time: before it",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "07:59",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "06:00",
+          "06:30"
+        ],
+        "yesterday": "counted"
+      },
+      "expected": {
+        "mood": "asleep",
+        "pose": "asleep"
+      }
+    },
+    {
+      "name": "fewer than three studied days use the default time: after it",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "08:00",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "06:00",
+          "06:30"
+        ],
+        "yesterday": "counted"
+      },
+      "expected": {
+        "mood": "sad",
+        "pose": "sad"
+      }
+    },
+    {
+      "name": "no history uses the default time",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "05:00",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "yesterday": "counted"
+      },
+      "expected": {
+        "mood": "asleep",
+        "pose": "asleep"
+      }
+    },
+    {
+      "name": "a night owl's usual time after midnight keeps the evening asleep",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "23:30",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "01:30",
+          "02:00",
+          "01:45"
+        ],
+        "yesterday": "counted"
+      },
+      "expected": {
+        "mood": "asleep",
+        "pose": "asleep"
+      }
+    },
+    {
+      "name": "a night owl is awake after the usual time",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "01:50",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "01:30",
+          "02:00",
+          "01:45"
+        ],
+        "yesterday": "counted"
+      },
+      "expected": {
+        "mood": "sad",
+        "pose": "sad"
+      }
+    },
+    {
+      "name": "a later rollover hour moves the window",
+      "today": {
+        "state": "pending",
+        "reviews": 0,
+        "time_ms": 0,
+        "streak_minutes": 20,
+        "streak": 10,
+        "frozen_days": 0,
+        "days_away": 0,
+        "freezes": 0,
+        "day_left_ms": 72000000,
+        "goal_reached": false
+      },
+      "night": {
+        "now": "05:00",
+        "rollover_hour": 6,
+        "first_reviews": [
+          "08:40",
+          "09:10",
+          "09:00",
+          "08:55",
+          "09:05"
+        ],
+        "yesterday": "counted"
+      },
+      "expected": {
+        "mood": "sad",
+        "pose": "sad"
       }
     }
   ],
@@ -1788,6 +2862,95 @@
       "from_days": 30
     }
   ],
+  "night": {
+    "_about": "The night window: the companion sleeps through the night and wakes up with the player. `night` on each mood case: `now` is the local time of day (HH:MM), `rollover_hour` the hour the study day starts (Anki's day start), `first_reviews` the local times (HH:MM) of the first review on each recent studied day, oldest first, and `yesterday` how the study day before today ended: counted (studied or reached the goal), protected (kept by a freeze), missed, or unknown. Minutes after rollover: (time in minutes - rollover_hour * 60) mod 1440. Usual first study time: the last `recent_days` entries of `first_reviews`, each in minutes after rollover, sorted; their median (the lower of the two middle values for an even count); with fewer than `min_days` entries, `default_usual`. Today is in the night window while today has no review (state pending) and now's minutes after rollover are below the usual time's (from the rollover up to, not including, the usual time). In the window the mood is asleep only when the player is comfortable: the streak is alive (streak > 0) and yesterday counted. The check comes after unknown and fire (a counted day or a reached goal), and before every other rule; any other state keeps its own mood in the window (frozen levels, neglected, abandoned, dead, sad). Without a streak, asleep before any review applies by day and night alike. Night asleep with a streak shows the `flame` below; asleep without a streak keeps `flames`. `usual_cases` check the usual time alone.",
+    "default_usual": "08:00",
+    "recent_days": 14,
+    "min_days": 3,
+    "flame": "unlit",
+    "usual_cases": [
+      {
+        "name": "no studied days",
+        "rollover_hour": 4,
+        "first_reviews": [],
+        "expected": "08:00"
+      },
+      {
+        "name": "two studied days are too few",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "06:00",
+          "06:30"
+        ],
+        "expected": "08:00"
+      },
+      {
+        "name": "three studied days give their median",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "07:00",
+          "09:00",
+          "08:00"
+        ],
+        "expected": "08:00"
+      },
+      {
+        "name": "an even count takes the lower middle",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "07:00",
+          "09:00",
+          "08:00",
+          "10:00"
+        ],
+        "expected": "08:00"
+      },
+      {
+        "name": "only the last fourteen days count",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "05:00",
+          "05:00",
+          "05:00",
+          "05:00",
+          "10:00",
+          "10:00",
+          "10:00",
+          "10:00",
+          "10:00",
+          "10:00",
+          "10:00",
+          "10:00",
+          "10:00",
+          "10:00",
+          "10:00",
+          "10:00",
+          "10:00"
+        ],
+        "expected": "10:00"
+      },
+      {
+        "name": "times after midnight sort after the evening",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "23:00",
+          "01:00",
+          "02:00"
+        ],
+        "expected": "01:00"
+      },
+      {
+        "name": "a time before the rollover belongs to the previous study day's end",
+        "rollover_hour": 4,
+        "first_reviews": [
+          "03:30",
+          "05:00",
+          "06:00"
+        ],
+        "expected": "06:00"
+      }
+    ]
+  },
   "picture_style": {
     "ink": "#FFFFFF",
     "number": "#FFD54F",
