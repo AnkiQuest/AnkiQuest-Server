@@ -1,5 +1,5 @@
 {
-  "_about": "Behaviour every ankiquest client must share. The Android fork keeps a copy in AnkiDroid/src/test/resources/ankiquest/clients.json; CI there fails when it drifts from this file.",
+  "_about": "Behaviour every ankiquest client must share. Both clients read this file from server master when their tests run, copied into AnkiDroid/src/test/resources/ankiquest/ and the add-on's tests/fixtures/, and check their behaviour against it.",
   "study_day": [
     {
       "now_ms": 1789000000000,
