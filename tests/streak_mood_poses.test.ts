@@ -90,7 +90,7 @@ test("the stage cases follow the stage starts", () => {
 
 type Away = {
   away_levels: {mood: string; from_days: number}[];
-  away_run: {name: string; heatmap: {state: string}[] | null; expected: number}[];
+  away_run: {name: string; heatmap: {state: string}[] | null; studied: boolean; expected: number}[];
 };
 
 const NONE = "none";
@@ -107,13 +107,22 @@ test("the away levels rise and show the neglected poses", () => {
 });
 
 test("the away run counts days without reviews after the last study day", () => {
-  // Today's own cell is not before today; a run that reaches the start of the heatmap has no
-  // study day before it, so it is a new player, not one away.
-  for (const {name, heatmap, expected} of read<Away>("streak_moods.json").away_run) {
+  // Today's own cell is not before today. A run that reaches the start of the heatmap has no
+  // study day in it: a player who studied before it is away as long as the heatmap, and one
+  // who never did (a new player) is not away at all.
+  for (const {name, heatmap, studied, expected} of read<Away>("streak_moods.json").away_run) {
     const before = (heatmap ?? []).slice(0, -1);
     const last = before.findLastIndex((day) => day.state !== NONE);
-    const away = last < 0 ? 0 : before.length - 1 - last;
+    const away = last < 0 ? (studied ? before.length : 0) : before.length - 1 - last;
     assert.equal(away, expected, name);
+  }
+});
+
+test("a study day in the heatmap means the player has studied", () => {
+  // `studied` is lifetime.reviews > 0, so a case with a reviewed day in its heatmap can't be false.
+  for (const {name, heatmap, studied} of read<Away>("streak_moods.json").away_run) {
+    const reviewed = (heatmap ?? []).some((day) => day.state !== NONE);
+    assert.ok(studied || !reviewed, name);
   }
 });
 
