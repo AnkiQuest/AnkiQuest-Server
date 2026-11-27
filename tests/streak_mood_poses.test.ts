@@ -118,6 +118,14 @@ test("the away run counts days without reviews after the last study day", () => 
   }
 });
 
+test("a study day in the heatmap means the player has studied", () => {
+  // `studied` is lifetime.reviews > 0, so a case with a reviewed day in its heatmap can't be false.
+  for (const {name, heatmap, studied} of read<Away>("streak_moods.json").away_run) {
+    const reviewed = (heatmap ?? []).some((day) => day.state !== NONE);
+    assert.ok(studied || !reviewed, name);
+  }
+});
+
 test("a freeze in effect shows the freeze picture, falling back to frozen", () => {
   const shows = new Map(moods.moods.map(({expected}) => [expected.mood, expected.pose]));
   assert.equal(shows.get("freeze"), "freeze");
