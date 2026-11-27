@@ -2,7 +2,7 @@
 
 `cargo run -p ankiquest-xtask -- art-coverage --json` prints the art matrix
 (AGENTS.md, Companion art): every companion by every item of
-`tests/fixtures/companion_poses.json`, with what each shows, the licence of
+the AnkiQuest-Art release's `poses.json` (staged into `art/`), with what each shows, the licence of
 its pictures and the archive. The gallery (AnkiQuest.github.io) builds from
 it on AnkiQuest-Server `master`. Paths are relative to the repository root
 and start with `art/`, the AnkiQuest-Art submodule (`ankiquest_art::MASTERS`):
@@ -16,7 +16,7 @@ keep it.
 ```jsonc
 {
   "schema": 1,
-  "fixture": "tests/fixtures/companion_poses.json",
+  "pose list": "art/poses.json (the staged Ankiquest-Art release)",
 
   // The kinds of item; `core` kinds are what a companion needs to go live.
   "kinds": [

@@ -38,13 +38,13 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: read # code-changed lists the pull request's files
     outputs:
       code: ${{ steps.code.outputs.code }}
       web: ${{ steps.web.outputs.code }}
     steps:
       - id: code
-        uses: AnkiQuest/AnkiQuest-Dev/.github/actions/code-changed@5ab685e7013b865630f96530ca8c654344738fa8
+        uses: AnkiQuest/AnkiQuest-Dev/.github/actions/code-changed@master
         with:
           docs: |
             **/*.md
@@ -53,7 +53,7 @@ jobs:
             .github/ISSUE_TEMPLATE/**
             .github/pull_request_template.md
       - id: web
-        uses: AnkiQuest/AnkiQuest-Dev/.github/actions/code-changed@5ab685e7013b865630f96530ca8c654344738fa8
+        uses: AnkiQuest/AnkiQuest-Dev/.github/actions/code-changed@master
         with:
           docs: |
             README.md
@@ -70,26 +70,36 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Test the compatibility guard
         run: cargo test -p ankiquest-xtask contract
+      # Android tests against server master, so the shapes to keep are the
+      # base commit's; `event-base` picks the pull request's, the merge
+      # group's or the push's base. Android's catalog names what it reads.
       - name: Read Android's public consumed-example catalog
         run: |
           git clone --depth 1 --filter=blob:none --sparse --branch master https://github.com/AnkiQuest/AnkiQuest-Android.git android-client
           git -C android-client sparse-checkout set --no-cone \
-            '/AnkiDroid/src/test/resources/ankiquest-api/' '/AnkiDroid/src/test/resources/ankiquest-server.sha' \
-            '/ankiquest-core/src/test/resources/ankiquest-api/' '/ankiquest-core/src/test/resources/ankiquest-server.sha'
+            '/AnkiDroid/src/test/resources/ankiquest-api/names.json' \
+            '/ankiquest-core/src/test/resources/ankiquest-api/names.json'
+      - name: Read the base commit's examples
+        run: |
+          BASE=$(cargo run -q -p ankiquest-xtask -- event-base)
+          git fetch --depth=1 origin "$BASE"
+          mkdir -p "$RUNNER_TEMP/base"
+          git archive "$BASE" docs/api/examples | tar -x -C "$RUNNER_TEMP/base"
       - name: Preserve Android's consumed API shapes
         run: |
-          resources=android-client/AnkiDroid/src/test/resources
-          # Select by the committed module, so a missing catalog or pin still fails the guard.
+          catalog=android-client/AnkiDroid/src/test/resources/ankiquest-api/names.json
+          # Select by the committed module, so a missing catalog still fails the guard.
           if git -C android-client cat-file -e HEAD:ankiquest-core 2>/dev/null; then
-            resources=android-client/ankiquest-core/src/test/resources
+            catalog=android-client/ankiquest-core/src/test/resources/ankiquest-api/names.json
           fi
-          cargo run -p ankiquest-xtask -- android-contract --android-resources "$resources"
+          cargo run -p ankiquest-xtask -- android-contract --android-catalog "$catalog" \
+            --baseline "$RUNNER_TEMP/base/docs/api/examples"
 
   art:
     needs: changes
@@ -97,8 +107,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       # The companion art masters: the pinned AnkiQuest-Art release,
@@ -108,20 +119,30 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       # The art backlog (#57, #116); informational: live companions with
-      # missing core items show the fixture's fallbacks (hill, 2026-11-21).
+      # missing core items show the fixture's fallbacks.
       - name: Report missing poses
         run: cargo run -p ankiquest-xtask -- art-coverage --missing | tee -a "$GITHUB_STEP_SUMMARY"
 
       # An item (core mood, picture, icon or extension) added to
-      # companion_poses.json needs a master for every live companion. Comparing with the base commit's list keeps existing
-      # gaps from failing. `event-base` picks the pull request's, the
+      # the release's poses.json needs a master for every live companion.
+      # Comparing with the base release keeps existing gaps from failing.
+      # `event-base` picks the pull request's, the
       # merge group's or the push's base.
       - name: Check added poses are drawn
+        env:
+          BASE_ART: ${{ runner.temp }}/base-art.json
+          BASE_POSES: ${{ runner.temp }}/base-poses.json
         run: |
           BASE=$(cargo run -q -p ankiquest-xtask -- event-base)
-          git fetch --depth=1 origin "$BASE"
-          git show "$BASE:tests/fixtures/companion_poses.json" > "$RUNNER_TEMP/base-poses.json"
-          cargo run -p ankiquest-xtask -- art-coverage --since "$RUNNER_TEMP/base-poses.json"
+          # The pose list lives in the pinned AnkiQuest-Art release now: the base's
+          # list comes from the base commit's pin, checked by the same tool that
+          # stages the release.
+          git show "$BASE:ankiquest-art.json" > "$BASE_ART"
+          node --input-type=module -e 'import fs from "node:fs";
+            import { asset } from "./tests/tools/stage-art.mjs";
+            const pin = JSON.parse(fs.readFileSync(process.env.BASE_ART, "utf8"));
+            fs.writeFileSync(process.env.BASE_POSES, await asset(pin, "poses.json"));'
+          cargo run -p ankiquest-xtask -- art-coverage --since "$BASE_POSES"
 
   web:
     needs: changes
@@ -130,7 +151,9 @@ jobs:
     env:
       PLAYWRIGHT_CHANNEL: chromium
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # The companion art masters: the pinned AnkiQuest-Art release,
       # downloaded and hash-checked by the tool below; never a submodule.
@@ -167,7 +190,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -234,14 +257,16 @@ jobs:
     if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # The companion art masters: the pinned AnkiQuest-Art release,
       # downloaded and hash-checked by the tool below; never a submodule.
       - name: Stage the pinned art release
         run: node tests/tools/stage-art.mjs .
 
-      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes

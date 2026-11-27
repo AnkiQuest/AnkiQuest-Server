@@ -17,7 +17,7 @@ Check out the submodule with `git clone --recurse-submodules`, or
 master lands in AnkiQuest-Art first; this repository picks it up by moving
 the submodule to the new commit.
 
-Pose names and fallbacks come from `tests/fixtures/companion_poses.json`:
+Pose names and fallbacks come from the pinned AnkiQuest-Art release's `poses.json` (staged into `art/`):
 the core moods, the moment and share-card pictures and the launcher icon
 moods a companion needs to go live, and the extensions. Until their
 masters are drawn, the core moods `happy` and `streak` show `hopeful`

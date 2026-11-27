@@ -8,7 +8,10 @@ name: Labels
 on:
   push:
     branches: [master]
-  pull_request_target:
+  # pull_request_target gives the token that labels pull requests from
+  # forks. The jobs run only the base branch's workflow and AnkiQuest-Dev's
+  # master, and read the event payload and the API, never the pull request.
+  pull_request_target: # zizmor: ignore[dangerous-triggers]
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed]
   pull_request_review:
     types: [submitted, dismissed]
@@ -39,7 +42,7 @@ jobs:
     uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/labels.yml@master
     permissions:
       contents: read
-      issues: write
+      issues: write # creates and updates labels
 
   # A job named scan: the rulesets require that check name, which a job calling
   # a reusable workflow would not report. Skipped in merge groups, which counts
@@ -54,7 +57,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: write # labels pull requests
     steps:
       - uses: AnkiQuest/AnkiQuest-Dev/.github/actions/conflict-scan@master
 
@@ -65,11 +68,11 @@ jobs:
     uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/pr-labels.yml@master
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: write # labels pull requests
 
   issues:
     if: github.event_name == 'issues'
     uses: AnkiQuest/AnkiQuest-Dev/.github/workflows/issue-labels.yml@master
     permissions:
       contents: read
-      issues: write
+      issues: write # labels issues
