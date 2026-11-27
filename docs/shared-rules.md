@@ -135,12 +135,33 @@ any asset's bytes differ from the latest `rules-<N>` release it publishes `rules
   to `ankiquest_rules.py` a library must carry its plain name (`libankiquest_rules.so`,
   `ankiquest_rules.dll`, `libankiquest_rules.dylib`), which is what the bindings load.
 - `SHA256SUMS`: every asset.
+- `ankiquest_rules.sigstore.json`: a Sigstore bundle with one SLSA build provenance attestation
+  ([actions/attest-build-provenance](https://github.com/actions/attest-build-provenance)) whose
+  subjects are every asset above, `SHA256SUMS` included. It is signed through Sigstore's public
+  instance for `.github/workflows/rules-release.yml` running on `refs/heads/master` of this
+  repository, and also stored here, so `gh attestation verify <asset> --repo
+  AnkiQuest/AnkiQuest-Server --signer-workflow
+  AnkiQuest/AnkiQuest-Server/.github/workflows/rules-release.yml --source-ref refs/heads/master`
+  checks any asset.
 
 Clients use server `master`, not a pinned commit, so they take the newest `rules-<N>` release when
 they build or package: they list the releases, take the highest N, download the assets they need,
-check each against that release's `SHA256SUMS`, and record the tag in what they build, so a build
-can be traced and rebuilt from the same release. A client that needs reproducible builds from its
-own source alone (an F-Droid build, say) would pin a release instead; none does today.
+check each against that release's `SHA256SUMS` and against the attestation, and record the tag in
+what they build, so a build can be traced and rebuilt from the same release.
+
+The attestation check accepts an asset only when the bundle's signature, certificate chain and
+transparency log entry verify against Sigstore's public trust root, the certificate was issued to
+`https://github.com/AnkiQuest/AnkiQuest-Server/.github/workflows/rules-release.yml@refs/heads/master`
+by `https://token.actions.githubusercontent.com`, and the asset's SHA-256 is one of the
+attestation's subjects. `SHA256SUMS` alone only shows that the files belong together: whoever can
+replace release assets can replace it too. The attestation shows that this workflow built them
+from `master`. Clients cache what they verified by SHA-256 and use it offline without checking
+again.
+
+The F-Droid build of the Android app builds the libraries and the Kotlin bindings from this
+repository's source at the commit of the release the app records, with the commands of the
+`bindings` and `android` jobs, so it needs neither the release's libraries nor the attestation.
+Its recipe is in AnkiQuest-Android's `docs/fdroid/`.
 
 The Android app's JVM unit tests (Robolectric) run the Kotlin bindings against the desktop library
 of the machine they run on, from the same release, so the fixture cases test the crate there too.

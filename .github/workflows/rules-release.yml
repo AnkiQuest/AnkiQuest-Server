@@ -2,8 +2,9 @@
 # the latest release does not have (docs/shared-rules.md). The Shared rules
 # workflow builds and tests everything (each library twice, the fixture
 # cases on every platform); this one names the assets and publishes
-# rules-<N> (one more than the highest rules-* tag) with their SHA256SUMS.
-# Consumers take the newest rules-<N> release when they build.
+# rules-<N> (one more than the highest rules-* tag) with their SHA256SUMS
+# and one build provenance attestation for every asset. Consumers take the
+# newest rules-<N> release when they build and verify the attestation.
 name: Rules release
 
 on:
@@ -40,7 +41,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
-      contents: write
+      contents: write # creates the release
+      id-token: write # signs the attestation
+      attestations: write # stores the attestation in this repository
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -93,13 +96,27 @@ jobs:
           fi
           echo "tag=rules-$(( ${last:-0} + 1 ))" >> "$GITHUB_OUTPUT"
 
+      # One SLSA build provenance attestation whose subjects are every asset,
+      # SHA256SUMS included, signed for this workflow on master. It is
+      # stored in this repository (gh attestation verify finds it) and
+      # published as ankiquest_rules.sigstore.json, so a build verifies it
+      # without the API.
+      - name: Attest the assets
+        id: attest
+        if: steps.tag.outputs.tag != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/assets/*
+
       - name: Publish
         if: steps.tag.outputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.tag.outputs.tag }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
         working-directory: ${{ runner.temp }}/assets
         run: |
+          cp "$BUNDLE" ankiquest_rules.sigstore.json
           {
             echo "The shared rules, built from AnkiQuest-Server $GITHUB_SHA: the WebAssembly module,"
             echo "the Python and Kotlin bindings, the desktop libraries and the Android libraries."
@@ -108,6 +125,14 @@ jobs:
             echo
             echo '```'
             cat SHA256SUMS
+            echo '```'
+            echo
+            echo "ankiquest_rules.sigstore.json is the build provenance attestation of every asset above,"
+            echo "signed for .github/workflows/rules-release.yml on master:"
+            echo
+            echo '```'
+            echo "gh attestation verify <asset> --repo $GITHUB_REPOSITORY \\"
+            echo "  --signer-workflow $GITHUB_REPOSITORY/.github/workflows/rules-release.yml --source-ref refs/heads/master"
             echo '```'
           } > "$RUNNER_TEMP/notes.md"
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
