@@ -26,9 +26,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: never
-  # The minSdk of the Android fork.
-  ANDROID_API: 24
-  # NDK r28c.
+  # NDK r28c and cargo-ndk; crates/rules/build-android.sh checks the same.
   NDK_VERSION: 28.2.13676358
   CARGO_NDK_VERSION: 4.1.2
 
@@ -167,19 +165,13 @@ jobs:
 
   android:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     needs: bindings
     defaults:
       run:
         working-directory: crates/rules
     env:
       ABIS: arm64-v8a armeabi-v7a x86 x86_64
-      # No build id, 16 KB pages, and no machine paths in the library.
-      RUSTFLAGS: >-
-        -C link-arg=-Wl,--build-id=none
-        -C link-arg=-Wl,-z,max-page-size=16384
-        --remap-path-prefix=${{ github.workspace }}=.
-        --remap-path-prefix=/home/runner/.cargo=/cargo
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -197,39 +189,25 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
           cargo install cargo-ndk --version "$CARGO_NDK_VERSION" --locked
 
-      # Builds every ABI into $1/<abi>.
+      # build-android.sh is what the Android app's F-Droid build runs, from
+      # its own checkout and Cargo home. The second build runs from another
+      # folder with another Cargo home, so the bytes must not depend on
+      # either.
       - name: Build twice and compare
+        working-directory: .
         run: |
-          build() {
-            rm -rf ../../target
-            targets=()
-            for abi in $ABIS; do targets+=(-t "$abi"); done
-            cargo ndk "${targets[@]}" -P "$ANDROID_API" \
-              build --locked -p ankiquest-rules --features ffi --profile bindings
-            for abi in $ABIS; do
-              case "$abi" in
-                arm64-v8a) triple=aarch64-linux-android ;;
-                armeabi-v7a) triple=armv7-linux-androideabi ;;
-                x86) triple=i686-linux-android ;;
-                x86_64) triple=x86_64-linux-android ;;
-              esac
-              mkdir -p "$1/$abi"
-              cp "../../target/$triple/bindings/libankiquest_rules.so" "$1/$abi/"
-            done
-          }
-          build "$RUNNER_TEMP/first"
-          build "$RUNNER_TEMP/android/jniLibs"
-          cd "$RUNNER_TEMP"
-          (cd first && sha256sum -- */*.so) > first.sha256
-          (cd android/jniLibs && sha256sum -- */*.so) > android/SHA256SUMS
-          cat android/SHA256SUMS
-          diff first.sha256 android/SHA256SUMS
+          crates/rules/build-android.sh "$RUNNER_TEMP/first"
+          git worktree add --detach "$RUNNER_TEMP/elsewhere/AnkiQuest-Server" HEAD
+          CARGO_HOME="$RUNNER_TEMP/elsewhere/cargo" \
+            "$RUNNER_TEMP/elsewhere/AnkiQuest-Server/crates/rules/build-android.sh" "$RUNNER_TEMP/android"
+          cat "$RUNNER_TEMP/android/SHA256SUMS"
+          diff "$RUNNER_TEMP/first/SHA256SUMS" "$RUNNER_TEMP/android/SHA256SUMS"
 
       - name: Check the libraries
-        working-directory: ${{ runner.temp }}/android/jniLibs
+        working-directory: ${{ runner.temp }}/android
         run: |
           readelf="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
-          for lib in */libankiquest_rules.so; do
+          for lib in libankiquest_rules-android-*.so; do
             if "$readelf" -n "$lib" | grep -q "Build ID"; then
               echo "$lib has a build id" >&2
               exit 1
@@ -241,7 +219,7 @@ jobs:
           done
           # 16 KB page alignment on the 64-bit ABIs.
           for abi in arm64-v8a x86_64; do
-            "$readelf" -l "$abi/libankiquest_rules.so" | awk '$1 == "LOAD" && $NF != "0x4000" { bad = 1 } END { exit bad }'
+            "$readelf" -l "libankiquest_rules-android-$abi.so" | awk '$1 == "LOAD" && $NF != "0x4000" { bad = 1 } END { exit bad }'
           done
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -249,20 +227,21 @@ jobs:
           name: ankiquest-rules-bindings
           path: ${{ runner.temp }}/bindings
 
-      - name: Add the Kotlin sources and report sizes
+      # The script's Kotlin bindings are the ones the JVM check tested.
+      - name: Compare the bindings and report sizes
         working-directory: ${{ runner.temp }}
         run: |
-          cp -r bindings/kotlin android/kotlin
+          cmp bindings/kotlin/org/ankiquest/rules/ankiquest_rules.kt android/ankiquest_rules.kt
           {
             echo "### Android libraries"
             echo
             echo "| ABI | Bytes |"
             echo "| --- | ---: |"
             for abi in $ABIS; do
-              echo "| $abi | $(stat -c %s "android/jniLibs/$abi/libankiquest_rules.so") |"
+              echo "| $abi | $(stat -c %s "android/libankiquest_rules-android-$abi.so") |"
             done
             echo
-            echo "Byte-identical across two clean builds."
+            echo "Byte-identical across two clean builds from different folders."
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

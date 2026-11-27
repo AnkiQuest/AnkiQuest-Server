@@ -50,7 +50,7 @@ The `Shared rules` workflow (`.github/workflows/rules.yml`) builds, on every pul
 | Artifact | Contents |
 | --- | --- |
 | `ankiquest-rules-bindings` | `kotlin/org/ankiquest/rules/ankiquest_rules.kt`, `python/ankiquest_rules.py` |
-| `ankiquest-rules-android` | `jniLibs/<abi>/libankiquest_rules.so` for arm64-v8a, armeabi-v7a, x86 and x86_64 (API 24, NDK r28c, 16 KB pages), the Kotlin sources, `SHA256SUMS` |
+| `ankiquest-rules-android` | `libankiquest_rules-android-<abi>.so` for arm64-v8a, armeabi-v7a, x86 and x86_64 (API 24, NDK r28c, 16 KB pages), `ankiquest_rules.kt`, `SHA256SUMS`: the output of `crates/rules/build-android.sh` |
 | `ankiquest-rules-<os>-<arch>` | the library for linux-x86_64, linux-aarch64, windows-x86_64, macos-arm64 or macos-x86_64, `ankiquest_rules.py`, `SHA256SUMS` |
 | `ankiquest-rules-wasm` | `ankiquest_rules.wasm`, `SHA256SUMS` |
 
@@ -59,9 +59,9 @@ loads the library next to it with `ctypes`; it is not a compiled extension, so o
 with every Python version, Anki's bundled one included. CI runs it on Python 3.9 (Anki 24.11) and
 3.13 on all three operating systems, and the Kotlin on the JVM, against the fixture cases.
 
-There is no AAR yet: it needs the Android Gradle plugin and SDK here, and the clients compile the
-Kotlin sources with their own Kotlin version anyway. The jniLibs and sources go into the client's
-`src/main` directories as they are.
+There is no AAR: the Android app compiles the Kotlin sources with its own Kotlin version, with
+warnings as errors, and packs the libraries as its own `jniLibs`. The JVM check here compiles the
+bindings with warnings as errors too, so a UniFFI update that adds a warning fails here first.
 
 ## Reproducible builds
 
@@ -76,6 +76,12 @@ CI:
   derives the macOS UUID from the contents. `--remap-path-prefix` removes the checkout and Cargo
   paths.
 - CI builds every library twice from a clean target directory and fails unless the hashes match.
+  The Android libraries and Kotlin bindings come from `crates/rules/build-android.sh <out>`, which
+  writes them under their release names with a `SHA256SUMS`; CI runs it a second time from another
+  folder with another `CARGO_HOME`, so the bytes depend on neither. It needs the Android targets of
+  the pinned toolchain, NDK r28c in `ANDROID_NDK_HOME` and cargo-ndk 4.1.2, and checks the last two.
+  Its output folder is what the Android app's build takes as `ANKIQUEST_RULES_DIR`; the app's
+  F-Droid build runs it at the commit of the release the app records.
 
 Bindings are generated from an unstripped debug build, since stripping removes the UniFFI metadata
 symbols; they do not depend on the target.
@@ -85,8 +91,9 @@ symbols; they do not depend on the target.
 Each client replaces its day-verdict code with the bindings and keeps running
 `day_verdicts.json` against them:
 
-- **Android fork**: add the jniLibs and Kotlin sources, JNA, and swap the Kotlin rule for
-  `todayVerdict`. Measure the APK size per ABI before and after.
+- **Android fork**: take the Kotlin sources and the four Android libraries from the newest rules
+  release at build time, add JNA, and swap each Kotlin rule for its binding, starting with the
+  optimize reminder. Measure the APK size per ABI before and after.
 - **Lite `:ankiquest-core`** (AnkiQuest-Android#421): the same, inside the module.
 - **Desktop add-on**: ship the five desktop libraries and `ankiquest_rules.py` from the newest rules
   release, load the one for the running platform, and swap the Python rule. Measure on Anki 24.11
@@ -96,7 +103,7 @@ Each client replaces its day-verdict code with the bindings and keeps running
 Clients take the bytes from the newest `rules-<N>` release (below), checked by SHA-256, not from workflow
 artifacts, which expire after 90 days; building from source in every client CI would repeat the
 toolchain and platform matrix for the same bytes. Building from source stays possible, and
-reproducible, for anyone who wants to check. The Android app does not use the crate today, and its libraries are not released.
+reproducible, for anyone who wants to check.
 
 ## WebAssembly for web views
 
@@ -124,18 +131,46 @@ any asset's bytes differ from the latest `rules-<N>` release it publishes `rules
 
 - `ankiquest_rules.wasm`: the module.
 - `ankiquest_rules.py`: the Python bindings.
+- `ankiquest_rules.kt`: the Kotlin bindings (package `org.ankiquest.rules`).
+- `libankiquest_rules-android-arm64-v8a.so`, `libankiquest_rules-android-armeabi-v7a.so`,
+  `libankiquest_rules-android-x86.so`, `libankiquest_rules-android-x86_64.so`: the Android
+  libraries, named after their ABI. In an APK each is `lib/<abi>/libankiquest_rules.so`.
 - `libankiquest_rules-linux-x86_64.so`, `libankiquest_rules-linux-aarch64.so`,
   `ankiquest_rules-windows-x86_64.dll`, `libankiquest_rules-macos-arm64.dylib`,
   `libankiquest_rules-macos-x86_64.dylib`: the desktop libraries, named after their platform. Next
   to `ankiquest_rules.py` a library must carry its plain name (`libankiquest_rules.so`,
   `ankiquest_rules.dll`, `libankiquest_rules.dylib`), which is what the bindings load.
 - `SHA256SUMS`: every asset.
+- `ankiquest_rules.sigstore.json`: a Sigstore bundle with one SLSA build provenance attestation
+  ([actions/attest-build-provenance](https://github.com/actions/attest-build-provenance)) whose
+  subjects are every asset above, `SHA256SUMS` included. It is signed through Sigstore's public
+  instance for `.github/workflows/rules-release.yml` running on `refs/heads/master` of this
+  repository, and also stored here, so `gh attestation verify <asset> --repo
+  AnkiQuest/AnkiQuest-Server --signer-workflow
+  AnkiQuest/AnkiQuest-Server/.github/workflows/rules-release.yml --source-ref refs/heads/master`
+  checks any asset.
 
 Clients use server `master`, not a pinned commit, so they take the newest `rules-<N>` release when
 they build or package: they list the releases, take the highest N, download the assets they need,
-check each against that release's `SHA256SUMS`, and record the tag in what they build, so a build
-can be traced and rebuilt from the same release. A client that needs reproducible builds from its
-own source alone (an F-Droid build, say) would pin a release instead; none does today.
+check each against that release's `SHA256SUMS` and against the attestation, and record the tag in
+what they build, so a build can be traced and rebuilt from the same release.
+
+The attestation check accepts an asset only when the bundle's signature, certificate chain and
+transparency log entry verify against Sigstore's public trust root, the certificate was issued to
+`https://github.com/AnkiQuest/AnkiQuest-Server/.github/workflows/rules-release.yml@refs/heads/master`
+by `https://token.actions.githubusercontent.com`, and the asset's SHA-256 is one of the
+attestation's subjects. `SHA256SUMS` alone only shows that the files belong together: whoever can
+replace release assets can replace it too. The attestation shows that this workflow built them
+from `master`. Clients cache what they verified by SHA-256 and use it offline without checking
+again.
+
+The F-Droid build of the Android app builds the libraries and the Kotlin bindings from this
+repository's source with `crates/rules/build-android.sh`, at the tag of the release the app
+records, so it needs neither the release's libraries nor the attestation. Its recipe is in
+AnkiQuest-Android's `docs/fdroid/`.
+
+The Android app's JVM unit tests (Robolectric) run the Kotlin bindings against the desktop library
+of the machine they run on, from the same release, so the fixture cases test the crate there too.
 
 ## Which form each client uses
 
