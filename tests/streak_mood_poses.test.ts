@@ -136,3 +136,18 @@ test("freeze_used shows at the first open after a used freeze", () => {
     assert.equal(frozen > 0 && !opened, expected, name);
   }
 });
+
+type Pictures = {pictures: {streak: number; next: number | null; unit: string; milestone: string | null}[]};
+
+test("the picture's milestone line counts the days to the next milestone", () => {
+  // One wording for both clients, in English, with nothing after the milestone (no emoji).
+  for (const {streak, next, unit, milestone} of read<Pictures>("streak_moods.json").pictures) {
+    assert.equal(unit, "day streak", `${streak}`);
+    if (next === null) {
+      assert.equal(milestone, null, `${streak}`);
+      continue;
+    }
+    const days = next - streak;
+    assert.equal(milestone, `${days} ${days === 1 ? "day" : "days"} to ${next}`, `${streak}`);
+  }
+});
