@@ -137,17 +137,45 @@ test("freeze_used shows at the first open after a used freeze", () => {
   }
 });
 
-type Pictures = {pictures: {streak: number; next: number | null; unit: string; milestone: string | null}[]};
+type Wording = Record<string, string>;
+type Pictures = {pictures: {streak: number; next: number | null; unit: Wording; milestone: Wording | null}[]};
 
-test("the picture's milestone line counts the days to the next milestone", () => {
-  // One wording for both clients, in English, with nothing after the milestone (no emoji).
+// Every language both clients ship.
+const LANGUAGES = ["en", "de", "es", "fr", "pt"];
+
+// Letters, digits and spaces only: no symbol or emoji after the line.
+const PLAIN = /^[\p{L}\d ]+$/u;
+
+test("the picture's unit and milestone are pinned in every language", () => {
+  const units = new Map<string, string>();
+  const lines = new Map<string, string>();
   for (const {streak, next, unit, milestone} of read<Pictures>("streak_moods.json").pictures) {
-    assert.equal(unit, "day streak", `${streak}`);
-    if (next === null) {
-      assert.equal(milestone, null, `${streak}`);
-      continue;
+    assert.deepEqual(Object.keys(unit).sort(), [...LANGUAGES].sort(), `${streak} unit`);
+    assert.equal(milestone === null, next === null, `${streak} milestone`);
+    for (const language of LANGUAGES) {
+      // One unit per plural form: a one-day streak, and every other.
+      assert.match(unit[language]!, PLAIN, `${streak} ${language}`);
+      const unitForm = `${language} ${streak === 1 ? "one" : "other"}`;
+      assert.equal(unit[language], units.get(unitForm) ?? unit[language], `${streak} ${unitForm}`);
+      units.set(unitForm, unit[language]!);
+      if (next === null || milestone === null) {
+        continue;
+      }
+
+      // The line names the days left and the milestone, in one wording per plural form.
+      const days = next - streak;
+      const line = milestone[language]!;
+      assert.match(line, PLAIN, `${streak} ${language}`);
+      const template = line.replace(new RegExp(`\\b${days}\\b`), "{days}").replace(new RegExp(`\\b${next}\\b`), "{next}");
+      assert.ok(template.includes("{days}") && template.includes("{next}"), `${streak} ${language}: ${line}`);
+      const lineForm = `${language} ${days === 1 ? "one" : "other"}`;
+      assert.equal(template, lines.get(lineForm) ?? template, `${streak} ${lineForm}`);
+      lines.set(lineForm, template);
     }
-    const days = next - streak;
-    assert.equal(milestone, `${days} ${days === 1 ? "day" : "days"} to ${next}`, `${streak}`);
+    assert.equal(unit.en, "day streak", `${streak}`);
+    if (next !== null) {
+      const days = next - streak;
+      assert.equal(milestone?.en, `${days} ${days === 1 ? "day" : "days"} to ${next}`, `${streak}`);
+    }
   }
 });
