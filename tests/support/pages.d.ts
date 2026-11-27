@@ -9,7 +9,7 @@ declare global {
   var app: HTMLElement;
   function board(rows: object[], me: string): string;
   var weekEnds: number;
-  function heat(cells: object[]): string;
+  function heat(cells: object[], lifetime: {reviews: number; days_active: number}): string;
   function view(profile: object, rows: object[], canEditAvatar?: boolean): string;
   // web/common.ts, bundled into the index page
   function weekNotice(closing: {xp: number; ends_at: number} | undefined, next: {xp: number; starts_at: number} | undefined, classes?: string): string;
