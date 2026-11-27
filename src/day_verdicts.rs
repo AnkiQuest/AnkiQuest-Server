@@ -507,8 +507,9 @@ fn day_verdicts_match_the_server() {
     let text = serde_json::to_string_pretty(&json!({
         "_about": "Today's streak verdict with reviews not uploaded yet, worked out by the server. \
                    Written by src/day_verdicts.rs (UPDATE_FIXTURES=1 cargo test day_verdicts); \
-                   the Android app keeps a copy in AnkiDroid/src/test/resources/ankiquest/day_verdicts.json \
-                   and CI there fails when it drifts from this file.",
+                   both clients read this file from server master when their tests run, copied into \
+                   AnkiDroid/src/test/resources/ankiquest/ and the add-on's tests/fixtures/, and \
+                   test their day verdicts against every case.",
         "cases": cases,
     }))
     .unwrap()
