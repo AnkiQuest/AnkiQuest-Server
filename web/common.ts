@@ -38,6 +38,21 @@ export function lexical(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/**
+ * The heatmap's colour level 0-4 of a day with `count` reviews, measured against the
+ * average per study day: none, up to half the average, the average, twice it, more.
+ * `review_heatmap.json`'s `intensity_cases` pin the levels; both clients colour their
+ * heatmaps with the same rule.
+ */
+export function heatmapIntensity(count: number, dailyAverage: number): number {
+  const average = Math.max(dailyAverage, 1);
+  if (count <= 0) return 0;
+  if (count <= average / 2) return 1;
+  if (count <= average) return 2;
+  if (count <= average * 2) return 3;
+  return 4;
+}
+
 /** The 24 `<option>`s of an hour picker, 00:00 to 23:00, with `selected` chosen. */
 export function hourOptions(selected: unknown): string {
   return Array.from({length: 24}, (_, hour) => `<option value="${hour}" ${hour === Number(selected) ? "selected" : ""}>${String(hour).padStart(2, "0")}:00</option>`).join("");

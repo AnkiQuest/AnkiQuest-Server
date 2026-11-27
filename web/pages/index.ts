@@ -1,4 +1,4 @@
-import {type ClosingWeek, type NextWeek, day, escape as esc, lexical, nativeAccount, number as num, weekNotice} from "../common";
+import {type ClosingWeek, type NextWeek, day, escape as esc, heatmapIntensity, lexical, nativeAccount, number as num, weekNotice} from "../common";
 import {failure, request, send} from "../http";
 
 const {t:aqText,html:aqHtml} = AnkiQuestI18n;
@@ -473,10 +473,14 @@ app.addEventListener("change", event => {
 
 function heat(cells: HeatCell[]) {
   if (!cells.length) return aqHtml`<span class="sub">Your study history will appear here.</span>`;
-  const max = Math.max(1, ...cells.map(c => c.reviews));
   const first = new Date(cells[0].date + "T00:00:00Z");
   const pad = (first.getUTCDay() + 6) % 7;
-  const level = (n: number) => n === 0 ? 0 : Math.min(4, 1 + Math.floor(n / max * 3.999));
+  // The levels come from the shared rule (web/common's heatmapIntensity, the levels
+  // review_heatmap.json pins), measured against the average per study day, the way
+  // both clients colour their heatmaps — not against the window's busiest day.
+  const studyDays = cells.filter(c => c.reviews > 0);
+  const average = studyDays.length ? cells.reduce((sum, c) => sum + c.reviews, 0) / studyDays.length : 0;
+  const level = (n: number) => heatmapIntensity(n, average);
   const studied = (c: HeatCell) => num(c.reviews) + " reviews, " + num(c.xp) + " XP";
   return aqHtml`<i class='pad'></i>`.repeat(pad) + cells.map(c => {
     // The server's verdict colours the day; an older server's cells only say frozen or not.
