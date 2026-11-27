@@ -46,11 +46,30 @@ export function lexical(a: string, b: string): number {
  */
 export function heatmapIntensity(count: number, dailyAverage: number): number {
   const average = Math.max(dailyAverage, 1);
-  if (count <= 0) return 0;
-  if (count <= average / 2) return 1;
-  if (count <= average) return 2;
-  if (count <= average * 2) return 3;
+  if (count <= 0) {
+    return 0;
+  }
+  if (count <= average / 2) {
+    return 1;
+  }
+  if (count <= average) {
+    return 2;
+  }
+  if (count <= average * 2) {
+    return 3;
+  }
   return 4;
+}
+
+/**
+ * The average per study day over the player's whole history, the clients' `daily_average`:
+ * all reviews divided by the days with reviews, 0 before the first one.
+ */
+export function dailyAverage(reviews: number, daysActive: number): number {
+  if (daysActive <= 0) {
+    return 0;
+  }
+  return reviews / daysActive;
 }
 
 /** The 24 `<option>`s of an hour picker, 00:00 to 23:00, with `selected` chosen. */

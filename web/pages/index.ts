@@ -1,4 +1,4 @@
-import {type ClosingWeek, type NextWeek, day, escape as esc, heatmapIntensity, lexical, nativeAccount, number as num, weekNotice} from "../common";
+import {type ClosingWeek, type NextWeek, dailyAverage, day, escape as esc, heatmapIntensity, lexical, nativeAccount, number as num, weekNotice} from "../common";
 import {failure, request, send} from "../http";
 
 const {t:aqText,html:aqHtml} = AnkiQuestI18n;
@@ -471,15 +471,14 @@ app.addEventListener("change", event => {
   }
 });
 
-function heat(cells: HeatCell[]) {
+function heat(cells: HeatCell[], lifetime: {reviews: number; days_active: number}) {
   if (!cells.length) return aqHtml`<span class="sub">Your study history will appear here.</span>`;
   const first = new Date(cells[0].date + "T00:00:00Z");
   const pad = (first.getUTCDay() + 6) % 7;
-  // The levels come from the shared rule (web/common's heatmapIntensity, the levels
-  // review_heatmap.json pins), measured against the average per study day, the way
-  // both clients colour their heatmaps — not against the window's busiest day.
-  const studyDays = cells.filter(c => c.reviews > 0);
-  const average = studyDays.length ? cells.reduce((sum, c) => sum + c.reviews, 0) / studyDays.length : 0;
+  // The levels come from the shared rule (review_heatmap.json's intensity_cases),
+  // measured against the average per study day over the whole history, as both
+  // clients do, not against the 26 weeks shown or the busiest day.
+  const average = dailyAverage(lifetime.reviews, lifetime.days_active);
   const level = (n: number) => heatmapIntensity(n, average);
   const studied = (c: HeatCell) => num(c.reviews) + " reviews, " + num(c.xp) + " XP";
   return aqHtml`<i class='pad'></i>`.repeat(pad) + cells.map(c => {
@@ -588,7 +587,7 @@ ${canEditAvatar ? aqHtml`<section class="card deck-sharing"><div class="card-hea
   <div class="actions"><a class="button-link" id="manage-decks" href="${settingsLink("#deck-sharing")}">Manage deck notifications</a><a class="button-link" id="manage-received-notifications" href="${settingsLink("#deck-alerts")}">Notifications I receive</a></div>
   <p class="settings-hint">Visit <a href="${AnkiQuestSite.href("/community")}">Community</a> for friendly challenges, shared milestones, and reminder preferences.</p>
 </section>` : ""}
-<section class="card wide"><div class="card-head"><div><h2>Small steps, steady progress</h2><p>Your last 26 weeks of studying.</p></div></div><div class="heat" role="img" aria-label="Study activity over the last 26 weeks; each square represents one day">${heat(p.heatmap)}</div></section>
+<section class="card wide"><div class="card-head"><div><h2>Small steps, steady progress</h2><p>Your last 26 weeks of studying.</p></div></div><div class="heat" role="img" aria-label="Study activity over the last 26 weeks; each square represents one day">${heat(p.heatmap, p.lifetime)}</div></section>
 <section class="card wide"><div class="card-head"><div><h2>${boardTitle(currentPeriod())}</h2><p>Your place in the community.</p></div></div>${tabs(currentPeriod())}${board(rows, p.user)}</section>
 ${winnerSection()}
 <section class="card wide"><h2 class="section-title">Personal bests</h2>${bests(p)}</section>
